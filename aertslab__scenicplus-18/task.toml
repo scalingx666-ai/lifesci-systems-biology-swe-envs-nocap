@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/aertslab__scenicplus-18"
+description = "Add option to save partial results"
+
+[metadata]
+difficulty = "small"
+category = "bugfix"
+keywords = [
+    "scenicplus",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aertslab/scenicplus"
+ref = "771fd654f4a391a4ffe698fa2c3785380ff79214"
+reference = "https://github.com/aertslab/scenicplus/pull/18"
+source_access = "auto"
+built_at = "2026-11-15T17:00:20.723346+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:cf882ae0bcabe0c811162cde43056700bf3b831890ebd4aea491161f3feccb40"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2022-02-17T08:43:30Z"
+diff_format = "unified"
+context_files = [
+    "src/scenicplus/wrappers/run_pycistarget.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 19
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

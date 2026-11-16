@@ -1,0 +1,112 @@
+diff --git a/opt/pyproject.toml b/opt/pyproject.toml
+index a0a628d7..062a0766 100644
+--- a/opt/pyproject.toml
++++ b/opt/pyproject.toml
+@@ -40,7 +40,7 @@ appdirs = "^1.4.3"
+ pyarrow = "^0.16.0"
+ 
+ numpy = "^1.18.1"
+-pandas = "1.0.0"
++pandas = "^1.0.0"
+ 
+ loompy = "^3.0.1"
+ pyscenic = "^0.9.14"
+diff --git a/package.json b/package.json
+index 03bd4530..cb9a35c9 100644
+--- a/package.json
++++ b/package.json
+@@ -54,6 +54,7 @@
+         "grpc-bus-websocket-server": "file:opt/scopeserver/bindserver",
+         "grpc-caller": "^0.3.1",
+         "grpc-tools": "^1.6.6",
++        "js-file-download": "^0.4.11",
+         "json-schema": "^0.2.3",
+         "json2csv": "^4.0.1",
+         "make-dir": "^1.3.0",
+@@ -71,7 +72,6 @@
+         "react-dnd-html5-backend": "^2.5.4",
+         "react-dom": "^16.2.0",
+         "react-favicon": "0.0.14",
+-        "react-file-download": "^0.3.5",
+         "react-file-reader-input": "^2.0.0",
+         "react-flex-layout": "^0.9.6",
+         "react-flexbox-grid": "^2.0.0",
+diff --git a/src/components/common/Metadata.jsx b/src/components/common/Metadata.jsx
+index 42b09c9e..63389e81 100644
+--- a/src/components/common/Metadata.jsx
++++ b/src/components/common/Metadata.jsx
+@@ -8,8 +8,11 @@ import {
+     Loader,
+     Dropdown
+ } from 'semantic-ui-react';
+-import { BackendAPI } from '../common/API';
+ import ReactGA from 'react-ga';
++import fileDownload from 'js-file-download';
++import { parse as json2csv } from 'json2csv';
++
++import { BackendAPI } from '../common/API';
+ 
+ export default class Metadata extends Component {
+     constructor(props) {
+@@ -281,10 +284,8 @@ export default class Metadata extends Component {
+                                 }
+                                 data.push(cellData);
+                             });
+-                            let fileDownload = require('react-file-download');
+-                            const json2csv = require('json2csv').parse;
+-                            const csv = json2csv(data);
+-                            fileDownload(csv, 'metadata.csv');
++
++                            fileDownload(json2csv(data), 'metadata.csv');
+                             ReactGA.event({
+                                 category: 'metadata',
+                                 action: 'downloaded csv file',
+diff --git a/src/components/common/ViewerSidebar.jsx b/src/components/common/ViewerSidebar.jsx
+index 9f67f3b2..bc4fd398 100644
+--- a/src/components/common/ViewerSidebar.jsx
++++ b/src/components/common/ViewerSidebar.jsx
+@@ -12,21 +12,24 @@ import {
+     Progress,
+     Popup
+ } from 'semantic-ui-react';
+-import { BackendAPI } from '../common/API';
+-import Metadata from '../common/Metadata';
++
+ import ReactGA from 'react-ga';
+ import Alert from 'react-popup';
+ 
+ import ReactTable from 'react-table';
+ import 'react-table/react-table.css';
+-import FileDownloader from '../../js/http';
+ import { instanceOf } from 'prop-types';
+ import { withCookies, Cookies } from 'react-cookie';
+ 
+-import CollaborativeAnnotation from './CollaborativeAnnotation';
+-
+ import { delimiter } from 'path';
+ import { min } from 'moment';
++import fileDownload from 'js-file-download';
++import { parse as json2csv } from 'json2csv';
++
++import { BackendAPI } from '../common/API';
++import Metadata from '../common/Metadata';
++import FileDownloader from '../../js/http';
++import CollaborativeAnnotation from './CollaborativeAnnotation';
+ 
+ class ViewerSidebar extends Component {
+     static propTypes = {
+@@ -910,10 +913,10 @@ class ViewerSidebar extends Component {
+                             <Button
+                                 primary
+                                 onClick={() => {
+-                                    const opts = { delimiter: '\t', quote: '' };
+-                                    let fileDownload = require('react-file-download');
+-                                    const json2csv = require('json2csv').parse;
+-                                    const tsv = json2csv(markerTableData, opts);
++                                    const tsv = json2csv(markerTableData, {
++                                        delimiter: '\t',
++                                        quote: ''
++                                    });
+                                     fileDownload(tsv, genesFileName());
+                                 }}
+                                 style={{ marginTop: '10px', width: '100%' }}>

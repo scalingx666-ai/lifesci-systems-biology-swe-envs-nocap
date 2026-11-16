@@ -1,0 +1,66 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-4"
+description = "docs: Enhance Feishu bot configuration with comprehensive setup guide"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "4f5f14aaf072a053562cbe400e871c2ab4fa8c20"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/4"
+source_access = "auto"
+built_at = "2026-11-15T18:18:47.002954+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:ffe2848a4de7565312028b72d07b68c12976b24af0d6d60c8f92258c4c490722"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-03-15T03:29:58Z"
+diff_format = "unified"
+context_files = [
+    ".env.example",
+    "bot/FEISHU_SETUP.md",
+    "bot/README.md",
+    "bot/requirements.txt",
+    "run_longConnect.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 193
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

@@ -1,0 +1,65 @@
+diff --git a/src/app/translations/files/translated/ar.json b/src/app/translations/files/translated/ar.json
+index 6fb89c4a..22f245fb 100644
+--- a/src/app/translations/files/translated/ar.json
++++ b/src/app/translations/files/translated/ar.json
+@@ -309,6 +309,8 @@
+   "views.dashboard.admin.components.QueueTable.status_map.4": "تجهيز",
+   "views.dashboard.admin.components.QueueTable.status_map.5": "الانتهاء",
+   "views.dashboard.admin.components.QueueTable.status_map.6": "الانتهاء/أخطاء",
++  "views.dashboard.admin.components.QueueTable.status_map.7": "مؤقتا",
++  "views.dashboard.admin.components.QueueTable.status_map.8": "استأنفت",
+   "views.dashboard.admin.components.QueueTable.filters.queue_id.placeholder": "يرجى إدخال معرف المهمة",
+   "views.dashboard.admin.components.QueueTable.filters.queue_id.sorting.descending": "تنازلي",
+   "views.dashboard.admin.components.QueueTable.filters.queue_id.sorting.ascending": "تصاعدي",
+diff --git a/src/app/translations/files/translated/de.json b/src/app/translations/files/translated/de.json
+index 2cf7b14a..dd4dd5cd 100644
+--- a/src/app/translations/files/translated/de.json
++++ b/src/app/translations/files/translated/de.json
+@@ -309,6 +309,8 @@
+   "views.dashboard.admin.components.QueueTable.status_map.4": "Verarbeite",
+   "views.dashboard.admin.components.QueueTable.status_map.5": "Abgeschlossen",
+   "views.dashboard.admin.components.QueueTable.status_map.6": "Abgeschlossen/Fehler",
++  "views.dashboard.admin.components.QueueTable.status_map.7": "Pausiert",
++  "views.dashboard.admin.components.QueueTable.status_map.8": "Wieder",
+   "views.dashboard.admin.components.QueueTable.filters.queue_id.placeholder": "Bitte geben Sie die task-ID",
+   "views.dashboard.admin.components.QueueTable.filters.queue_id.sorting.descending": "Absteigend",
+   "views.dashboard.admin.components.QueueTable.filters.queue_id.sorting.ascending": "Aufsteigend",
+diff --git a/src/app/translations/files/translated/en.json b/src/app/translations/files/translated/en.json
+index 8ba1c21e..a4d4406f 100644
+--- a/src/app/translations/files/translated/en.json
++++ b/src/app/translations/files/translated/en.json
+@@ -309,6 +309,8 @@
+   "views.dashboard.admin.components.QueueTable.status_map.4": "Processing",
+   "views.dashboard.admin.components.QueueTable.status_map.5": "Completed",
+   "views.dashboard.admin.components.QueueTable.status_map.6": "Completed/Errors",
++  "views.dashboard.admin.components.QueueTable.status_map.7": "Paused",
++  "views.dashboard.admin.components.QueueTable.status_map.8": "Resumed",
+   "views.dashboard.admin.components.QueueTable.filters.queue_id.placeholder": "Please enter task ID",
+   "views.dashboard.admin.components.QueueTable.filters.queue_id.sorting.descending": "Descending",
+   "views.dashboard.admin.components.QueueTable.filters.queue_id.sorting.ascending": "Ascending",
+diff --git a/src/app/translations/files/translated/fr.json b/src/app/translations/files/translated/fr.json
+index 60750b88..6c530c65 100644
+--- a/src/app/translations/files/translated/fr.json
++++ b/src/app/translations/files/translated/fr.json
+@@ -309,6 +309,8 @@
+   "views.dashboard.admin.components.QueueTable.status_map.4": "Traitement",
+   "views.dashboard.admin.components.QueueTable.status_map.5": "Terminé",
+   "views.dashboard.admin.components.QueueTable.status_map.6": "Rempli D'Erreurs",
++  "views.dashboard.admin.components.QueueTable.status_map.7": "Pause",
++  "views.dashboard.admin.components.QueueTable.status_map.8": "Reprise",
+   "views.dashboard.admin.components.QueueTable.filters.queue_id.placeholder": "Veuillez entrer l'ID de la tâche",
+   "views.dashboard.admin.components.QueueTable.filters.queue_id.sorting.descending": "Descendant",
+   "views.dashboard.admin.components.QueueTable.filters.queue_id.sorting.ascending": "Ascendant",
+diff --git a/src/app/translations/files/translated/zh.json b/src/app/translations/files/translated/zh.json
+index b6527400..67ac4a8f 100644
+--- a/src/app/translations/files/translated/zh.json
++++ b/src/app/translations/files/translated/zh.json
+@@ -309,6 +309,8 @@
+   "views.dashboard.admin.components.QueueTable.status_map.4": "处理",
+   "views.dashboard.admin.components.QueueTable.status_map.5": "完成",
+   "views.dashboard.admin.components.QueueTable.status_map.6": "完成的错误。",
++  "views.dashboard.admin.components.QueueTable.status_map.7": "暂停",
++  "views.dashboard.admin.components.QueueTable.status_map.8": "恢复",
+   "views.dashboard.admin.components.QueueTable.filters.queue_id.placeholder": "请输入任务ID",
+   "views.dashboard.admin.components.QueueTable.filters.queue_id.sorting.descending": "降",
+   "views.dashboard.admin.components.QueueTable.filters.queue_id.sorting.ascending": "升",

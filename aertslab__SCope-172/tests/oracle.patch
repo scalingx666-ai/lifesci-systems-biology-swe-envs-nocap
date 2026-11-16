@@ -1,0 +1,44 @@
+diff --git a/bin/configure.js b/bin/configure.js
+new file mode 100644
+index 00000000..c4fc133a
+--- /dev/null
++++ b/bin/configure.js
+@@ -0,0 +1,6 @@
++console.log("Configuring SCope...")
++const makeDir = require('make-dir');
++makeDir('assets').then(path => {
++    console.log(path + " directory created.");
++    console.log("SCope ready for 'npm run dev' or 'npm run build'");
++});
+\ No newline at end of file
+diff --git a/bin/install.js b/bin/install.js
+index 578291d3..49df9313 100644
+--- a/bin/install.js
++++ b/bin/install.js
+@@ -3,4 +3,4 @@ var shell = require("shelljs");
+ console.log("Installing SCope Bind Server")
+ shell.exec('npm install opt/scopeserver/bindserver');
+ console.log("Installing SCope Data Server...")
+-shell.exec('cd opt && python3 setup.py develop')
++shell.exec('cd opt && python3 setup.py develop')
+\ No newline at end of file
+diff --git a/package.json b/package.json
+index 3ef74f35..408f3e3a 100644
+--- a/package.json
++++ b/package.json
+@@ -5,6 +5,7 @@
+   "main": "index.js",
+   "scripts": {
+     "preinstall": "npm i shelljs && node bin/install.js",
++    "postinstall": "node bin/configure.js",
+     "dev": "cross-env NODE_ENV=development NODE_TYPE=local webpack-dev-server --hot",
+     "dev-aws": "cross-env NODE_ENV=development NODE_TYPE=aws webpack-dev-server --hot",
+     "build": "cross-env NODE_ENV=production NODE_TYPE=local webpack",
+@@ -48,6 +49,7 @@
+     "json-schema": "^0.2.3",
+     "json2csv": "^4.0.1",
+     "launch-browser": "^1.0.0",
++    "make-dir": "^1.3.0",
+     "moment": "^2.21.0",
+     "pako": "^1.0.6",
+     "pixi.js": "^4.6.2",

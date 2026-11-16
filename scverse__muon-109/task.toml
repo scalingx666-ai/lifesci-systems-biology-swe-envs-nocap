@@ -1,0 +1,63 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__muon-109"
+description = "Fix save color in MuData"
+
+[metadata]
+difficulty = "small"
+category = "bugfix"
+keywords = [
+    "muon",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/muon"
+ref = "ae15b5001c38cd75730714e91305381e5ecfe581"
+reference = "https://github.com/scverse/muon/pull/109"
+source_access = "auto"
+built_at = "2026-11-15T17:00:19.180043+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:aa4156fcbd6240716154729c74a238a0af11fadb678e93064e9029fe02ecad9d"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2023-06-07T13:06:23Z"
+diff_format = "unified"
+context_files = [
+    "muon/_atac/plot.py",
+    "muon/_core/plot.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 17
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

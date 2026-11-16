@@ -1,0 +1,433 @@
+diff --git a/skills/singlecell/_lib/preflight.py b/skills/singlecell/_lib/preflight.py
+index 527813e3..9b7ac851 100644
+--- a/skills/singlecell/_lib/preflight.py
++++ b/skills/singlecell/_lib/preflight.py
+@@ -1312,10 +1312,37 @@ def preflight_sc_preprocessing(
+                 "Preprocessing expects raw count-like input. Provide an unnormalized count matrix or use the shared canonicalization path first."
+             )
+ 
+-    if "predicted_doublet" not in adata.obs.columns and "doublet_score" not in adata.obs.columns:
+-        decision.add_guidance(
+-            "`sc-preprocessing` does not remove doublets automatically. If doublets are a concern, consider `sc-doublet-detection` before downstream interpretation."
+-        )
++    remove_doublets = bool(params.get("remove_doublets", True))
++    doublet_score_threshold = float(params.get("doublet_score_threshold", 0.25))
++    has_predicted = "predicted_doublet" in adata.obs.columns
++    has_score = "doublet_score" in adata.obs.columns
++    if remove_doublets:
++        if has_predicted:
++            n_doublets = int(adata.obs["predicted_doublet"].astype(bool).sum())
++            decision.add_guidance(
++                f"`predicted_doublet` column detected ({n_doublets:,} doublets flagged by sc-doublet-detection). "
++                "These will be automatically removed during the QC filtering step."
++            )
++        elif has_score:
++            n_doublets = int((adata.obs["doublet_score"] >= doublet_score_threshold).sum())
++            decision.require_confirmation(
++                f"`doublet_score` column detected — {n_doublets:,} cells score >= {doublet_score_threshold} "
++                f"and will be removed. The threshold is a judgment call: confirm {doublet_score_threshold} is acceptable, "
++                "or rerun with `--doublet-score-threshold <value>` to adjust. "
++                "(Pass `--no-remove-doublets` to skip doublet removal entirely.)"
++            )
++        else:
++            decision.add_guidance(
++                "No doublet columns found (`predicted_doublet` / `doublet_score`). "
++                "Doublet removal will be skipped. "
++                "Run `sc-doublet-detection` before `sc-preprocessing` to enable automatic doublet removal."
++            )
++    else:
++        if has_predicted or has_score:
++            decision.add_guidance(
++                "Doublet removal is disabled (`--no-remove-doublets`). "
++                "Doublet labels are present but will NOT be used to filter cells."
++            )
+ 
+     batch_candidates = _obs_candidates(adata, "batch")
+     if batch_candidates:
+@@ -1357,6 +1384,8 @@ def preflight_sc_filter(
+     min_genes: int | None = None,
+     max_genes: int | None = None,
+     min_cells: int | None = None,
++    remove_doublets: bool = True,
++    doublet_score_threshold: float = 0.25,
+     source_path: str | None = None,
+ ) -> PreflightDecision:
+     decision = PreflightDecision("sc-filter")
+@@ -1403,6 +1432,37 @@ def preflight_sc_filter(
+             f"`--tissue {tissue}` will override the wrapper defaults for `min_genes`, `max_genes`, and `max_mt_percent`."
+         )
+ 
++    # Doublet removal guidance
++    has_predicted = "predicted_doublet" in adata.obs.columns
++    has_score = "doublet_score" in adata.obs.columns
++    if remove_doublets:
++        if has_predicted:
++            n_doublets = int(adata.obs["predicted_doublet"].astype(bool).sum())
++            decision.add_guidance(
++                f"`predicted_doublet` column detected ({n_doublets:,} doublets flagged by sc-doublet-detection). "
++                "These will be automatically removed during filtering."
++            )
++        elif has_score:
++            n_doublets = int((adata.obs["doublet_score"] >= doublet_score_threshold).sum())
++            decision.require_confirmation(
++                f"`doublet_score` column detected — {n_doublets:,} cells score >= {doublet_score_threshold} "
++                f"and will be removed. The threshold is a judgment call: confirm {doublet_score_threshold} is acceptable, "
++                "or rerun with `--doublet-score-threshold <value>` to adjust. "
++                "(Pass `--no-remove-doublets` to skip doublet removal entirely.)"
++            )
++        else:
++            decision.add_guidance(
++                "No doublet columns found (`predicted_doublet` / `doublet_score`). "
++                "Doublet removal will be skipped. "
++                "Run `sc-doublet-detection` before `sc-filter` to enable automatic doublet removal."
++            )
++    else:
++        if has_predicted or has_score:
++            decision.add_guidance(
++                "Doublet removal is disabled (`--no-remove-doublets`). "
++                "Doublet labels are present but will NOT be used to filter cells."
++            )
++
+     return decision
+ 
+ 
+diff --git a/skills/singlecell/_lib/qc.py b/skills/singlecell/_lib/qc.py
+index 67c74de6..9ee3ece4 100644
+--- a/skills/singlecell/_lib/qc.py
++++ b/skills/singlecell/_lib/qc.py
+@@ -476,8 +476,16 @@ def apply_threshold_filtering(
+     max_mt_percent: Optional[float] = None,
+     min_cells: int = 3,
+     tissue: str | None = None,
++    filter_doublets: bool = True,
++    doublet_score_threshold: float = 0.25,
+ ) -> tuple[AnnData, dict[str, Any], dict[str, Any]]:
+-    """Apply cell and gene filtering with a reusable summary payload."""
++    """Apply cell and gene filtering with a reusable summary payload.
++
++    Doublet removal (``filter_doublets=True``) is applied automatically when
++    ``predicted_doublet`` or ``doublet_score`` columns are present in
++    ``adata.obs`` (written by sc-doublet-detection).  If neither column exists
++    the step is silently skipped — no error, no change in behaviour.
++    """
+     effective_params = {
+         "min_genes": min_genes,
+         "max_genes": max_genes,
+@@ -486,6 +494,8 @@ def apply_threshold_filtering(
+         "max_mt_percent": max_mt_percent,
+         "min_cells": min_cells,
+         "tissue": tissue,
++        "filter_doublets": filter_doublets,
++        "doublet_score_threshold": doublet_score_threshold,
+     }
+     if tissue:
+         thresholds = get_tissue_qc_thresholds(tissue)
+@@ -517,6 +527,27 @@ def apply_threshold_filtering(
+     if "outlier" in adata.obs.columns:
+         filter_stats["outliers_removed"] = int(adata.obs["outlier"].sum())
+ 
++    # --- Doublet removal (auto-detect upstream sc-doublet-detection output) ---
++    if filter_doublets:
++        has_predicted = "predicted_doublet" in filtered.obs.columns
++        has_score = "doublet_score" in filtered.obs.columns
++        if has_predicted:
++            dbl_mask = filtered.obs["predicted_doublet"].astype(bool)
++            n_doublets = int(dbl_mask.sum())
++            if n_doublets > 0:
++                filter_stats["doublets_removed"] = n_doublets
++                filtered = filtered[~dbl_mask, :].copy()
++                logger.info("Removed %d doublets (predicted_doublet column)", n_doublets)
++        elif has_score:
++            dbl_mask = filtered.obs["doublet_score"] >= doublet_score_threshold
++            n_doublets = int(dbl_mask.sum())
++            if n_doublets > 0:
++                filter_stats["doublets_removed"] = n_doublets
++                filtered = filtered[~dbl_mask, :].copy()
++                logger.info(
++                    "Removed %d doublets (doublet_score >= %.2f)", n_doublets, doublet_score_threshold
++                )
++
+     filtered = filter_genes(filtered, min_cells=effective_params["min_cells"], inplace=True)
+     summary = summarize_filter_statistics(adata, filtered, filter_stats=filter_stats)
+     return filtered, summary, effective_params
+diff --git a/skills/singlecell/scrna/sc-filter/SKILL.md b/skills/singlecell/scrna/sc-filter/SKILL.md
+index 566e3bf5..d3be0264 100644
+--- a/skills/singlecell/scrna/sc-filter/SKILL.md
++++ b/skills/singlecell/scrna/sc-filter/SKILL.md
+@@ -185,7 +185,7 @@ The current wrapper writes a standard recipe-driven gallery:
+ 
+ - Explain the effective thresholds before running, especially when `--tissue` presets are used.
+ - Treat tissue presets as wrapper heuristics rather than universal biology rules.
+-- This skill filters cells and genes only; it does not normalize, cluster, or remove doublets automatically.
++- **Doublet removal is automatic** when `predicted_doublet` or `doublet_score` columns (written by `sc-doublet-detection`) are present in `adata.obs`. Pass `--no-remove-doublets` to disable. Use `--doublet-score-threshold` (default 0.25) to tune the score cutoff when only `doublet_score` is available.
+ - For short execution guardrails, see `knowledge_base/knowhows/KH-sc-filter-guardrails.md`.
+ - For longer method and interpretation guidance, see `knowledge_base/skill-guides/singlecell/sc-filter.md`.
+ 
+@@ -209,6 +209,8 @@ The current wrapper writes a standard recipe-driven gallery:
+ | `--max-mt-percent` | float | `20.0` | Maximum mitochondrial percentage per cell | Must be in [0, 100] |
+ | `--min-cells` | int | `3` | Minimum cells expressing a retained gene | Must be >= 0 |
+ | `--tissue` | enum | none | OmicsClaw tissue preset: `pbmc`, `brain`, `tumor`, `heart`, `kidney`, `liver`, `lung` | — |
++| `--no-remove-doublets` | flag | off | Disable automatic doublet removal (doublets are removed by default when `predicted_doublet` / `doublet_score` columns are present) | — |
++| `--doublet-score-threshold` | float | `0.25` | Score cutoff when only `doublet_score` is available (requires upstream `sc-doublet-detection`) | Must be in [0, 1] |
+ | `--r-enhanced` | flag | `false` | Generate R Enhanced figures via ggplot2 renderers | — |
+ 
+ ## R Enhanced Plots
+diff --git a/skills/singlecell/scrna/sc-filter/sc_filter.py b/skills/singlecell/scrna/sc-filter/sc_filter.py
+index 8f37fe2e..f783ba52 100644
+--- a/skills/singlecell/scrna/sc-filter/sc_filter.py
++++ b/skills/singlecell/scrna/sc-filter/sc_filter.py
+@@ -146,6 +146,8 @@ def build_public_params(args) -> dict:
+         "max_mt_percent": args.max_mt_percent,
+         "min_cells": args.min_cells,
+         "tissue": args.tissue,
++        "remove_doublets": args.remove_doublets,
++        "doublet_score_threshold": args.doublet_score_threshold,
+     }
+ 
+ 
+@@ -201,6 +203,7 @@ def _prepare_filter_gallery_context(adata_before, adata_after, summary: dict, pa
+         "max_counts_removed": "Above max counts",
+         "mt_removed": "Above MT threshold",
+         "outliers_removed": "Existing outlier flag",
++        "doublets_removed": "Doublet (sc-doublet-detection)",
+     }
+     reason_df = pd.DataFrame(
+         [
+@@ -448,6 +451,18 @@ def write_filter_report(output_dir: Path, summary: dict, params: dict, input_fil
+     if params.get('max_mt_percent'):
+         body_lines.append(f"- **Max MT%**: {params['max_mt_percent']}%")
+     body_lines.append(f"- **Min cells per gene**: {params['min_cells']}")
++    # Doublet removal status
++    doublets_removed = summary.get('filter_stats', {}).get('doublets_removed', 0)
++    if params.get('remove_doublets', True):
++        if doublets_removed > 0:
++            body_lines.append(f"- **Doublet removal**: enabled — removed {doublets_removed:,} doublets")
++        else:
++            body_lines.append(
++                "- **Doublet removal**: enabled — no doublet columns found "
++                "(run sc-doublet-detection upstream to activate)"
++            )
++    else:
++        body_lines.append("- **Doublet removal**: disabled (--no-remove-doublets)")
+ 
+     # Filter breakdown
+     body_lines.extend(["", "## Cells Removed By Filter\n"])
+@@ -463,11 +478,11 @@ def write_filter_report(output_dir: Path, summary: dict, params: dict, input_fil
+ 
+     retention = summary['cells_retained_pct']
+     if retention < 50:
+-        body_lines.append("⚠️ **Warning**: Low retention rate (< 50%). Check QC thresholds and data quality.")
++        body_lines.append("[!] **Warning**: Low retention rate (< 50%). Check QC thresholds and data quality.")
+     elif retention < 70:
+         body_lines.append("⚡ **Note**: Moderate retention rate (50-70%). Review filtering parameters.")
+     else:
+-        body_lines.append("✅ Good retention rate (> 70%).")
++        body_lines.append("[ok] Good retention rate (> 70%).")
+ 
+     body_lines.extend([
+         "",
+@@ -548,6 +563,13 @@ def main():
+     parser.add_argument("--tissue", type=str, default=None,
+                         choices=["pbmc", "brain", "tumor", "heart", "kidney", "liver", "lung"],
+                         help="Use tissue-specific thresholds")
++    parser.add_argument("--no-remove-doublets", dest="remove_doublets", action="store_false",
++                        default=True,
++                        help="Disable automatic doublet removal (doublets are removed by default when "
++                             "predicted_doublet / doublet_score columns from sc-doublet-detection are present)")
++    parser.add_argument("--doublet-score-threshold", type=float, default=0.25,
++                        help="Score cutoff used when only doublet_score (not predicted_doublet) is available "
++                             "(default: 0.25)")
+     parser.add_argument("--r-enhanced", action="store_true", default=False,
+                         help="Generate R-enhanced figures via ggplot2 renderers")
+     args = parser.parse_args()
+@@ -593,6 +615,8 @@ def main():
+             min_genes=args.min_genes,
+             max_genes=args.max_genes,
+             min_cells=args.min_cells,
++            remove_doublets=args.remove_doublets,
++            doublet_score_threshold=args.doublet_score_threshold,
+             source_path=input_file,
+         ),
+         logger,
+@@ -621,7 +645,7 @@ def main():
+         )
+     if not had_qc_metrics:
+         print()
+-        print("ℹ No QC metrics found. Computing automatically.")
++        print("[i] No QC metrics found. Computing automatically.")
+         print("  Tip: Run sc-qc first for detailed QC visualization.")
+         print()
+     working_adata = sc_qc_utils.ensure_qc_metrics(working_adata, species=species, inplace=True)
+@@ -637,6 +661,8 @@ def main():
+         max_mt_percent=args.max_mt_percent,
+         min_cells=args.min_cells,
+         tissue=args.tissue,
++        filter_doublets=args.remove_doublets,
++        doublet_score_threshold=args.doublet_score_threshold,
+     )
+     summary["workflow"] = "threshold_filtering"
+     summary["qc_metrics_reused"] = bool(had_qc_metrics)
+@@ -720,14 +746,14 @@ def main():
+     print(f"\n{'='*60}")
+     print(f"Success: {SKILL_NAME} v{SKILL_VERSION}")
+     print(f"{'='*60}")
+-    print(f"  Cells: {summary['n_cells_before']:,} → {summary['n_cells_after']:,} ({summary['cells_retained_pct']}%)")
+-    print(f"  Genes: {summary['n_genes_before']:,} → {summary['n_genes_after']:,} ({summary['genes_retained_pct']}%)")
++    print(f"  Cells: {summary['n_cells_before']:,} -> {summary['n_cells_after']:,} ({summary['cells_retained_pct']}%)")
++    print(f"  Genes: {summary['n_genes_before']:,} -> {summary['n_genes_after']:,} ({summary['genes_retained_pct']}%)")
+     print(f"  Output: {output_dir}")
+     print()
+-    print("▶ Next step: Run sc-preprocessing for normalization, HVG selection, and PCA")
++    print(">> Next step: Run sc-preprocessing for normalization, HVG selection, and PCA")
+     print(f"  python omicsclaw.py run sc-preprocessing --input {output_h5ad} --output <dir>")
+     print()
+-    print("ℹ Optional: Run sc-doublet-detection or sc-ambient-removal before preprocessing")
++    print("[i] Optional: Run sc-doublet-detection or sc-ambient-removal before preprocessing")
+ 
+ 
+ if __name__ == "__main__":
+diff --git a/skills/singlecell/scrna/sc-preprocessing/SKILL.md b/skills/singlecell/scrna/sc-preprocessing/SKILL.md
+index 045b4531..649b7722 100644
+--- a/skills/singlecell/scrna/sc-preprocessing/SKILL.md
++++ b/skills/singlecell/scrna/sc-preprocessing/SKILL.md
+@@ -147,7 +147,7 @@ This skill does not:
+ After this skill:
+ - if batch/sample effects are expected: run `sc-batch-integration`
+ - otherwise: run `sc-clustering`
+-- if doublets are a concern, run `sc-doublet-detection` before interpreting downstream results
++- **doublet removal**: `sc-preprocessing` removes doublets automatically during filtering when `predicted_doublet` or `doublet_score` columns (from `sc-doublet-detection`) are present. Pass `--no-remove-doublets` to opt out. Run `sc-doublet-detection` → `sc-preprocessing` to activate.
+ 
+ ## Output Contract
+ 
+@@ -189,6 +189,8 @@ Successful runs write:
+ | `--seurat-scale-factor` | float | `10000.0` | Seurat scale factor (seurat only) | — |
+ | `--seurat-hvg-method` | enum | `vst` | Seurat HVG method: `vst`, `mvp`, `disp` (seurat only) | — |
+ | `--sctransform-regress-mt` / `--no-sctransform-regress-mt` | bool | `true` | Regress out mitochondrial percentage in SCTransform (sctransform only) | — |
++| `--no-remove-doublets` | flag | off | Disable automatic doublet removal (active when `predicted_doublet` / `doublet_score` columns from `sc-doublet-detection` are present) | — |
++| `--doublet-score-threshold` | float | `0.25` | Score cutoff when only `doublet_score` is available | Must be in [0, 1] |
+ | `--r-enhanced` | flag | `false` | Generate R Enhanced figures via ggplot2 renderers | — |
+ 
+ ## R Enhanced Plots
+diff --git a/skills/singlecell/scrna/sc-preprocessing/sc_preprocess.py b/skills/singlecell/scrna/sc-preprocessing/sc_preprocess.py
+index 94e8e812..ddb70d51 100644
+--- a/skills/singlecell/scrna/sc-preprocessing/sc_preprocess.py
++++ b/skills/singlecell/scrna/sc-preprocessing/sc_preprocess.py
+@@ -91,6 +91,8 @@
+     "max_mt_pct",
+     "n_top_hvg",
+     "n_pcs",
++    "remove_doublets",
++    "doublet_score_threshold",
+ )
+ METHOD_SPECIFIC_PARAM_KEYS: dict[str, tuple[str, ...]] = {
+     "scanpy": ("normalization_target_sum", "scanpy_hvg_flavor"),
+@@ -108,6 +110,8 @@
+         "n_pcs": 50,
+         "scanpy_hvg_flavor": "seurat",
+         "normalization_target_sum": 10000.0,
++        "remove_doublets": True,
++        "doublet_score_threshold": 0.25,
+     },
+     "seurat": {
+         "method": "seurat",
+@@ -119,6 +123,8 @@
+         "seurat_normalize_method": "LogNormalize",
+         "seurat_scale_factor": 10000.0,
+         "seurat_hvg_method": "vst",
++        "remove_doublets": True,
++        "doublet_score_threshold": 0.25,
+     },
+     "sctransform": {
+         "method": "sctransform",
+@@ -128,6 +134,8 @@
+         "n_top_hvg": 3000,
+         "n_pcs": 50,
+         "sctransform_regress_mt": True,
++        "remove_doublets": True,
++        "doublet_score_threshold": 0.25,
+     },
+     "pearson_residuals": {
+         "method": "pearson_residuals",
+@@ -138,6 +146,8 @@
+         "n_pcs": 50,
+         "pearson_hvg_flavor": "seurat_v3",
+         "pearson_theta": 100.0,
++        "remove_doublets": True,
++        "doublet_score_threshold": 0.25,
+     },
+ }
+ 
+@@ -498,6 +508,8 @@ def prepare_preprocessing_input(
+         min_genes=int(effective_params["min_genes"]),
+         min_cells=int(effective_params["min_cells"]),
+         max_mt_percent=float(effective_params["max_mt_pct"]),
++        filter_doublets=bool(effective_params.get("remove_doublets", True)),
++        doublet_score_threshold=float(effective_params.get("doublet_score_threshold", 0.25)),
+     )
+     filter_summary["qc_metrics_reused"] = bool(had_qc_metrics)
+     filter_summary["input_preparation"] = {
+@@ -745,6 +757,9 @@ def write_report(
+         },
+     )
+ 
++    doublets_removed = summary.get("filter_stats", {}).get("doublets_removed", 0)
++    remove_doublets = effective_params.get("remove_doublets", True)
++
+     body_lines = [
+         "## Summary\n",
+         f"- **Method**: {summary['method']}",
+@@ -754,6 +769,18 @@ def write_report(
+         f"- **Genes before filter**: {summary.get('n_genes_before_filter', summary['n_genes'])}",
+         f"- **HVGs selected**: {summary['n_hvg']}",
+         f"- **QC metrics reused**: {summary.get('qc_metrics_reused', False)}",
++    ]
++    if remove_doublets:
++        if doublets_removed > 0:
++            body_lines.append(f"- **Doublets removed**: {doublets_removed:,} (sc-doublet-detection)")
++        else:
++            body_lines.append(
++                "- **Doublet removal**: enabled — no doublet columns found "
++                "(run sc-doublet-detection before sc-preprocessing to activate)"
++            )
++    else:
++        body_lines.append("- **Doublet removal**: disabled (--no-remove-doublets)")
++    body_lines.extend([
+         "",
+         "## Default Gallery\n",
+         "- `figures/manifest.json` records the standard Python gallery.",
+@@ -765,7 +792,7 @@ def write_report(
+         f"- `counts layer`: {context.get('matrix_contract', {}).get('layers', {}).get('counts')}",
+         "",
+         "## Effective Parameters\n",
+-    ]
++    ])
+     for key, value in effective_params.items():
+         body_lines.append(f"- `{key}`: {value}")
+ 
+@@ -981,6 +1008,12 @@ def main():
+     parser.add_argument("--seurat-scale-factor", type=float, default=None)
+     parser.add_argument("--seurat-hvg-method", choices=["vst", "mvp", "disp"], default=None)
+     parser.add_argument("--sctransform-regress-mt", action=argparse.BooleanOptionalAction, default=None)
++    parser.add_argument("--no-remove-doublets", dest="remove_doublets", action="store_false",
++                        default=True,
++                        help="Disable automatic doublet removal (active when predicted_doublet / doublet_score "
++                             "columns from sc-doublet-detection are present)")
++    parser.add_argument("--doublet-score-threshold", type=float, default=None,
++                        help="Score cutoff for doublet removal when only doublet_score is available (default: 0.25)")
+     parser.add_argument("--r-enhanced", action="store_true", default=False, help="Generate R-enhanced figures via ggplot2 renderers")
+     args = parser.parse_args()
+ 
+@@ -1120,10 +1153,10 @@ def main():
+     print(f"  Output: {output_dir}")
+     print(f"Preprocessing complete: {summary['n_cells']} cells, {summary['n_hvg']} HVGs, PCA ready")
+     print()
+-    print("▶ Next step:")
+-    print("  - Multiple batches? → sc-batch-integration")
++    print(">> Next step:")
++    print("  - Multiple batches? -> sc-batch-integration")
+     print(f"    python omicsclaw.py run sc-batch-integration --input {output_h5ad} --output <dir>")
+-    print("  - Single batch? → sc-clustering")
++    print("  - Single batch? -> sc-clustering")
+     print(f"    python omicsclaw.py run sc-clustering --input {output_h5ad} --output <dir>")
+ 
+ 

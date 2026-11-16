@@ -1,0 +1,338 @@
+diff --git a/muon/_core/file_backing.py b/muon/_core/file_backing.py
+new file mode 100644
+index 00000000..7c430aca
+--- /dev/null
++++ b/muon/_core/file_backing.py
+@@ -0,0 +1,69 @@
++from os import PathLike
++from os.path import abspath
++from typing import Optional
++from collections import defaultdict
++
++import anndata as ad
++import h5py
++
++
++class MuDataFileManager(ad._core.file_backing.AnnDataFileManager):
++    _h5files = {}
++
++    def __init__(
++        self,
++        adata: ad.AnnData,
++        mod: str,
++        file: Optional[h5py.File] = None,
++        filename: Optional[PathLike] = None,
++        filemode: Optional[ad.compat.Literal["r", "r+"]] = None,
++    ):
++        path = abspath(file.filename)
++
++        if file is not None:
++            filename = file.filename
++            filemode = file.mode
++
++        self._mod = mod
++
++        if path not in self._h5files:
++            self._h5files[path] = [file, 0]
++        self.__file = self._h5files[path]
++        super().__init__(adata, abspath(filename), filemode)
++
++    def open(
++        self,
++        filename: Optional[PathLike] = None,
++        filemode: Optional[ad.compat.Literal["r", "r+"]] = None,
++    ):
++        if filename is not None:
++            self._filename = abspath(filename)
++        if filemode is not None:
++            self._filemode = filemode
++        if self._filename is None:
++            raise ValueError("Cannot open backing file if backing not initialized")
++
++        if self.__file[0] is None or not self.__file[0].id:
++            self.__file[0] = h5py.File(self._filename, self._filemode)
++            self.__file[1] = 1
++        else:
++            self.__file[1] += 1
++        self._file = self.__file[0]['mod'][self._mod]
++
++    def close(self):
++        self.__file[1] -= 1
++        if self.__file[1] == 0:
++            self.__file[0].close()
++            self.__file[0] = None
++
++    def _to_memory_mode(self):
++        self._adata.__X = self._adata.X[()]
++        self.file.close()
++        self._filename = None
++
++    @property
++    def is_open(self) -> bool:
++        if self.__file[0] is None or self.__file[1] == 0:
++            return False
++        else:
++            return bool(self.__file[0].id)
+diff --git a/muon/_core/io.py b/muon/_core/io.py
+index af3eb27d..0fe2013e 100644
+--- a/muon/_core/io.py
++++ b/muon/_core/io.py
+@@ -1,19 +1,23 @@
+ from typing import Union
+ from pathlib import Path
+ import os
++from os.path import basename
+ 
+ import numpy as np
++import h5py
+ import anndata as ad
+ from anndata import AnnData
+ from pathlib import Path
+ import scanpy as sc
++
+ from .mudata import MuData
++from .file_backing import MuDataFileManager
+ 
+ from .._atac.tools import add_peak_annotation, locate_fragments, add_peak_annotation_gene_names
+ 
+-# 
++#
+ # Reading data
+-# 
++#
+ 
+ def read_10x_h5(filename: Union[str, Path],
+ 				extended: bool = True,
+@@ -21,7 +25,7 @@ def read_10x_h5(filename: Union[str, Path],
+ 	"""
+ 	Read data from 10X Genomics-formatted HDF5 file
+ 
+-	This function uses scanpy.read_10x_h5() internally 
++	This function uses scanpy.read_10x_h5() internally
+ 	and patches its behaviour to:
+ 	- attempt to read `interval` field for features;
+ 	- attempt to locate peak annotation file and add peak annotation;
+@@ -48,14 +52,6 @@ def read_10x_h5(filename: Union[str, Path],
+ 	if extended:
+ 
+ 		# 1) Read interval field from the HDF5 file
+-
+-		try:
+-			import h5py
+-		except ImportError:
+-			raise ImportError(
+-				"h5py is not available. Install h5py from PyPI (`pip install pypi`) or from GitHub (`pip install git+https://github.com/h5py/h5py`)"
+-				)
+-
+ 		h5file = h5py.File(filename, 'r')
+ 
+ 		if 'interval' in h5file["matrix"]["features"]:
+@@ -75,7 +71,7 @@ def read_10x_h5(filename: Union[str, Path],
+ 
+ 	if extended:
+ 		if 'atac' in mdata.mod:
+-		
++
+ 			# 2) Add peak annotation
+ 
+ 			default_annotation = os.path.join(os.path.dirname(filename), "atac_peak_annotation.tsv")
+@@ -99,9 +95,9 @@ def read_10x_h5(filename: Union[str, Path],
+ 	return mdata
+ 
+ 
+-# 
+-# Saving multimodal data objects 
+-# 
++#
++# Saving multimodal data objects
++#
+ 
+ def write_h5mu(filename: Union[str, Path],
+ 			   mdata: MuData,
+@@ -114,15 +110,6 @@ def write_h5mu(filename: Union[str, Path],
+ 
+ 	Ideally this is merged later to anndata._io.h5ad.write_h5ad.
+ 	"""
+-	
+-	try:
+-		import h5py
+-	except ImportError:
+-		raise ImportError(
+-			"h5py is not available but is required to write .h5mu files. Install h5py from PyPI (`pip install h5py`) \
+-			or from GitHub (`pip install git+https://github.com/h5py/h5py`)"
+-			)
+-
+ 	from anndata._io.utils import write_attribute
+ 	from anndata._io.h5ad import write_h5ad
+ 
+@@ -144,7 +131,7 @@ def write_h5mu(filename: Union[str, Path],
+ 
+ 			write_attribute(f, f"mod/{k}/X", adata.X)
+ 			write_attribute(f, f"mod/{k}/raw", adata.raw)
+-  
++
+ 			write_attribute(f, f"mod/{k}/obs", adata.obs)
+ 			write_attribute(f, f"mod/{k}/var", adata.var)
+ 			write_attribute(f, f"mod/{k}/obsm", adata.obsm)
+@@ -166,15 +153,6 @@ def write_h5ad(filename: Union[str, Path],
+ 
+ 	Ideally this is merged later to anndata._io.h5ad.write_h5ad.
+ 	"""
+-	
+-	try:
+-		import h5py
+-	except ImportError:
+-		raise ImportError(
+-			"h5py is not available but is required to write .h5mu files. Install h5py from PyPI (`pip install h5py`) \
+-			or from GitHub (`pip install git+https://github.com/h5py/h5py`)"
+-			)
+-
+ 	from anndata._io.utils import write_attribute
+ 	from anndata._io.h5ad import write_h5ad
+ 
+@@ -200,7 +178,7 @@ def write_h5ad(filename: Union[str, Path],
+ 		adata.strings_to_categoricals()
+ 		if adata.raw is not None:
+ 			adata.strings_to_categoricals(adata.raw.var)
+-		
++
+ 		filepath = Path(filename)
+ 
+ 		if not (adata.isbacked and Path(adata.filename) == Path(filepath)):
+@@ -270,21 +248,15 @@ def write(filename: Union[str, Path],
+ 		else:
+ 			raise ValueError()
+ 
+-# 
++#
+ # Reading from multimodal data objects
+-# 
++#
+ 
+-def read_h5mu(filename: Union[str, Path]):
++def read_h5mu(filename: Union[str, Path], backed: Union[str, bool, None] = None):
+ 	"""
+ 	Read MuData object from HDF5 file
+ 	"""
+-	try:
+-		import h5py
+-	except ImportError:
+-		raise ImportError(
+-			"h5py is not available but is required to read .h5mu files. Install h5py from PyPI (`pip install h5py`) \
+-			or from GitHub (`pip install git+https://github.com/h5py/h5py`)"
+-			)
++	assert backed in [None, True, False, "r", "r+"], "Argument `backed` should be boolean, or r/r+, or None"
+ 
+ 	from anndata._io.utils import read_attribute
+ 	from anndata._io.h5ad import read_dataframe
+@@ -294,18 +266,48 @@ def read_h5mu(filename: Union[str, Path]):
+ 		for k in f.keys():
+ 			if k in ["obs", "var"]:
+ 				d[k] = read_dataframe(f[k])
++			elif backed and k == "mod":
++				mods = {}
++				gmods = f[k]
++				for m in gmods.keys():
++					mods[m] = read_h5mu_mod_backed(gmods[m])
++				d[k] = mods
+ 			else:
+ 				d[k] = read_attribute(f[k])
+ 
+ 	return MuData._init_from_dict_(**d)
+ 
++def read_h5mu_mod_backed(g: "h5py.Group") -> dict:
++	from anndata._io.utils import read_attribute
++	from anndata._io.h5ad import read_dataframe, _clean_uns
++
++	d = {}
++
++	for k in g.keys():
++		if k in ("obs", "var"):
++			d[k] = read_dataframe(g[k])
++		elif k == "X":
++			X = g["X"]
++			if isinstance(X, h5py.Group):
++				dtype = X["data"].dtype
++			elif hasattr(X, "dtype"):
++				dtype = X.dtype
++			else:
++				raise ValueError()
++			d["dtype"] = dtype
++		else:
++			d[k] = read_attribute(g[k])
++	ad = AnnData(**d)
++	ad.file = MuDataFileManager(ad, basename(g.name), g.file)
++	return ad
++
+ def read_h5ad(
+ 	filename: Union[str, Path],
+ 	mod: str,
+ 	backed: Union[str, bool, None] = None,
+ 	) -> AnnData:
+ 	"""
+-	Read AnnData object from inside a .h5mu file 
++	Read AnnData object from inside a .h5mu file
+ 	or from a standalone .h5ad file
+ 
+ 	Currently replicates and modifies anndata._io.h5ad.read_h5ad.
+@@ -313,14 +315,6 @@ def read_h5ad(
+ 
+ 	Ideally this is merged later to anndata._io.h5ad.read_h5ad.
+ 	"""
+-	try:
+-		import h5py
+-	except ImportError:
+-		raise ImportError(
+-			"h5py is not available but is required to read .h5mu files. Install h5py from PyPI (`pip install h5py`) \
+-			or from GitHub (`pip install git+https://github.com/h5py/h5py`)"
+-			)
+-
+ 	assert backed in [None, True, False, "r", "r+"], "Argument `backed` should be boolean, or r/r+, or None"
+ 
+ 	from anndata._io.utils import read_attribute
+@@ -365,7 +359,7 @@ def read_h5ad(
+ 
+ def read(filename: Union[str, Path]) -> Union[MuData, AnnData]:
+ 	"""
+-	Read MuData object from HDF5 file 
++	Read MuData object from HDF5 file
+ 	or AnnData object (a single modality) inside it
+ 
+ 	This function is designed to enhance I/O ease of use.
+@@ -375,14 +369,6 @@ def read(filename: Union[str, Path]) -> Union[MuData, AnnData]:
+ 	  - FILE.h5mu/mod/MODALITY
+ 	  - FILE.h5ad
+ 	"""
+-	try:
+-		import h5py
+-	except ImportError:
+-		raise ImportError(
+-			"h5py is not available but is required to read .h5mu files. Install h5py from PyPI (`pip install h5py`) \
+-			or from GitHub (`pip install git+https://github.com/h5py/h5py`)"
+-			)
+-
+ 	import re
+ 
+ 	m = re.search("^(.+)\.(h5mu)[/]?([A-Za-z]*)[/]?([/A-Za-z]*)$", filename)
+diff --git a/muon/_core/mudata.py b/muon/_core/mudata.py
+index dd23bc61..89d6d6ac 100644
+--- a/muon/_core/mudata.py
++++ b/muon/_core/mudata.py
+@@ -119,7 +119,7 @@ def __init__(self,
+ 
+     @classmethod
+     def _init_from_dict_(cls,
+-        mod: Optional[Mapping[str, Mapping]] = None,
++        mod: Optional[Mapping[str, Union[Mapping, AnnData]]] = None,
+         obs: Optional[Union[pd.DataFrame, Mapping[str, Iterable[Any]]]] = None,
+         var: Optional[Union[pd.DataFrame, Mapping[str, Iterable[Any]]]] = None,
+         uns: Optional[Mapping[str, Any]] = None,
+@@ -129,7 +129,7 @@ def _init_from_dict_(cls,
+         varp: Optional[Union[np.ndarray, Mapping[str, Sequence[Any]]]] = None,
+         ):
+ 
+-        return cls(data = {k:AnnData(**v) for k, v in mod.items()},
++        return cls(data = {k:(v if isinstance(v, AnnData) else AnnData(**v)) for k, v in mod.items()},
+                    obs=obs,
+                    var=var,
+                    uns=uns,

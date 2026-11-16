@@ -1,0 +1,85 @@
+diff --git a/opt/scopeserver/dataserver/modules/gserver/GServer.py b/opt/scopeserver/dataserver/modules/gserver/GServer.py
+index 069c9d94..ae532875 100644
+--- a/opt/scopeserver/dataserver/modules/gserver/GServer.py
++++ b/opt/scopeserver/dataserver/modules/gserver/GServer.py
+@@ -476,15 +476,20 @@ def getCellIDs(self, request, context):
+         return s_pb2.CellIDsReply(cellIds=slctd_cell_ids)
+ 
+     def deleteUserFile(self, request, context):
++        self.dfh.update_UUID_db()
++        success = False
+         basename = os.path.basename(request.filePath)
+         finalPath = os.path.join(self.dfh.get_data_dirs()[request.fileType]['path'], request.UUID, basename)
+-        if os.path.isfile(finalPath) and (basename.endswith('.loom') or basename.endswith('.txt')):
+-            logger.info(f'File {request.filePath} deleted at request of user with UUID {request.UUID}.')
+-            os.remove(finalPath)
+-            success = True
++        if self.dfh.current_UUIDs[request.UUID][1] == 'rw':
++            if os.path.isfile(finalPath) and (basename.endswith('.loom') or basename.endswith('.txt')):
++                logger.info(f'File {request.filePath} deleted at request of user with UUID {request.UUID}.')
++                try:
++                    os.remove(finalPath)
++                    success = True
++                except:
++                    logger.error(f'OS Error, couldn\'t remove file: {finalPath}')
+         else:
+-            success = False
+-
++            logger.error(f'UUID: {request.UUID} is read-only, but requested to delete file {finalPath}')
+         return s_pb2.DeleteUserFileReply(deletedSuccessfully=success)
+ 
+     def downloadSubLoom(self, request, context):
+diff --git a/opt/scopeserver/dataserver/modules/pserver/PServer.py b/opt/scopeserver/dataserver/modules/pserver/PServer.py
+index 95ef74de..24a01b77 100644
+--- a/opt/scopeserver/dataserver/modules/pserver/PServer.py
++++ b/opt/scopeserver/dataserver/modules/pserver/PServer.py
+@@ -132,7 +132,7 @@ class HTTPUploadHandler(httpserver.BaseHTTPRequestHandler):
+ 
+     # Overwrite log_message from BaseHTTPRequestHandler to keep style of SCope
+     def log_message(self, format, *args):
+-        logger.debug(' '.join([*args]))
++        logger.debug(' '.join([str(x) for x in [*args]]))
+     "The guts of Droopy-a custom handler that accepts files & serves templates"
+ 
+     @property
+@@ -201,7 +201,7 @@ def choose_language(self):
+     @check_auth
+     def do_GET(self):
+         "Standard method to override in this Server object."
+-        self.directory = dfh.DataFileHandler.get_data_dir_path_by_file_type(file_type='Loom')
++        dfh.get_data_dir_path_by_file_type(file_type='Loom')
+ 
+         name = self.path.lstrip('/')
+         logger.debug(name)
+@@ -250,8 +250,10 @@ def do_POST(self):
+                                   headers=self.headers,
+                                   environ={'REQUEST_METHOD': self.command})
+ 
++        data_file_handler = dfh.DataFileHandler()
++
+         if 'loomFilePath' in form.keys():
+-            self.directory = dfh.DataFileHandler.get_data_dir_path_by_file_type(file_type=form.getvalue('file-type'))
++            self.directory = data_file_handler.get_data_dir_path_by_file_type(file_type=form.getvalue('file-type'))
+             localpath = _encode_str_if_py2(os.path.join(self.directory, form.getvalue('loomFilePath')), "utf-8")
+             with open(localpath, 'rb') as f:
+                 self.send_resp_headers(200,
+@@ -261,10 +263,16 @@ def do_POST(self):
+                                        end=True)
+                 shutil.copyfileobj(f, self.wfile)
+         else:
+-            if form.getvalue('file-type') in dfh.DataFileHandler.get_data_dirs().keys():
+-                self.directory = dfh.DataFileHandler.get_data_dir_path_by_file_type(file_type=form.getvalue('file-type'), UUID=form.getvalue('UUID'))
++            if form.getvalue('file-type') in data_file_handler.get_data_dirs().keys():
++                self.directory = data_file_handler.get_data_dir_path_by_file_type(file_type=form.getvalue('file-type'), UUID=form.getvalue('UUID'))
+             else:
+-                self.send_error(415, "Unsupported file tyype")
++                self.send_error(415, "Unsupported file type")
++                return None
++            data_file_handler.update_UUID_db()
++            if data_file_handler.current_UUIDs[form.getvalue('UUID')][1] == 'ro':
++                self.send_error(403, 'Session is read-only')
++                return None
++
+             # Update the directory of DroopyFieldStorage
+             form.directory = self.directory
+             logger.info("Saving uploaded file in {0}".format(self.directory))

@@ -1,0 +1,435 @@
+diff --git a/bot/skill_orchestration.py b/bot/skill_orchestration.py
+index 1190a812..d229c34e 100644
+--- a/bot/skill_orchestration.py
++++ b/bot/skill_orchestration.py
+@@ -542,10 +542,9 @@ def _run() -> dict:
+ def _lookup_skill_info(skill_key: str, force_reload: bool = False) -> dict:
+     skill_registry = registry
+     if force_reload:
+-        skill_registry._loaded = False
+-        skill_registry.skills.clear()
+-        skill_registry.lazy_skills.clear()
+-    skill_registry.load_all()
++        skill_registry.reload()
++    else:
++        skill_registry.load_all()
+ 
+     info = skill_registry.skills.get(skill_key)
+     if info:
+diff --git a/omicsclaw.py b/omicsclaw.py
+index a15b46a0..1db64662 100644
+--- a/omicsclaw.py
++++ b/omicsclaw.py
+@@ -93,10 +93,7 @@ def _configure_stdio_error_handling(*streams: Any) -> None:
+     resolve_skill_alias,
+     run_skill,
+ )
+-from omicsclaw.core.registry import registry
+-registry.load_all()
+-SKILLS = registry.skills
+-DOMAINS = registry.domains
++from omicsclaw.core.registry import ensure_registry_loaded, registry
+ 
+ SPATIAL_PIPELINE = [
+     "spatial-preprocess",
+@@ -312,7 +309,7 @@ def _handle_auth_command(args) -> None:
+ 
+ 
+ def list_skills(domain_filter: str | None = None) -> dict:
+-    """按 Domain 分组打印所有可用技能，并返回 SKILLS 字典。"""
++    """按 Domain 分组打印所有可用技能，并返回 skills 字典。"""
+     print(f"\n{BOLD}OmicsClaw Skills{RESET}")
+     if domain_filter:
+         print(f"{BOLD}{'=' * 60}{RESET}")
+@@ -320,17 +317,20 @@ def list_skills(domain_filter: str | None = None) -> dict:
+     else:
+         print(f"{BOLD}{'=' * 60}{RESET}\n")
+ 
++    skills = ensure_registry_loaded().skills
++    domains = registry.domains
++
+     # 1. 按 domain 分组构建索引（跳过 legacy alias 条目，避免重复显示）
+     domain_skills: dict[str, list[tuple[str, dict]]] = {}
+-    for alias, info in SKILLS.items():
++    for alias, info in skills.items():
+         # Legacy aliases point to the same dict but under a different key; skip them.
+         if alias != info.get("alias", alias):
+             continue
+         d = info.get("domain", "other")
+         domain_skills.setdefault(d, []).append((alias, info))
+ 
+-    # 2. 按 DOMAINS 中定义的顺序依次输出
+-    for domain_key, domain_info in DOMAINS.items():
++    # 2. 按 domain 中定义的顺序依次输出
++    for domain_key, domain_info in domains.items():
+         if domain_filter and domain_key != domain_filter:
+             continue
+         skills_in_domain = domain_skills.get(domain_key, [])
+@@ -361,9 +361,9 @@ def list_skills(domain_filter: str | None = None) -> dict:
+ 
+         print()
+ 
+-    # 3. 展示未在 DOMAINS 中注册的动态发现技能
+-    known_domains = set(DOMAINS.keys())
+-    extra = [(a, i) for a, i in SKILLS.items() if i.get("domain", "other") not in known_domains]
++    # 3. 展示未在 domain 列表中注册的动态发现技能
++    known_domains = set(domains.keys())
++    extra = [(a, i) for a, i in skills.items() if i.get("domain", "other") not in known_domains]
+     if extra:
+         print(f"{BOLD}{YELLOW}[Other (Dynamically Discovered)]{RESET}")
+         print(f"   {'-' * 54}")
+@@ -374,9 +374,9 @@ def list_skills(domain_filter: str | None = None) -> dict:
+             print(f"   {CYAN}{alias:<18}{RESET} [{status}] {desc}")
+         print()
+ 
+-    total = sum(1 for a, i in SKILLS.items() if a == i.get("alias", a))
+-    print(f"{BOLD}Total: {total} skills across {len(DOMAINS)} domains{RESET}\n")
+-    return SKILLS
++    total = sum(1 for a, i in skills.items() if a == i.get("alias", a))
++    print(f"{BOLD}Total: {total} skills across {len(domains)} domains{RESET}\n")
++    return skills
+ 
+ 
+ # ---------------------------------------------------------------------------
+@@ -916,7 +916,7 @@ def main():
+             # or fall back to <renderer>.png
+             # We need the filename — import the skill module lazily to get R_ENHANCED_PLOTS
+             filename = f"{renderer}.png"
+-            skill_info = SKILLS.get(skill_alias)
++            skill_info = ensure_registry_loaded().skills.get(skill_alias)
+             if skill_info:
+                 script_path = skill_info.get("script")
+                 if script_path and Path(script_path).exists():
+diff --git a/omicsclaw/core/skill_runner.py b/omicsclaw/core/skill_runner.py
+index 446a71d4..cc87f437 100644
+--- a/omicsclaw/core/skill_runner.py
++++ b/omicsclaw/core/skill_runner.py
+@@ -25,7 +25,7 @@
+     load_result_json,
+     write_output_readme,
+ )
+-from omicsclaw.core.registry import registry
++from omicsclaw.core.registry import ensure_registry_loaded, registry
+ from omicsclaw.core.skill_result import build_skill_run_result
+ 
+ 
+@@ -36,10 +36,6 @@
+ if str(OMICSCLAW_DIR) not in sys.path:
+     sys.path.insert(0, str(OMICSCLAW_DIR))
+ 
+-registry.load_all()
+-SKILLS = registry.skills
+-DOMAINS = registry.domains
+-
+ _COLOUR = hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
+ BOLD = "\033[1m" if _COLOUR else ""
+ GREEN = "\033[32m" if _COLOUR else ""
+@@ -64,17 +60,18 @@ def _get_write_analysis_notebook():
+ 
+ def resolve_skill_alias(skill_name: str) -> str:
+     """Resolve a user-facing skill name or legacy alias to its canonical alias."""
+-    if skill_name in SKILLS:
+-        return SKILLS[skill_name].get("alias", skill_name)
++    skills = ensure_registry_loaded().skills
++    if skill_name in skills:
++        return skills[skill_name].get("alias", skill_name)
+ 
+-    for skill_key, skill_info in SKILLS.items():
++    for skill_key, skill_info in skills.items():
+         legacy_aliases = skill_info.get("legacy_aliases", [])
+         if skill_name in legacy_aliases:
+             return skill_key
+ 
+     if ":" in skill_name:
+         _domain, skill = skill_name.split(":", 1)
+-        if skill in SKILLS:
++        if skill in skills:
+             return skill
+ 
+     return skill_name
+@@ -280,9 +277,10 @@ def run_skill(
+             session_path=session_path,
+         )
+ 
+-    skill_info = SKILLS.get(skill_name)
++    skills = ensure_registry_loaded().skills
++    skill_info = skills.get(skill_name)
+     if skill_info is None:
+-        return _err(skill_name, f"Unknown skill '{skill_name}'. Available: {list(SKILLS.keys())}")
++        return _err(skill_name, f"Unknown skill '{skill_name}'. Available: {list(skills.keys())}")
+ 
+     script_path: Path = skill_info["script"]
+     if not script_path.exists():
+@@ -328,7 +326,7 @@ def run_skill(
+     cmd.extend(["--output", str(out_dir)])
+ 
+     domain = skill_info.get("domain", "unknown")
+-    domain_display = DOMAINS.get(domain, {}).get("name", domain.title())
++    domain_display = registry.domains.get(domain, {}).get("name", domain.title())
+     if demo:
+         mode_str = f"{CYAN}demo mode{RESET}"
+     elif resolved_input_paths:
+diff --git a/omicsclaw/execution/executors/default.py b/omicsclaw/execution/executors/default.py
+index 3e07e82b..51cabbb8 100644
+--- a/omicsclaw/execution/executors/default.py
++++ b/omicsclaw/execution/executors/default.py
+@@ -23,6 +23,7 @@
+ from __future__ import annotations
+ 
+ import asyncio
++import json
+ import sys
+ import threading
+ from pathlib import Path
+diff --git a/tests/test_execution_default_executor.py b/tests/test_execution_default_executor.py
+index f99dd777..af1fbb98 100644
+--- a/tests/test_execution_default_executor.py
++++ b/tests/test_execution_default_executor.py
+@@ -118,6 +118,28 @@ def test_default_command_factory_ignores_none_param_values(tmp_path: Path) -> No
+     assert argv[argv.index("--threshold") + 1] == "0.5"
+ 
+ 
++def test_default_command_factory_serialises_list_and_dict_params(tmp_path: Path) -> None:
++    """Non-scalar params (list/dict) must round-trip through ``json.dumps`` —
++    pre-fix the helper called ``json.dumps`` without importing ``json`` and
++    raised ``NameError`` whenever an LLM forwarded a list-typed argument like
++    ``--resolutions [0.4, 0.6, 0.8]``."""
++    import json as _json
++
++    ctx = _make_ctx(
++        tmp_path=tmp_path,
++        params={
++            "resolutions": [0.4, 0.6, 0.8],
++            "labels": {"control": "ctrl", "treatment": "trt"},
++        },
++    )
++    argv = default_command_factory(ctx)
++
++    assert "--resolutions" in argv
++    assert _json.loads(argv[argv.index("--resolutions") + 1]) == [0.4, 0.6, 0.8]
++    assert "--labels" in argv
++    assert _json.loads(argv[argv.index("--labels") + 1]) == {"control": "ctrl", "treatment": "trt"}
++
++
+ def test_build_default_executor_returns_skill_runner_executor() -> None:
+     executor = build_default_executor()
+     assert isinstance(executor, SkillRunnerExecutor)
+diff --git a/tests/test_output_ux.py b/tests/test_output_ux.py
+index 34123122..80b8970d 100644
+--- a/tests/test_output_ux.py
++++ b/tests/test_output_ux.py
+@@ -91,9 +91,12 @@ def test_run_skill_generates_readme_and_human_readable_dir(monkeypatch, tmp_path
+     fake_script.write_text("print('fake')\n", encoding="utf-8")
+ 
+     monkeypatch.setattr(skill_runner, "DEFAULT_OUTPUT_ROOT", tmp_path)
++
++    from omicsclaw.core.registry import SKILLS_DIR, registry
++
+     monkeypatch.setattr(
+-        skill_runner,
+-        "SKILLS",
++        registry,
++        "skills",
+         {
+             "fake-skill": {
+                 "script": fake_script,
+@@ -103,8 +106,11 @@ def test_run_skill_generates_readme_and_human_readable_dir(monkeypatch, tmp_path
+                 "description": "Synthetic test skill",
+             }
+         },
++        raising=False,
+     )
+-    monkeypatch.setattr(skill_runner, "DOMAINS", {"demo": {"name": "Demo"}})
++    monkeypatch.setattr(registry, "domains", {"demo": {"name": "Demo"}}, raising=False)
++    monkeypatch.setattr(registry, "_loaded", True, raising=False)
++    monkeypatch.setattr(registry, "_loaded_dir", SKILLS_DIR.resolve(), raising=False)
+ 
+     import io
+ 
+diff --git a/tests/test_registry.py b/tests/test_registry.py
+index e8d97f59..25a3c9b1 100644
+--- a/tests/test_registry.py
++++ b/tests/test_registry.py
+@@ -84,3 +84,82 @@ def test_registry_loads_top_level_literature_skill():
+     assert ("literature", registry.skills["literature"]) in registry.iter_primary_skills()
+     assert registry.domains["literature"]["skill_count"] == 1
+     assert len(registry.iter_primary_skills()) == 89
++
++
++def test_skill_runner_sees_registry_invalidate_after_load():
++    """``registry.invalidate()`` must affect subsequent reads by the runner.
++
++    Pre-fix ``omicsclaw.core.skill_runner`` cached ``SKILLS = registry.skills``
++    at module-import time, so calls to ``registry.invalidate()`` /
++    ``registry.reload()`` left the runner pointing at a stale dict and
++    operators saw "skill not found" errors that did not match the live
++    filesystem.
++    """
++    from omicsclaw.core import skill_runner
++
++    registry.load_all()
++    assert "spatial-preprocess" in registry.skills, "preconditions failed"
++
++    try:
++        registry.invalidate()
++        # After invalidate the live dict is empty and the runner must see it.
++        from omicsclaw.core.registry import ensure_registry_loaded as _ensure
++
++        # Re-bind the live view the runner reads from; the runner accesses
++        # ``ensure_registry_loaded().skills`` per call, not a frozen snapshot.
++        assert _ensure is not None
++        assert len(registry.skills) == 0
++        # ``resolve_skill_alias`` reads ``registry.skills`` lazily and will
++        # repopulate via ``ensure_registry_loaded`` — i.e. it must NOT raise
++        # KeyError because of a stale module-level snapshot.
++        resolved = skill_runner.resolve_skill_alias("spatial-preprocess")
++        assert resolved == "spatial-preprocess"
++        assert "spatial-preprocess" in registry.skills, (
++            "ensure_registry_loaded() should have repopulated the live registry"
++        )
++    finally:
++        registry.load_all()
++
++
++def test_registry_reload_clears_stale_entries_for_runner():
++    """``registry.reload()`` must let the runner pick up filesystem changes
++    rather than continuing to return entries from a stale dict snapshot.
++    """
++    from omicsclaw.core import skill_runner
++    from omicsclaw.core.registry import ensure_registry_loaded
++
++    registry.load_all()
++    assert "spatial-preprocess" in registry.skills
++
++    # Simulate the SKILL.md / parameters.yaml edit lifecycle: inject a fake
++    # entry, then call reload() and verify that both the registry AND the
++    # runner observe the rebuilt dict (i.e. the fake entry is gone).
++    registry.skills["__stale_only__"] = {
++        "alias": "__stale_only__",
++        "domain": "demo",
++        "script": Path("/does/not/exist"),
++        "demo_args": [],
++        "description": "synthetic stale entry",
++        "trigger_keywords": [],
++        "allowed_extra_flags": set(),
++        "legacy_aliases": [],
++        "saves_h5ad": False,
++        "requires_preprocessed": False,
++        "param_hints": {},
++    }
++    try:
++        # Before reload, the entry is observable.
++        assert "__stale_only__" in registry.skills
++
++        registry.reload()
++
++        # After reload, both the registry and the runner's live read must
++        # show the rebuilt state, NOT the stale snapshot.
++        assert "__stale_only__" not in registry.skills
++        assert "__stale_only__" not in ensure_registry_loaded().skills
++        # And the runner's resolver does not fall through to the stale dict.
++        assert skill_runner.resolve_skill_alias("__stale_only__") == "__stale_only__"
++        assert "spatial-preprocess" in registry.skills, "real skills came back"
++    finally:
++        registry.skills.pop("__stale_only__", None)
++        registry.load_all()
+diff --git a/tests/test_skill_runner_contract.py b/tests/test_skill_runner_contract.py
+index 4eed1513..6950a9d8 100644
+--- a/tests/test_skill_runner_contract.py
++++ b/tests/test_skill_runner_contract.py
+@@ -10,6 +10,27 @@
+ from pathlib import Path
+ 
+ 
++def _install_fake_skills(monkeypatch, skills: dict, domains: dict | None = None) -> None:
++    """Inject fake skills/domains into the live registry for the duration of a test.
++
++    The runner no longer caches ``SKILLS`` / ``DOMAINS`` at module-import time
++    (so that ``registry.reload()`` actually takes effect for downstream
++    callers). Tests therefore patch ``registry.skills`` / ``registry.domains``
++    directly and freeze ``_loaded`` so that any internal
++    ``ensure_registry_loaded()`` calls become a no-op rather than rescanning
++    disk and clobbering the fake.
++    """
++    from omicsclaw.core.registry import SKILLS_DIR, registry
++
++    monkeypatch.setattr(registry, "skills", skills, raising=False)
++    monkeypatch.setattr(
++        registry, "domains", domains if domains is not None else {"demo": {"name": "Demo"}},
++        raising=False,
++    )
++    monkeypatch.setattr(registry, "_loaded", True, raising=False)
++    monkeypatch.setattr(registry, "_loaded_dir", SKILLS_DIR.resolve(), raising=False)
++
++
+ def test_skill_runner_module_exposes_run_skill_contract():
+     module = importlib.import_module("omicsclaw.core.skill_runner")
+ 
+@@ -64,7 +85,7 @@ def test_run_skill_streams_stdout_and_stderr_lines_via_callbacks(tmp_path, monke
+     """), encoding="utf-8")
+ 
+     monkeypatch.setattr(skill_runner, "DEFAULT_OUTPUT_ROOT", tmp_path)
+-    monkeypatch.setattr(skill_runner, "SKILLS", {
++    _install_fake_skills(monkeypatch, {
+         "fake-streamer": {
+             "script": fake_script,
+             "domain": "demo",
+@@ -73,7 +94,6 @@ def test_run_skill_streams_stdout_and_stderr_lines_via_callbacks(tmp_path, monke
+             "description": "Streaming test skill",
+         }
+     })
+-    monkeypatch.setattr(skill_runner, "DOMAINS", {"demo": {"name": "Demo"}})
+ 
+     stdout_lines: list[str] = []
+     stderr_lines: list[str] = []
+@@ -116,7 +136,7 @@ def test_run_skill_callback_exception_does_not_break_run(tmp_path, monkeypatch):
+     """), encoding="utf-8")
+ 
+     monkeypatch.setattr(skill_runner, "DEFAULT_OUTPUT_ROOT", tmp_path)
+-    monkeypatch.setattr(skill_runner, "SKILLS", {
++    _install_fake_skills(monkeypatch, {
+         "fake-one-line": {
+             "script": fake_script,
+             "domain": "demo",
+@@ -125,7 +145,6 @@ def test_run_skill_callback_exception_does_not_break_run(tmp_path, monkeypatch):
+             "description": "One-line test skill",
+         }
+     })
+-    monkeypatch.setattr(skill_runner, "DOMAINS", {"demo": {"name": "Demo"}})
+ 
+     def boom(_line: str) -> None:
+         raise RuntimeError("callback exploded")
+@@ -163,7 +182,7 @@ def test_run_skill_cancel_event_kills_long_running_subprocess(tmp_path, monkeypa
+     """), encoding="utf-8")
+ 
+     monkeypatch.setattr(skill_runner, "DEFAULT_OUTPUT_ROOT", tmp_path)
+-    monkeypatch.setattr(skill_runner, "SKILLS", {
++    _install_fake_skills(monkeypatch, {
+         "fake-long": {
+             "script": fake_script,
+             "domain": "demo",
+@@ -172,7 +191,6 @@ def test_run_skill_cancel_event_kills_long_running_subprocess(tmp_path, monkeypa
+             "description": "Long-running test skill",
+         }
+     })
+-    monkeypatch.setattr(skill_runner, "DOMAINS", {"demo": {"name": "Demo"}})
+ 
+     cancel_event = threading.Event()
+ 
+@@ -239,7 +257,7 @@ def test_run_skill_cancellation_with_partial_result_json_is_not_reported_as_succ
+     """), encoding="utf-8")
+ 
+     monkeypatch.setattr(skill_runner, "DEFAULT_OUTPUT_ROOT", tmp_path)
+-    monkeypatch.setattr(skill_runner, "SKILLS", {
++    _install_fake_skills(monkeypatch, {
+         "fake-partial": {
+             "script": fake_script,
+             "domain": "demo",
+@@ -248,7 +266,6 @@ def test_run_skill_cancellation_with_partial_result_json_is_not_reported_as_succ
+             "description": "Partial-then-sleep test skill",
+         }
+     })
+-    monkeypatch.setattr(skill_runner, "DOMAINS", {"demo": {"name": "Demo"}})
+ 
+     cancel_event = threading.Event()
+ 

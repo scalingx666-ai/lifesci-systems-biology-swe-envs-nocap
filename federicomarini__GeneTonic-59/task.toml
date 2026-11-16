@@ -1,0 +1,69 @@
+version = "1.0"
+
+[task]
+name = "default/federicomarini__GeneTonic-59"
+description = "replacing all instances of aes_string with aes"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "GeneTonic",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "federicomarini/GeneTonic"
+ref = "3456d1bdae7627b5ccf1c6a4ee611e1bba56bf30"
+reference = "https://github.com/federicomarini/GeneTonic/pull/59"
+source_access = "auto"
+built_at = "2026-11-15T19:34:05.406597+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:b3c32497ffd8815f8f57a9e1ad6470ddb45e0d48024de2238afe7d4023d99353"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2024-02-16T22:10:38Z"
+diff_format = "unified"
+context_files = [
+    "R/enhance_table.R",
+    "R/gene_plot.R",
+    "R/gs_heatmap.R",
+    "R/gs_mds.R",
+    "R/gs_summaries.R",
+    "R/gs_upset.R",
+    "R/gs_volcano.R",
+    "R/signature_volcano.R",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 126
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

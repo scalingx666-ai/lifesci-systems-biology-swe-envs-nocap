@@ -1,0 +1,61 @@
+{
+  "slug": "systems-biology",
+  "title": "Systems Biology & Network Modeling",
+  "candidates": 203,
+  "clean": 78,
+  "final": 78,
+  "cap": "unlimited",
+  "min_star": 50,
+  "active_since": "2023-01-01",
+  "active_all": true,
+  "non_archived_all": true,
+  "star_buckets": {
+    "500-999": 4,
+    "200-499": 16,
+    "100-199": 22,
+    "50-99": 36
+  },
+  "top10": [
+    {
+      "repo": "aertslab/pySCENIC",
+      "stars": 650
+    },
+    {
+      "repo": "opencobra/cobrapy",
+      "stars": 599
+    },
+    {
+      "repo": "oncologylab/craftgrn",
+      "stars": 581
+    },
+    {
+      "repo": "aertslab/SCENIC",
+      "stars": 503
+    },
+    {
+      "repo": "prathyvsh/formal-systems-in-biology",
+      "stars": 497
+    },
+    {
+      "repo": "smorabit/hdWGCNA",
+      "stars": 496
+    },
+    {
+      "repo": "bioFAM/MOFA2",
+      "stars": 431
+    },
+    {
+      "repo": "cailab-tamu/scTenifoldKnk",
+      "stars": 311
+    },
+    {
+      "repo": "opencobra/cobratoolbox",
+      "stars": 294
+    },
+    {
+      "repo": "ICB-DCM/pyPESTO",
+      "stars": 282
+    }
+  ],
+  "build": "expansion"
+}

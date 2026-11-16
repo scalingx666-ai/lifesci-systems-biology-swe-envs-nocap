@@ -1,0 +1,69 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-68"
+description = "Fix scRNA bugs and optimize R Enhanced rendering"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "0bf05925a7b0822c22b346eee70beefa3fbb2bcc"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/68"
+source_access = "auto"
+built_at = "2026-11-15T18:18:20.644386+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:e314df23d6ad9f38b4fba3da063a97ca463ed638dfabc5189ad61d2d80a77ffe"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-04-11T11:22:29Z"
+diff_format = "unified"
+context_files = [
+    "omicsclaw/r_scripts/sc_gsea_r.R",
+    "omicsclaw/r_scripts/sc_gsva_r.R",
+    "skills/singlecell/_lib/differential_abundance.py",
+    "skills/singlecell/_lib/viz/r/common.R",
+    "skills/singlecell/_lib/viz/r/communication.R",
+    "skills/singlecell/scrna/sc-enrichment/sc_enrichment.py",
+    "skills/singlecell/scrna/sc-gene-programs/sc_gene_programs.py",
+    "skills/singlecell/scrna/sc-metacell/sc_metacell.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 84
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

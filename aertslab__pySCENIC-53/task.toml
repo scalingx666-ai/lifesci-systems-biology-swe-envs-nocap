@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/aertslab__pySCENIC-53"
+description = "Added new Singularity file incorporating version tags."
+
+[metadata]
+difficulty = "small"
+category = "bugfix"
+keywords = [
+    "pySCENIC",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aertslab/pySCENIC"
+ref = "c5e7ef149ab07a38b86c2c8f3db944117fc87c37"
+reference = "https://github.com/aertslab/pySCENIC/pull/53"
+source_access = "auto"
+built_at = "2026-11-15T11:06:03.138215+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:c718acfb89d3da2c47fc8d20a218b22336215be61d8269473a7cb642b3b3f9af"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2019-02-25T13:36:27Z"
+diff_format = "unified"
+context_files = [
+    "Singularity.0.9.5",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 10
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

@@ -1,0 +1,497 @@
+diff --git a/sccellfie/__init__.py b/sccellfie/__init__.py
+index 7fc6b83..7daa223 100644
+--- a/sccellfie/__init__.py
++++ b/sccellfie/__init__.py
+@@ -16,4 +16,4 @@
+ from .reaction_activity import (compute_reaction_activity)
+ from .sccellfie_pipeline import (run_sccellfie_pipeline)
+ 
+-__version__ = "0.6.0"
+\ No newline at end of file
++__version__ = "0.6.1"
+\ No newline at end of file
+diff --git a/sccellfie/expression/aggregation.py b/sccellfie/expression/aggregation.py
+index 0969c79..484f9f6 100644
+--- a/sccellfie/expression/aggregation.py
++++ b/sccellfie/expression/aggregation.py
+@@ -4,7 +4,7 @@
+ 
+ 
+ def agg_expression_cells(adata, groupby, layer=None, gene_symbols=None, agg_func='mean', top_percent=10,
+-                         exclude_zeros=False, use_raw=False, threshold=None):
++                         exclude_zeros=False, use_raw=False, threshold=None, dtype=None, chunk_size=None):
+     """
+     Aggregates gene expression data for specified cell groups in an `AnnData` object.
+ 
+@@ -29,7 +29,7 @@ def agg_expression_cells(adata, groupby, layer=None, gene_symbols=None, agg_func
+         The aggregation function to apply. Options are 'mean', 'median',
+         '25p' (25th percentile), '75p' (75th percentile), 'trimean' (0.5*Q2 + 0.25(Q1+Q3)),
+         'topmean' (computed among the top `top_percent`% of values), and
+-        'fraction_above' (fraction of cells above threshold)
++        'fraction_above' (fraction of cells above threshold).
+         The function must be one of the keys in the `AGG_FUNC` dictionary.
+ 
+     top_percent : float, optional (default: 10)
+@@ -46,6 +46,18 @@ def agg_expression_cells(adata, groupby, layer=None, gene_symbols=None, agg_func
+         Expression threshold used when agg_func is 'fraction_above'. Represents the
+         minimum expression value for a cell to be considered as expressing the gene.
+ 
++    dtype : numpy dtype, optional (default: None)
++        If provided (e.g. np.float32), dense group blocks are cast to this dtype
++        before aggregation to reduce memory. If None, the source dtype is kept.
++
++    chunk_size : int or None, optional (default: None)
++        Number of genes to densify at a time when aggregating, to bound peak
++        memory. Only affects aggregations that require densification (`median`,
++        `25p`, `75p`, `trimean`, `topmean`, and any dense input); the sparse
++        `mean` / `fraction_above` fast paths are already streamed. Results are
++        unchanged — chunking over genes keeps every cell for each gene, so
++        percentiles stay exact. `None` densifies each group in one block.
++
+     Returns
+     -------
+     agg_expression : pandas.DataFrame
+@@ -57,6 +69,8 @@ def agg_expression_cells(adata, groupby, layer=None, gene_symbols=None, agg_func
+     ------
+     AssertionError
+         If the provided `agg_func` is not a valid key in `AGG_FUNC`.
++    ValueError
++        If `agg_func` is 'fraction_above' and no `threshold` is provided.
+ 
+     Notes
+     -----
+@@ -67,59 +81,118 @@ def agg_expression_cells(adata, groupby, layer=None, gene_symbols=None, agg_func
+     The function relies on the `groupby` parameter in `adata.obs` to define the
+     groups of cells for which the expression data will be aggregated.
+     """
+-    # Check if agg_func is fraction_above and threshold is provided
++    # Validate agg_func / threshold combination up front
+     if agg_func == 'fraction_above' and threshold is None:
+         raise ValueError("Must provide threshold when using 'fraction_above' aggregation")
+ 
+     assert agg_func in AGG_FUNC.keys(), "Specify a valid `agg_func`."
+ 
+-    # Select the appropriate data layer
++    # --- Select the appropriate data source (kept sparse if it is sparse) ---
+     if layer is not None:
+         X = adata.layers[layer]
++        var_names = adata.var_names
++    elif use_raw:
++        X = adata.raw.X
++        # raw has its own var_names, which may differ from adata.var_names
++        var_names = adata.raw.var_names
+     else:
+-        if use_raw:
+-            X = adata.raw.X
+-        else:
+-            X = adata.X
+-
+-    if issparse(X):
+-        X = X.toarray()
++        X = adata.X
++        var_names = adata.var_names
+ 
+-    if exclude_zeros:
+-        X = np.where(X==0, np.nan, X)
+-
+-    # Filter for specific genes if provided
++    # --- Subset genes BEFORE densifying so we only ever materialize needed columns ---
+     if gene_symbols is not None:
+         if isinstance(gene_symbols, str):
+             gene_symbols = [gene_symbols]
+-        gene_mask = adata.var_names.isin(gene_symbols)
+-        X = X[:, gene_mask]
+-        gene_index = adata.var_names[gene_mask]
++        gene_mask = var_names.isin(gene_symbols)
++        X = X[:, gene_mask]              # sparse column slice stays sparse & cheap
++        gene_index = var_names[gene_mask]
+     else:
+-        gene_index = adata.var_names
++        gene_index = var_names
+ 
+-    # Group data by the specified groupby column
+     grouped = adata.obs[groupby]
+     agg_expression = pd.DataFrame(index=gene_index)
+ 
+-    # Perform aggregation for each group
+-    for group in sorted(np.unique(grouped)):
+-        group_mask = grouped == group
++    sparse_input = issparse(X)
++
++    # --- Aggregate group by group; only densify what we must ---
++    for group in sorted(grouped.unique()):
++        group_mask = (grouped == group).values
+         group_data = X[group_mask, :]
+ 
+-        if agg_func == 'topmean':
+-            agg_expression[group] = AGG_FUNC[agg_func](group_data, axis=0, percent=top_percent)
+-        elif agg_func == 'fraction_above':
+-            agg_expression[group] = AGG_FUNC[agg_func](group_data, axis=0, threshold=threshold)
+-        else:
+-            agg_expression[group] = AGG_FUNC[agg_func](group_data, axis=0)
++        # ---- Sparse fast paths (no densification) ----
++        if sparse_input and issparse(group_data):
++            if agg_func == 'mean' and not exclude_zeros:
++                # Mean over all cells, including implicit zeros
++                agg_expression[group] = np.asarray(group_data.mean(axis=0)).ravel()
++                continue
++
++            if agg_func == 'mean' and exclude_zeros:
++                # Mean over nonzero entries only = column_sum / column_nnz
++                col_sum = np.asarray(group_data.sum(axis=0)).ravel()
++                col_nnz = group_data.getnnz(axis=0)
++                with np.errstate(invalid='ignore', divide='ignore'):
++                    result = np.where(col_nnz > 0, col_sum / col_nnz, np.nan)
++                agg_expression[group] = result
++                continue
++
++            if agg_func == 'fraction_above' and threshold >= 0:
++                # For threshold >= 0, only stored nonzeros can exceed it, so we can
++                # count directly on the sparse matrix without densifying.
++                n_cells = group_data.shape[0]
++                if n_cells == 0:
++                    agg_expression[group] = np.full(group_data.shape[1], np.nan)
++                else:
++                    above = np.asarray((group_data > threshold).sum(axis=0)).ravel()
++                    agg_expression[group] = above / n_cells
++                continue
++
++        # ---- Fallback: densify this group, optionally one gene-window at a time ----
++        n_cells, n_genes = group_data.shape
++
++        if n_cells == 0:
++            agg_expression[group] = np.full(n_genes, np.nan)
++            continue
++
++        # Chunk over GENES (never cells) so every cell is seen per gene and
++        # percentile/order-statistic results stay exact.
++        gene_window = min(chunk_size, n_genes) if chunk_size is not None else n_genes
++
++        col_result = np.empty(n_genes, dtype=float)
++        for g_start in range(0, n_genes, gene_window):
++            g_end = min(g_start + gene_window, n_genes)
++            block = group_data[:, g_start:g_end]
++
++            if issparse(block):
++                block = block.toarray()
++            else:
++                block = np.asarray(block)
++
++            if dtype is not None:
++                block = block.astype(dtype, copy=False)
++
++            if exclude_zeros:
++                # np.where forces float; do it on the gene-window block only
++                block = np.where(block == 0, np.nan, block)
++
++            if agg_func == 'topmean':
++                col_result[g_start:g_end] = AGG_FUNC[agg_func](block, axis=0, percent=top_percent)
++            elif agg_func == 'fraction_above':
++                col_result[g_start:g_end] = AGG_FUNC[agg_func](block, axis=0, threshold=threshold)
++            else:
++                col_result[g_start:g_end] = AGG_FUNC[agg_func](block, axis=0)
++
++        agg_expression[group] = col_result
+ 
+     return agg_expression.transpose()
+ 
+ 
+ def top_mean(x, axis, percent=10):
+     """
+-    Computes the mean of the top x% values along the specified axis of a matrix, handling NaN values.
++    Computes the mean of the top x% values along the specified axis of a matrix,
++    handling NaN values.
++
++    Vectorized with np.partition instead of np.apply_along_axis for speed on wide
++    matrices.
+ 
+     Parameters
+     ----------
+@@ -131,39 +204,42 @@ def top_mean(x, axis, percent=10):
+ 
+     percent : float, (default: 10)
+         The percentage of top values to consider, ranging from 0 to 100.
+-        For example, 10 would compute the mean of the top 10% of values.
+ 
+     Returns
+     -------
+     numpy.ndarray
+         An array containing the mean of the top x% values for each row or column,
+-        depending on the specified axis. The shape of the output array will be
+-        (n_rows,) if axis=1, or (n_columns,) if axis=0.
++        depending on the specified axis.
+     """
++    x = np.asarray(x, dtype=float)
++
++    # Work along axis 0 internally; transpose if needed so columns are the groups.
++    if axis == 1:
++        x = x.T
++    elif axis != 0:
++        raise ValueError("axis must be 0 or 1")
++
++    n_rows, n_cols = x.shape
++    result = np.empty(n_cols, dtype=float)
++
++    for j in range(n_cols):
++        col = x[:, j]
++        non_nan = col[~np.isnan(col)]
++        if non_nan.size == 0:
++            result[j] = np.nan
++            continue
++        # Number of top elements to keep: relative to the full column length,
++        # matching the original implementation.
++        n = max(1, int(np.ceil(n_rows * percent / 100)))
++        n = min(n, non_nan.size)
++        # Partition so the largest n values sit at the end (unordered), then mean.
++        if n >= non_nan.size:
++            top_values = non_nan
++        else:
++            top_values = np.partition(non_nan, -n)[-n:]
++        result[j] = np.mean(top_values)
+ 
+-    def top_nanmean(arr, p):
+-        # Ensure the input is a numpy array
+-        arr = np.asarray(arr)
+-
+-        # Remove NaN values
+-        non_nan = arr[~np.isnan(arr)]
+-
+-        # If all values are NaN, return NaN
+-        if len(non_nan) == 0:
+-            return np.nan
+-
+-        # Calculate the number of elements to keep
+-        n = max(1, int(np.ceil(len(arr) * p / 100)))
+-
+-        # Sort non-NaN values and select top n
+-        sorted_arr = np.sort(non_nan)
+-        top_values = sorted_arr[-n:]
+-
+-        # Return the mean of the top values
+-        return np.mean(top_values)
+-
+-    # Apply the function along the specified axis
+-    return np.apply_along_axis(top_nanmean, axis, x, percent)
++    return result
+ 
+ 
+ def fraction_above_threshold(x, axis, threshold=0):
+diff --git a/sccellfie/expression/tests/test_aggregation.py b/sccellfie/expression/tests/test_aggregation.py
+index ff179b4..af28dda 100644
+--- a/sccellfie/expression/tests/test_aggregation.py
++++ b/sccellfie/expression/tests/test_aggregation.py
+@@ -251,6 +251,94 @@ def test_fraction_above_error():
+         agg_expression_cells(adata, groupby='group', agg_func='fraction_above')
+ 
+ 
++@pytest.mark.parametrize("agg_func", ['mean', 'median', '25p', '75p', 'trimean', 'topmean', 'fraction_above'])
++@pytest.mark.parametrize("sparse_input", [True, False])
++@pytest.mark.parametrize("exclude_zeros", [False, True])
++@pytest.mark.parametrize("chunk_size", [1, 3, 7, 10000])
++def test_chunk_size_matches_unchunked(agg_func, sparse_input, exclude_zeros, chunk_size):
++    """chunk_size (gene-window batching) must give results identical to the unchunked path."""
++    adata = create_random_adata(n_obs=100, n_vars=50)
++    groupby = 'group'
++    adata.obs[groupby] = ['group1' if i < adata.n_obs // 2 else 'group2' for i in range(adata.n_obs)]
++
++    if sparse_input:
++        adata.X = sparse.csr_matrix(adata.X)
++    else:
++        adata.X = np.asarray(adata.X.todense()) if sparse.issparse(adata.X) else np.asarray(adata.X)
++
++    kwargs = dict(agg_func=agg_func, exclude_zeros=exclude_zeros)
++    if agg_func == 'fraction_above':
++        kwargs['threshold'] = 0.5
++
++    ref = agg_expression_cells(adata, groupby, chunk_size=None, **kwargs)
++    chunked = agg_expression_cells(adata, groupby, chunk_size=chunk_size, **kwargs)
++
++    assert ref.shape == chunked.shape
++    assert list(ref.index) == list(chunked.index)
++    assert list(ref.columns) == list(chunked.columns)
++    np.testing.assert_allclose(ref.values, chunked.values, equal_nan=True)
++
++
++def test_chunk_size_gene_subset():
++    """chunk_size must still work correctly when genes are subset."""
++    adata = create_controlled_adata()
++    genes = ['gene1', 'gene3']
++
++    ref = agg_expression_cells(adata, 'group', gene_symbols=genes, agg_func='trimean', chunk_size=None)
++    chunked = agg_expression_cells(adata, 'group', gene_symbols=genes, agg_func='trimean', chunk_size=1)
++
++    assert list(ref.columns) == genes
++    np.testing.assert_allclose(ref.values, chunked.values, equal_nan=True)
++
++
++def _adata_with_empty_group():
++    """Controlled AnnData whose numeric group column has a NaN. `unique()` yields
++    that NaN as a 'group', but `grouped == nan` matches no rows, so it becomes an
++    empty (n_cells == 0) group."""
++    adata = create_controlled_adata()
++    adata.obs['gnum'] = np.array([0.0, 0.0, 1.0, np.nan])
++    return adata
++
++
++def test_agg_empty_group_sparse_fraction_above():
++    """Empty group via the sparse fraction_above fast path -> NaN column (line 143)."""
++    adata = _adata_with_empty_group()
++    assert sparse.issparse(adata.X)  # ensure the sparse fast path is exercised
++
++    result = agg_expression_cells(adata, 'gnum', agg_func='fraction_above', threshold=1)
++
++    # The NaN group has no cells -> all-NaN row; real groups are finite.
++    assert np.isnan(result.loc[np.nan].values).all()
++    assert np.isfinite(result.loc[0.0].values).all()
++
++
++def test_agg_empty_group_dense_fallback():
++    """Empty group via the densifying fallback (median) -> NaN column (lines 152-154)."""
++    adata = _adata_with_empty_group()
++
++    result = agg_expression_cells(adata, 'gnum', agg_func='median')
++
++    assert np.isnan(result.loc[np.nan].values).all()
++    assert np.isfinite(result.loc[0.0].values).all()
++
++
++def test_agg_dtype_cast():
++    """dtype casts the dense block before aggregating (line 171) without changing results."""
++    adata = create_controlled_adata()
++
++    ref = agg_expression_cells(adata, 'group', agg_func='trimean', dtype=None)
++    cast = agg_expression_cells(adata, 'group', agg_func='trimean', dtype=np.float32)
++
++    assert cast.shape == ref.shape
++    np.testing.assert_allclose(cast.values, ref.values, rtol=1e-6, equal_nan=True)
++
++
++def test_top_mean_invalid_axis():
++    """top_mean rejects axes other than 0 or 1 (line 220)."""
++    with pytest.raises(ValueError, match="axis must be 0 or 1"):
++        top_mean(np.ones((2, 2)), axis=2)
++
++
+ def test_fraction_above_threshold_function():
+     """Test the fraction_above_threshold helper function directly."""
+     test_data = np.array([[1, 5, 3],
+diff --git a/sccellfie/preprocessing/__init__.py b/sccellfie/preprocessing/__init__.py
+index d65b1f3..6fdf5c1 100644
+--- a/sccellfie/preprocessing/__init__.py
++++ b/sccellfie/preprocessing/__init__.py
+@@ -1,4 +1,4 @@
+-from .adata_utils import (get_adata_gene_expression, stratified_subsample_adata, normalize_adata, transform_adata_gene_names, transfer_variables)
++from .adata_utils import (get_adata_gene_expression, stratified_subsample_adata, fixed_number_subsample_adata, normalize_adata, transform_adata_gene_names, transfer_variables)
+ from .complexes import (add_complexes_to_adata, make_complex_name, prepare_var_pairs)
+ from .database_manipulation import (get_element_associations, add_new_task, combine_and_sort_dataframes, handle_duplicate_indexes)
+ from .gpr_rules import (clean_gene_names, find_genes_gpr, replace_gene_ids_in_gpr, convert_gpr_nomenclature)
+diff --git a/sccellfie/preprocessing/adata_utils.py b/sccellfie/preprocessing/adata_utils.py
+index c7b7298..5be1133 100644
+--- a/sccellfie/preprocessing/adata_utils.py
++++ b/sccellfie/preprocessing/adata_utils.py
+@@ -93,6 +93,53 @@ def stratified_subsample_adata(adata, group_column, target_fraction=0.20, random
+     return adata_subsampled
+ 
+ 
++def fixed_number_subsample_adata(adata, group_column, target_n=1000, random_state=0):
++    """
++    Subsample an AnnData object to a fixed number of cells per group.
++
++    Samples ``target_n`` cells from each group in ``adata.obs[group_column]``.
++    Groups with fewer than ``target_n`` cells are kept in full and a warning is
++    issued.
++
++    Parameters
++    ----------
++    adata : AnnData
++        Annotated data matrix.
++
++    group_column : str
++        Column name in adata.obs containing the group information.
++
++    target_n : int, optional (default: 1000)
++        Target number of cells to sample from each group. Groups smaller than
++        this are returned unchanged.
++
++    random_state : int, optional (default: 0)
++        Random seed for reproducibility.
++
++    Returns
++    -------
++    adata_subsampled : AnnData
++        Subsampled AnnData object.
++    """
++    def _sample_group(x):
++        n = len(x)
++        if n < target_n:
++            warnings.warn(
++                f"Group '{x.name}' has {n} cells (< target_n={target_n}); "
++                f"keeping all {n} cells."
++            )
++            return x
++        return x.sample(n=target_n, random_state=random_state)
++
++    indices_to_keep = (adata.obs
++                       .groupby(group_column)
++                       .apply(_sample_group)
++                       .index.get_level_values(1))
++
++    adata_subsampled = adata[indices_to_keep].copy()
++    return adata_subsampled
++
++
+ from scipy import sparse
+ from scipy.sparse import issparse, csr_matrix, hstack
+ 
+diff --git a/sccellfie/preprocessing/tests/test_adata_utils.py b/sccellfie/preprocessing/tests/test_adata_utils.py
+index 7c7eae5..615a8e5 100644
+--- a/sccellfie/preprocessing/tests/test_adata_utils.py
++++ b/sccellfie/preprocessing/tests/test_adata_utils.py
+@@ -7,7 +7,7 @@
+ from scipy.sparse import issparse, csr_matrix
+ from unittest.mock import patch
+ 
+-from sccellfie.preprocessing.adata_utils import get_adata_gene_expression, stratified_subsample_adata, normalize_adata, transform_adata_gene_names, transfer_variables
++from sccellfie.preprocessing.adata_utils import get_adata_gene_expression, stratified_subsample_adata, fixed_number_subsample_adata, normalize_adata, transform_adata_gene_names, transfer_variables
+ from sccellfie.datasets.toy_inputs import create_random_adata, create_controlled_adata
+ 
+ 
+@@ -40,6 +40,38 @@ def test_stratified_subsample_adata():
+         assert np.isclose(original_proportions[cluster], subsampled_proportions[cluster], atol=0.05)
+ 
+ 
++# Fixed-number subsampling tests
++def test_fixed_number_subsample_adata():
++    # Build an AnnData with deterministic, uneven group sizes:
++    # big1=300, big2=250, small=40
++    n_obs = 590
++    adata = create_random_adata(n_obs=n_obs, n_vars=50, n_clusters=1)
++    groups = ['big1'] * 300 + ['big2'] * 250 + ['small'] * 40
++    adata.obs['group'] = pd.Categorical(groups)
++
++    # target_n smaller than every group -> each group capped at exactly target_n
++    target_n = 30
++    subsampled = fixed_number_subsample_adata(adata, group_column='group', target_n=target_n)
++    counts = subsampled.obs['group'].value_counts()
++    assert set(counts.index) == {'big1', 'big2', 'small'}
++    assert (counts == target_n).all()
++
++    # target_n larger than the smallest group -> that group is kept in full (with a
++    # warning), larger groups are capped at target_n
++    target_n = 100
++    with pytest.warns(UserWarning, match="Group 'small' has 40 cells"):
++        subsampled = fixed_number_subsample_adata(adata, group_column='group', target_n=target_n)
++    counts = subsampled.obs['group'].value_counts()
++    assert counts['big1'] == target_n
++    assert counts['big2'] == target_n
++    assert counts['small'] == 40  # smaller than target_n, kept in full
++
++    # Reproducibility: same random_state -> same cells selected
++    sub_a = fixed_number_subsample_adata(adata, group_column='group', target_n=100, random_state=42)
++    sub_b = fixed_number_subsample_adata(adata, group_column='group', target_n=100, random_state=42)
++    assert list(sub_a.obs_names) == list(sub_b.obs_names)
++
++
+ # Normalization tests
+ def test_normalize_adata():
+     # Create controlled test data

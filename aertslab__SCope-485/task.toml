@@ -1,0 +1,63 @@
+version = "1.0"
+
+[task]
+name = "default/aertslab__SCope-485"
+description = "Disable pylint W1203"
+
+[metadata]
+difficulty = "easy"
+category = "bugfix"
+keywords = [
+    "SCope",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aertslab/SCope"
+ref = "232e0762b690e947e2ed75cd62b810145670475a"
+reference = "https://github.com/aertslab/SCope/pull/485"
+source_access = "auto"
+built_at = "2026-11-15T19:36:58.332006+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:206a5200a670ef81d7cd9b6894f43bdee07f98bd774e6b6ca54f29c85113abaf"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2021-08-06T08:28:01Z"
+diff_format = "unified"
+context_files = [
+    ".github/workflows/continuous-integration-server.yml",
+    "server/pyproject.toml",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 3
+difficulty = "trivial"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

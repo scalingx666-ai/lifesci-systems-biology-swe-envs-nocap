@@ -1,0 +1,34 @@
+diff --git a/README.rst b/README.rst
+index 32216f3..fb2759c 100644
+--- a/README.rst
++++ b/README.rst
+@@ -135,6 +135,7 @@ First we import the necessary modules and declare some constants:
+ .. code-block:: python
+ 
+     import os
++    import glob
+     import pandas as pd
+     import numpy as np
+ 
+@@ -222,7 +223,7 @@ for the co-expression module inference is used.
+ .. code-block:: python
+ 
+     N_SAMPLES = ex_matrix.shape[1] # Full dataset
+-    adjancencies = grnboost2(expression_data=ex_matrix.T.sample(n=N_SAMPLES, replace=False),
++    adjacencies = grnboost2(expression_data=ex_matrix.T.sample(n=N_SAMPLES, replace=False),
+                         tf_names=tf_names, verbose=True)
+ 
+ Derive potential regulons from these co-expression modules
+diff --git a/src/pyscenic/transform.py b/src/pyscenic/transform.py
+index e986c46..6ba1e45 100644
+--- a/src/pyscenic/transform.py
++++ b/src/pyscenic/transform.py
+@@ -228,7 +228,7 @@ def module2df(db: Type[RankingDatabase], module: Regulon, motif_annotations: pd.
+ 
+ 
+ def modules2df(db: Type[RankingDatabase], modules: Sequence[Regulon], motif_annotations: pd.DataFrame,
+-               weighted_recovery=False, module2features_func=module2features) -> pd.DataFrame:
++               weighted_recovery=False, return_recovery_curves=False, module2features_func=module2features) -> pd.DataFrame:
+     # Make sure return recovery curves is always set to false because the metadata for the distributed dataframe needs
+     # to be fixed for the dask framework.
+     #TODO: Remove this restriction.

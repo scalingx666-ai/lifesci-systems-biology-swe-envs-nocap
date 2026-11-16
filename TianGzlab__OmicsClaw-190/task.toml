@@ -1,0 +1,66 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-190"
+description = "refactor(executor): async-native SkillRunnerExecutor, drop asyncio.to_thread (OMI-12 audit P1 #4)"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "7c6ac38726815e19f988c7fb177229592d9130b6"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/190"
+source_access = "auto"
+built_at = "2026-11-15T18:16:54.073999+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:bad6b44b68be515aba343b247bc466711e3aea82590431e348028cdde77ada2b"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-05-12T14:20:31Z"
+diff_format = "unified"
+context_files = [
+    "omicsclaw/core/runtime/async_subprocess_driver.py",
+    "omicsclaw/core/skill_runner.py",
+    "omicsclaw/execution/executors/default.py",
+    "tests/test_async_subprocess_driver.py",
+    "tests/test_execution_default_executor.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 854
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

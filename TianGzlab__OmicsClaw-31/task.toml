@@ -1,0 +1,75 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-31"
+description = "refactor: consolidate orchestrators and clean up deprecated code"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "5b14a1cc12c935a3766d9f166e5175ff083f8b53"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/31"
+source_access = "auto"
+built_at = "2026-11-15T18:18:33.643174+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:aa1f1e0f0315f242b7120199ee3ae43dc7814bb0d924b7a76e5e9c15f7c2f862"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-03-31T10:52:32Z"
+diff_format = "unified"
+context_files = [
+    "README.md",
+    "docs/LLM_ROUTING_GUIDE.md",
+    "docs/architecture-analysis.md",
+    "omicsclaw.py",
+    "omicsclaw/core/registry.py",
+    "pyproject.toml",
+    "skills/genomics/orchestrator/genomics_orchestrator.py",
+    "skills/metabolomics/orchestrator/metabolomics_orchestrator.py",
+    "skills/proteomics/orchestrator/proteomics_orchestrator.py",
+    "skills/singlecell/scrna/orchestrator/sc_orchestrator.py",
+    "skills/spatial/orchestrator/SKILL.md",
+    "skills/spatial/orchestrator/spatial_orchestrator.py",
+    "skills/spatial/orchestrator/tests/test_spatial_orchestrator.py",
+    "tests/test_registry.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 1818
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__muon-147"
+description = "Fix `tfidf` using the wrong layer"
+
+[metadata]
+difficulty = "easy"
+category = "bugfix"
+keywords = [
+    "muon",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/muon"
+ref = "94917d23291f329a19b3c282276c960d414319ad"
+reference = "https://github.com/scverse/muon/pull/147"
+source_access = "auto"
+built_at = "2026-11-15T17:00:01.551604+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:07c1b88db2ffa20595efcbf8900f15951a562e37e28b847c07f6e6be2a618b1c"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2024-10-17T00:46:26Z"
+diff_format = "unified"
+context_files = [
+    "muon/_atac/preproc.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 4
+difficulty = "trivial"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

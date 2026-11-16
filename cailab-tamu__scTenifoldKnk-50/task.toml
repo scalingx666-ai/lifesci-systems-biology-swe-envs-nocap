@@ -1,0 +1,72 @@
+version = "1.0"
+
+[task]
+name = "default/cailab-tamu__scTenifoldKnk-50"
+description = "scTenifoldKnk 1.1.5: leave the knocked-out genes out of the dRegulation null"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "scTenifoldKnk",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "cailab-tamu/scTenifoldKnk"
+ref = "868355fef8150a959f8b474e15e382152ab06592"
+reference = "https://github.com/cailab-tamu/scTenifoldKnk/pull/50"
+source_access = "auto"
+built_at = "2026-11-15T16:51:44.788204+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:ede43bfe8353a57215306fb9b24f1d8e910bc0e78f831ff2636bfbb1f48c47fb"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-09-30T01:35:56Z"
+diff_format = "unified"
+context_files = [
+    "DESCRIPTION",
+    "R/dRegulation.R",
+    "R/scTenifoldKnk.R",
+    "README.md",
+    "inst/manuscript/DMD/Code/DMD_DataProcessing.R",
+    "inst/manuscript/DMD/Code/reproduce_GSM4116571.py",
+    "man/dRegulation.Rd",
+    "man/scTenifoldKnk.Rd",
+    "tests/testthat.R",
+    "tests/testthat/test-dRegulation.R",
+    "tests/testthat/test-scTenifoldKnk.R",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 354
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

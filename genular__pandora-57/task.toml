@@ -1,0 +1,63 @@
+version = "1.0"
+
+[task]
+name = "default/genular__pandora-57"
+description = "Bump minimist from 1.2.0 to 1.2.2"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "pandora",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "genular/pandora"
+ref = "90792dafd87d38fcdccbd55b92298facaffaa790"
+reference = "https://github.com/genular/pandora/pull/57"
+source_access = "auto"
+built_at = "2026-11-16T11:01:07.035847+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:c8fcaffccbcb0ecf330ab3f4ff6a05d510cac2124c46fcb0a4bd21d5eda5271f"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2020-03-16T08:28:22Z"
+diff_format = "unified"
+context_files = [
+    "package.json",
+    "yarn.lock",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 142
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

@@ -1,0 +1,40 @@
+diff --git a/.editorconfig b/.editorconfig
+new file mode 100644
+index 00000000..66e3d33c
+--- /dev/null
++++ b/.editorconfig
+@@ -0,0 +1,12 @@
++root = true
++
++[*]
++charset = utf-8
++end_of_line = lf
++insert_final_newline = true
++trim_trailing_whitespace = true
++max_line_length = 100
++
++[*.py]
++indent_size = 4
++indent_style = space
+diff --git a/muon/_atac/preproc.py b/muon/_atac/preproc.py
+index 7fea3b22..ffabd21f 100644
+--- a/muon/_atac/preproc.py
++++ b/muon/_atac/preproc.py
+@@ -45,7 +45,7 @@ def tfidf(
+     if log_tfidf and (log_tf or log_idf):
+         raise AttributeError(
+             "When returning log(TF*IDF), \
+-			applying neither log(TF) nor log(IDF) is possible."
++            applying neither log(TF) nor log(IDF) is possible."
+         )
+ 
+     if issparse(adata.X):
+@@ -134,7 +134,7 @@ def scopen(
+     except ImportError:
+         raise ImportError(
+             "scOpen is not available. Install scOpen from PyPI (`pip install scopen`) \
+-			or from GitHub (`pip install git+https://github.com/CostaLab/scopen`)"
++            or from GitHub (`pip install git+https://github.com/CostaLab/scopen`)"
+         )
+ 
+     start = time.time()

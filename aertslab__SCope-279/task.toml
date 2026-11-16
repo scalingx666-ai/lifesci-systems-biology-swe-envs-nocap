@@ -1,0 +1,68 @@
+version = "1.0"
+
+[task]
+name = "default/aertslab__SCope-279"
+description = "Add typescript type checking"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "SCope",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aertslab/SCope"
+ref = "5ec2ef7109870703db2e2b08f5857165e428bbe2"
+reference = "https://github.com/aertslab/SCope/pull/279"
+source_access = "auto"
+built_at = "2026-11-15T19:39:08.397370+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:207ebacff6a01d7b9d859c94343aa884ee720bc9c016d2c83c28f4b7c9841299"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2020-03-24T07:43:33Z"
+diff_format = "unified"
+context_files = [
+    ".babelrc",
+    ".gitignore",
+    "package.json",
+    "src/main.jsx",
+    "src/main.tsx",
+    "tsconfig.json",
+    "webpack.config.js",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 145
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

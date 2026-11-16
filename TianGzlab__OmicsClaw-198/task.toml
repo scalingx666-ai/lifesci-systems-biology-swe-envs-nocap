@@ -1,0 +1,65 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-198"
+description = "fix(app): surface preflight needs_user_input on desktop chat"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "0979ccfa11a1fc0cad7dad4ff6b69453259cc41e"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/198"
+source_access = "auto"
+built_at = "2026-11-15T18:16:44.914106+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:9dadc711bbaee92486a50c5af3a3406841cee201fd6dbf71a9167d16fb499f05"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-05-13T08:47:51Z"
+diff_format = "unified"
+context_files = [
+    "bot/agent_loop.py",
+    "omicsclaw/app/server.py",
+    "tests/bot/test_agent_loop.py",
+    "tests/test_app_server.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 389
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

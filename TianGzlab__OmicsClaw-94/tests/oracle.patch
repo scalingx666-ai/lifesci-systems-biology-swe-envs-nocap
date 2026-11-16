@@ -1,0 +1,56 @@
+diff --git a/omicsclaw/core/provider_registry.py b/omicsclaw/core/provider_registry.py
+index 4a460266..df329f10 100644
+--- a/omicsclaw/core/provider_registry.py
++++ b/omicsclaw/core/provider_registry.py
+@@ -72,7 +72,7 @@ class ProviderRegistryEntry(TypedDict):
+     ),
+     "dashscope": (
+         "https://dashscope.aliyuncs.com/compatible-mode/v1",
+-        "qwen-max",
++        "qwen3-max",
+         "DASHSCOPE_API_KEY",
+     ),
+     "moonshot": (
+@@ -160,10 +160,17 @@ class ProviderRegistryEntry(TypedDict):
+     },
+     "dashscope": {
+         "display_name": "DashScope",
+-        "description": "Alibaba Qwen 3 models",
+-        "description_zh": "阿里巴巴通义千问 Qwen3 模型",
++        "description": "Alibaba Qwen3 / Qwen3.6 models (Max, Plus, Coder, QwQ)",
++        "description_zh": "阿里巴巴通义千问 Qwen3 / Qwen3.6 系列（Max、Plus、Coder、QwQ）",
+         "tier": "aggregator",
+-        "models": ("qwen3-coder-plus", "qwen3-235b-a22b", "qwen-max", "qwq-plus"),
++        "models": (
++            "qwen3-max",
++            "qwen3.6-plus",
++            "qwen3-coder-plus",
++            "qwq-plus",
++            "qwen3.5-flash",
++            "qwen-turbo-latest",
++        ),
+     },
+     "moonshot": {
+         "display_name": "Moonshot",
+diff --git a/tests/test_provider_registry.py b/tests/test_provider_registry.py
+index 0eb69430..0495d42c 100644
+--- a/tests/test_provider_registry.py
++++ b/tests/test_provider_registry.py
+@@ -49,6 +49,17 @@ def test_detect_provider_from_env_uses_detection_order(monkeypatch):
+     assert detect_provider_from_env() == PROVIDER_DETECT_ORDER[0]
+ 
+ 
++def test_dashscope_preset_exposes_latest_qwen_models():
++    entries = build_provider_registry_entries()
++    dashscope = next(entry for entry in entries if entry["name"] == "dashscope")
++
++    assert dashscope["default_model"] == "qwen3-max"
++    assert dashscope["models"][0] == "qwen3-max"
++    assert "qwen3.6-plus" in dashscope["models"]
++    assert "qwen3-coder-plus" in dashscope["models"]
++    assert "qwen3-235b-a22b" not in dashscope["models"]
++
++
+ def test_resolve_provider_uses_provider_specific_defaults(monkeypatch):
+     monkeypatch.setenv("DEEPSEEK_API_KEY", "deepseek-key")
+     monkeypatch.setenv("DEEPSEEK_BASE_URL", "https://internal.deepseek.example/v1")

@@ -1,0 +1,677 @@
+diff --git a/bot/skill_orchestration.py b/bot/skill_orchestration.py
+index 312c138b..380ca7bb 100644
+--- a/bot/skill_orchestration.py
++++ b/bot/skill_orchestration.py
+@@ -139,6 +139,12 @@ def _format_auto_route_banner(decision) -> str:
+     strip_user_guidance_lines,
+ )
+ from omicsclaw.core.registry import registry
++from omicsclaw.runtime.skill_chain import (
++    normalize_extra_args as _normalize_extra_args,
++    run_omics_skill_step,
++    run_skill_via_shared_runner as _run_skill_via_shared_runner,
++)
++from omicsclaw.runtime.skill_lookup import lookup_skill_info
+ 
+ logger = logging.getLogger("omicsclaw.bot.skill_orchestration")
+ 
+@@ -396,167 +402,20 @@ def _format_next_steps(result_data: dict) -> str:
+ # ---------------------------------------------------------------------------
+ 
+ 
+-def _normalize_extra_args(extra_args) -> list[str]:
+-    if not extra_args or not isinstance(extra_args, list):
+-        return []
+-    filtered = []
+-    skip_next = False
+-    for arg in extra_args:
+-        if skip_next:
+-            skip_next = False
+-            continue
+-        if arg == "--output":
+-            skip_next = True
+-            continue
+-        if arg.startswith("--output="):
+-            continue
+-        if arg.startswith("--"):
+-            eq_pos = arg.find("=")
+-            if eq_pos > 0:
+-                flag_part = arg[:eq_pos].replace("_", "-")
+-                arg = flag_part + arg[eq_pos:]
+-            else:
+-                arg = arg.replace("_", "-")
+-        filtered.append(arg)
+-    return filtered
+-
+-
+-async def _run_omics_skill_step(
+-    *,
+-    skill_key: str,
+-    input_path: str | None,
+-    mode: str,
+-    method: str = "",
+-    data_type: str = "",
+-    batch_key: str = "",
+-    n_epochs: int | None = None,
+-    extra_args: list[str] | None = None,
+-) -> dict:
+-    import uuid
+-
++async def _run_omics_skill_step(**kwargs) -> dict:
++    """Bot-side adapter for ``run_omics_skill_step``: defaults the
++    output root to the bot's ``OUTPUT_DIR`` so existing callers don't
++    have to thread the path through."""
+     from bot.core import OUTPUT_DIR
+ 
+-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+-    out_dir = OUTPUT_DIR / build_output_dir_name(
+-        skill_key,
+-        ts,
+-        method=method,
+-        unique_suffix=uuid.uuid4().hex[:8],
+-    )
++    kwargs.setdefault("output_root", OUTPUT_DIR)
++    return await run_omics_skill_step(**kwargs)
+ 
+-    return await _run_skill_via_shared_runner(
+-        skill_key=skill_key,
+-        input_path=input_path,
+-        session_path=None,
+-        mode=mode,
+-        method=method,
+-        data_type=data_type,
+-        batch_key=batch_key,
+-        n_epochs=n_epochs,
+-        extra_args=extra_args,
+-        out_dir=out_dir,
+-    )
+ 
+-
+-async def _run_skill_via_shared_runner(
+-    *,
+-    skill_key: str,
+-    input_path: str | None,
+-    session_path: str | None,
+-    mode: str,
+-    method: str = "",
+-    data_type: str = "",
+-    batch_key: str = "",
+-    n_epochs: int | None = None,
+-    extra_args: list[str] | None = None,
+-    out_dir: Path,
+-) -> dict:
+-    from omicsclaw.core import skill_runner
+-    from omicsclaw.core.skill_result import SkillRunResult
+-
+-    runner_skill = "spatial-pipeline" if skill_key == "pipeline" else skill_key
+-    skill_info = _lookup_skill_info(runner_skill)
+-    canonical_skill = skill_info.get("alias") or runner_skill
+-
+-    forwarded_args: list[str] = []
+-    if method:
+-        forwarded_args.extend(["--method", method])
+-    if data_type:
+-        forwarded_args.extend(["--data-type", data_type])
+-    if batch_key:
+-        forwarded_args.extend(["--batch-key", batch_key])
+-    if n_epochs is not None:
+-        # The legacy alias ``spatial-domain-identification`` was the only skill
+-        # that wanted ``--epochs`` instead of ``--n-epochs``, but the registry
+-        # now resolves that alias to canonical ``spatial-domains`` before we
+-        # land here — the conditional was dead code. ``argv_builder``'s
+-        # ``--epochs`` ↔ ``--n-epochs`` rewrite (see
+-        # ``omicsclaw/core/runtime/argv_builder.py``) handles whichever flag
+-        # each skill's ``allowed_extra_flags`` actually accepts.
+-        forwarded_args.extend(["--n-epochs", str(int(n_epochs))])
+-    forwarded_args.extend(_normalize_extra_args(extra_args))
+-
+-    def _emit_stdout(line: str) -> None:
+-        logger.info("[%s:stdout] %s", canonical_skill, line)
+-
+-    def _emit_stderr(line: str) -> None:
+-        logger.info("[%s:stderr] %s", canonical_skill, line)
+-
+-    cancel_event = threading.Event()
+-
+-    def _run() -> SkillRunResult:
+-        return skill_runner.run_skill(
+-            runner_skill,
+-            input_path=str(input_path) if input_path else None,
+-            output_dir=str(out_dir),
+-            demo=mode == "demo",
+-            session_path=session_path,
+-            extra_args=forwarded_args or None,
+-            stdout_callback=_emit_stdout,
+-            stderr_callback=_emit_stderr,
+-            cancel_event=cancel_event,
+-        )
+-
+-    try:
+-        run_result = await asyncio.to_thread(_run)
+-    except asyncio.CancelledError:
+-        cancel_event.set()
+-        raise
+-    stdout_str = run_result.stdout
+-    stderr_str = run_result.stderr
+-    guidance_block = render_guidance_block(extract_user_guidance_lines(stderr_str))
+-    clean_stderr = strip_user_guidance_lines(stderr_str)
+-    clean_stdout = strip_user_guidance_lines(stdout_str)
+-    error_text = clean_stderr[-1500:] if clean_stderr else clean_stdout[-1500:] if clean_stdout else "unknown error"
+-    returncode = run_result.adapter_exit_code
+-    output_dir = run_result.output_path or out_dir
+-    return {
+-        "success": run_result.success,
+-        "returncode": returncode,
+-        "out_dir": output_dir,
+-        "output_dir": str(output_dir),
+-        "stdout": stdout_str,
+-        "stderr": stderr_str,
+-        "guidance_block": guidance_block,
+-        "error_text": error_text,
+-    }
+-
+-
+-def _lookup_skill_info(skill_key: str, force_reload: bool = False) -> dict:
+-    skill_registry = registry
+-    if force_reload:
+-        skill_registry.reload()
+-    else:
+-        skill_registry.load_all()
+-
+-    info = skill_registry.skills.get(skill_key)
+-    if info:
+-        return info
+-
+-    for _k, meta in skill_registry.skills.items():
+-        if meta.get("alias") == skill_key:
+-            return meta
+-    return {}
++# Re-export from the canonical home (omicsclaw.runtime.skill_lookup) so
++# existing ``bot.skill_orchestration._lookup_skill_info`` / ``bot.core``
++# call sites keep working without churn.
++_lookup_skill_info = lookup_skill_info
+ 
+ 
+ def _resolve_param_hint_info(skill_key: str, method: str) -> tuple[str, dict, dict]:
+diff --git a/bot/tool_executors.py b/bot/tool_executors.py
+index c4342579..816bbfa4 100644
+--- a/bot/tool_executors.py
++++ b/bot/tool_executors.py
+@@ -238,9 +238,20 @@ async def execute_omicsclaw(args: dict, session_id: str = None, chat_id: int | s
+             input_path=input_path,
+             session_id=session_id,
+             chat_id=chat_id,
++            output_root=OUTPUT_DIR,
+         )
+-        if prepared:
+-            return prepared
++        if prepared is not None:
++            if "final_message" in prepared:
++                return prepared["final_message"]
++            # Auto-prep succeeded: run the chained args (auto_prepare=False
++            # in chained_args, so this self-call cannot recurse further)
++            # and prefix the response with the summary of what we just did.
++            final_result = await execute_omicsclaw(
++                prepared["chained_args"],
++                session_id=session_id,
++                chat_id=chat_id,
++            )
++            return prepared["summary_prefix"] + "\n\n---\n" + final_result
+ 
+     workflow_clarification = _maybe_require_batch_integration_workflow(skill_key, input_path, args)
+     if workflow_clarification:
+diff --git a/omicsclaw/runtime/preflight/sc_batch.py b/omicsclaw/runtime/preflight/sc_batch.py
+index 3dd3720c..87a490c1 100644
+--- a/omicsclaw/runtime/preflight/sc_batch.py
++++ b/omicsclaw/runtime/preflight/sc_batch.py
+@@ -13,19 +13,13 @@
+ hard-coded helpers; for now the module owns its own scoring rules and
+ clarification-message rendering.
+ 
+-External dependencies during execution time (late-imported inside
+-functions to avoid a load-order circular):
+-
+-* ``bot.core._lookup_skill_info`` — resolves an alias-form skill key to
+-  its registry metadata; used to detect that the caller really is
+-  asking for ``sc-batch-integration``.
+-* ``bot.core._run_omics_skill_step`` — runs an upstream skill (e.g.
+-  ``sc-standardize-input``) in the auto-prepare chain.
+-* ``bot.core.execute_omicsclaw`` — the tool dispatch entry, called at
+-  the end of the auto-prepare chain to actually run the integration.
+-
+-When ``bot/skill_orchestration.py`` and ``bot/tool_executors.py`` land
+-those late imports can move to the new modules.
++Skill registry metadata is resolved via
++``omicsclaw.runtime.skill_lookup.lookup_skill_info`` and chain steps
++run through ``omicsclaw.runtime.skill_chain.run_omics_skill_step`` —
++both top-level imports. ``_auto_prepare_sc_batch_integration`` returns
++a control-signal dict so the user-facing tool entry can run the final
++``sc-batch-integration`` step itself; this module never reaches back
++into ``bot/``.
+ """
+ 
+ from __future__ import annotations
+@@ -34,6 +28,9 @@
+ import re
+ from pathlib import Path
+ 
++from omicsclaw.runtime.skill_chain import run_omics_skill_step
++from omicsclaw.runtime.skill_lookup import lookup_skill_info
++
+ logger = logging.getLogger("omicsclaw.runtime.preflight.sc_batch")
+ 
+ 
+@@ -261,16 +258,11 @@ def _format_batch_key_clarification(
+ def _maybe_require_batch_key_selection(skill_key: str, input_path: str | None, args: dict) -> str:
+     """If the caller is asking for ``sc-batch-integration`` but didn't
+     supply a valid ``batch_key``, return a clarification message; else "".
+-
+-    Late-imports ``_lookup_skill_info`` from ``bot.core`` to identify the
+-    alias-form skill key without coupling the module at import time.
+     """
+     if not input_path:
+         return ""
+ 
+-    from bot.skill_orchestration import _lookup_skill_info
+-
+-    skill_info = _lookup_skill_info(skill_key)
++    skill_info = lookup_skill_info(skill_key)
+     canonical_skill = skill_info.get("alias", skill_key)
+     if canonical_skill != "sc-batch-integration":
+         return ""
+@@ -375,9 +367,7 @@ def _get_sc_batch_integration_workflow_plan(skill_key: str, input_path: str | No
+     if not input_path:
+         return None
+ 
+-    from bot.skill_orchestration import _lookup_skill_info
+-
+-    skill_info = _lookup_skill_info(skill_key)
++    skill_info = lookup_skill_info(skill_key)
+     canonical_skill = skill_info.get("alias", skill_key)
+     if canonical_skill != "sc-batch-integration":
+         return None
+@@ -462,26 +452,38 @@ async def _auto_prepare_sc_batch_integration(
+     input_path: str,
+     session_id: str | None,
+     chat_id: int | str,
+-) -> str:
+-    """Auto-chain ``sc-standardize-input`` → ``sc-preprocessing`` →
+-    ``sc-batch-integration`` when the input needs upstream prep.
+-
+-    Late-imports ``_run_omics_skill_step`` and ``execute_omicsclaw`` from
+-    ``bot.core`` (they will move to ``bot/skill_orchestration`` and
+-    ``bot/tool_executors`` in subsequent slices).
++    output_root: Path,
++) -> dict | None:
++    """Auto-chain ``sc-standardize-input`` → ``sc-preprocessing`` before
++    the final ``sc-batch-integration`` run when the input needs upstream
++    prep.
++
++    Returns one of:
++
++    * ``None`` — the input is already prepped; the caller should fall
++      through to its normal execution path.
++    * ``{"final_message": str}`` — preparation reached a terminal state
++      (a step failed, or a follow-up clarification is required); the
++      caller should return ``final_message`` to the user as-is.
++    * ``{"chained_args": dict, "summary_prefix": str}`` — preparation
++      succeeded; the caller should re-invoke its skill-dispatch entry
++      with ``chained_args`` and prefix the resulting reply with
++      ``summary_prefix + "\\n\\n---\\n"``.
++
++    The control inversion (returning a signal rather than invoking the
++    bot tool entry directly) keeps the engine-side preflight free of
++    any back-reference into ``bot/``.
+     """
+     plan = _get_sc_batch_integration_workflow_plan(skill_key, input_path, args)
+     if not plan:
+-        return ""
+-
+-    from bot.skill_orchestration import _run_omics_skill_step
+-    from bot.tool_executors import execute_omicsclaw
++        return None
+ 
+     step_records: list[dict] = []
+     current_input = str(plan["file_path"])
+ 
+     if int(plan.get("start_step", 1)) <= 1:
+-        standardize_result = await _run_omics_skill_step(
++        standardize_result = await run_omics_skill_step(
++            output_root=output_root,
+             skill_key="sc-standardize-input",
+             input_path=current_input,
+             mode="path",
+@@ -492,18 +494,22 @@ async def _auto_prepare_sc_batch_integration(
+                 f"`sc-standardize-input` failed during automatic preparation "
+                 f"(exit {standardize_result['returncode']}):\n{standardize_result['error_text']}"
+             )
+-            return guidance + f"\n\n---\n{failure}" if guidance else failure
++            message = guidance + f"\n\n---\n{failure}" if guidance else failure
++            return {"final_message": message}
+         standardized_path = standardize_result["out_dir"] / "processed.h5ad"
+         if not standardized_path.exists():
+-            return (
+-                "Automatic preparation stopped because `sc-standardize-input` did not produce "
+-                f"`processed.h5ad` in `{standardize_result['out_dir']}`."
+-            )
++            return {
++                "final_message": (
++                    "Automatic preparation stopped because `sc-standardize-input` did not produce "
++                    f"`processed.h5ad` in `{standardize_result['out_dir']}`."
++                )
++            }
+         current_input = str(standardized_path)
+         step_records.append({"skill": "sc-standardize-input", "output_path": current_input})
+ 
+     if int(plan.get("start_step", 1)) <= 2:
+-        preprocess_result = await _run_omics_skill_step(
++        preprocess_result = await run_omics_skill_step(
++            output_root=output_root,
+             skill_key="sc-preprocessing",
+             input_path=current_input,
+             mode="path",
+@@ -516,13 +522,15 @@ async def _auto_prepare_sc_batch_integration(
+             )
+             prefix = _format_auto_prepare_summary(step_records, final_input_path=current_input)
+             message = prefix + "\n\n---\n" + failure
+-            return guidance + "\n\n---\n" + message if guidance else message
++            return {"final_message": guidance + "\n\n---\n" + message if guidance else message}
+         processed_path = preprocess_result["out_dir"] / "processed.h5ad"
+         if not processed_path.exists():
+-            return (
+-                "Automatic preparation stopped because `sc-preprocessing` did not produce "
+-                f"`processed.h5ad` in `{preprocess_result['out_dir']}`."
+-            )
++            return {
++                "final_message": (
++                    "Automatic preparation stopped because `sc-preprocessing` did not produce "
++                    f"`processed.h5ad` in `{preprocess_result['out_dir']}`."
++                )
++            }
+         current_input = str(processed_path)
+         step_records.append({"skill": "sc-preprocessing", "output_path": current_input})
+ 
+@@ -532,10 +540,10 @@ async def _auto_prepare_sc_batch_integration(
+     chained_args["confirm_workflow_skip"] = True
+     chained_args["auto_prepare"] = False
+ 
++    summary_prefix = _format_auto_prepare_summary(step_records, final_input_path=current_input)
++
+     batch_clarification = _maybe_require_batch_key_selection(skill_key, current_input, chained_args)
+-    prefix = _format_auto_prepare_summary(step_records, final_input_path=current_input)
+     if batch_clarification:
+-        return prefix + "\n\n---\n" + batch_clarification
++        return {"final_message": summary_prefix + "\n\n---\n" + batch_clarification}
+ 
+-    final_result = await execute_omicsclaw(chained_args, session_id=session_id, chat_id=chat_id)
+-    return prefix + "\n\n---\n" + final_result
++    return {"chained_args": chained_args, "summary_prefix": summary_prefix}
+diff --git a/omicsclaw/runtime/skill_chain.py b/omicsclaw/runtime/skill_chain.py
+new file mode 100644
+index 00000000..7fb42dae
+--- /dev/null
++++ b/omicsclaw/runtime/skill_chain.py
+@@ -0,0 +1,184 @@
++"""Skill execution helpers for chaining runs from a single tool call.
++
++``run_skill_via_shared_runner`` is the core async wrapper around
++``omicsclaw.core.skill_runner.run_skill`` — it composes forwarded
++CLI args, streams stdout/stderr through callbacks, surfaces
++user-guidance blocks extracted from skill output, and returns a
++uniform result dict that callers (bot tool dispatch, auto-prepare
++chain) can consume without duplicating wire-up.
++
++``run_omics_skill_step`` is a higher-level convenience that builds a
++fresh timestamped output directory under a caller-supplied
++``output_root`` before delegating. ``normalize_extra_args`` filters
++the user-supplied ``--`` arg list to drop ``--output`` (the runner
++owns that) and rewrite snake_case flags to kebab-case.
++"""
++
++from __future__ import annotations
++
++import asyncio
++import logging
++import threading
++import uuid
++from datetime import datetime
++from pathlib import Path
++
++from omicsclaw.common.report import build_output_dir_name
++from omicsclaw.common.user_guidance import (
++    extract_user_guidance_lines,
++    render_guidance_block,
++    strip_user_guidance_lines,
++)
++from omicsclaw.runtime.skill_lookup import lookup_skill_info
++
++logger = logging.getLogger("omicsclaw.runtime.skill_chain")
++
++
++def normalize_extra_args(extra_args) -> list[str]:
++    if not extra_args or not isinstance(extra_args, list):
++        return []
++    filtered = []
++    skip_next = False
++    for arg in extra_args:
++        if skip_next:
++            skip_next = False
++            continue
++        if arg == "--output":
++            skip_next = True
++            continue
++        if arg.startswith("--output="):
++            continue
++        if arg.startswith("--"):
++            eq_pos = arg.find("=")
++            if eq_pos > 0:
++                flag_part = arg[:eq_pos].replace("_", "-")
++                arg = flag_part + arg[eq_pos:]
++            else:
++                arg = arg.replace("_", "-")
++        filtered.append(arg)
++    return filtered
++
++
++async def run_skill_via_shared_runner(
++    *,
++    skill_key: str,
++    input_path: str | None,
++    session_path: str | None,
++    mode: str,
++    method: str = "",
++    data_type: str = "",
++    batch_key: str = "",
++    n_epochs: int | None = None,
++    extra_args: list[str] | None = None,
++    out_dir: Path,
++) -> dict:
++    from omicsclaw.core import skill_runner
++    from omicsclaw.core.skill_result import SkillRunResult
++
++    runner_skill = "spatial-pipeline" if skill_key == "pipeline" else skill_key
++    skill_info = lookup_skill_info(runner_skill)
++    canonical_skill = skill_info.get("alias") or runner_skill
++
++    forwarded_args: list[str] = []
++    if method:
++        forwarded_args.extend(["--method", method])
++    if data_type:
++        forwarded_args.extend(["--data-type", data_type])
++    if batch_key:
++        forwarded_args.extend(["--batch-key", batch_key])
++    if n_epochs is not None:
++        # The legacy alias ``spatial-domain-identification`` was the only skill
++        # that wanted ``--epochs`` instead of ``--n-epochs``, but the registry
++        # now resolves that alias to canonical ``spatial-domains`` before we
++        # land here — the conditional was dead code. ``argv_builder``'s
++        # ``--epochs`` ↔ ``--n-epochs`` rewrite (see
++        # ``omicsclaw/core/runtime/argv_builder.py``) handles whichever flag
++        # each skill's ``allowed_extra_flags`` actually accepts.
++        forwarded_args.extend(["--n-epochs", str(int(n_epochs))])
++    forwarded_args.extend(normalize_extra_args(extra_args))
++
++    def _emit_stdout(line: str) -> None:
++        logger.info("[%s:stdout] %s", canonical_skill, line)
++
++    def _emit_stderr(line: str) -> None:
++        logger.info("[%s:stderr] %s", canonical_skill, line)
++
++    cancel_event = threading.Event()
++
++    def _run() -> SkillRunResult:
++        return skill_runner.run_skill(
++            runner_skill,
++            input_path=str(input_path) if input_path else None,
++            output_dir=str(out_dir),
++            demo=mode == "demo",
++            session_path=session_path,
++            extra_args=forwarded_args or None,
++            stdout_callback=_emit_stdout,
++            stderr_callback=_emit_stderr,
++            cancel_event=cancel_event,
++        )
++
++    try:
++        run_result = await asyncio.to_thread(_run)
++    except asyncio.CancelledError:
++        cancel_event.set()
++        raise
++    stdout_str = run_result.stdout
++    stderr_str = run_result.stderr
++    guidance_block = render_guidance_block(extract_user_guidance_lines(stderr_str))
++    clean_stderr = strip_user_guidance_lines(stderr_str)
++    clean_stdout = strip_user_guidance_lines(stdout_str)
++    error_text = clean_stderr[-1500:] if clean_stderr else clean_stdout[-1500:] if clean_stdout else "unknown error"
++    returncode = run_result.adapter_exit_code
++    output_dir = run_result.output_path or out_dir
++    return {
++        "success": run_result.success,
++        "returncode": returncode,
++        "out_dir": output_dir,
++        "output_dir": str(output_dir),
++        "stdout": stdout_str,
++        "stderr": stderr_str,
++        "guidance_block": guidance_block,
++        "error_text": error_text,
++    }
++
++
++async def run_omics_skill_step(
++    *,
++    output_root: Path,
++    skill_key: str,
++    input_path: str | None,
++    mode: str,
++    method: str = "",
++    data_type: str = "",
++    batch_key: str = "",
++    n_epochs: int | None = None,
++    extra_args: list[str] | None = None,
++) -> dict:
++    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
++    out_dir = output_root / build_output_dir_name(
++        skill_key,
++        ts,
++        method=method,
++        unique_suffix=uuid.uuid4().hex[:8],
++    )
++
++    return await run_skill_via_shared_runner(
++        skill_key=skill_key,
++        input_path=input_path,
++        session_path=None,
++        mode=mode,
++        method=method,
++        data_type=data_type,
++        batch_key=batch_key,
++        n_epochs=n_epochs,
++        extra_args=extra_args,
++        out_dir=out_dir,
++    )
++
++
++__all__ = [
++    "normalize_extra_args",
++    "run_skill_via_shared_runner",
++    "run_omics_skill_step",
++]
+diff --git a/omicsclaw/runtime/skill_lookup.py b/omicsclaw/runtime/skill_lookup.py
+new file mode 100644
+index 00000000..24f6dabb
+--- /dev/null
++++ b/omicsclaw/runtime/skill_lookup.py
+@@ -0,0 +1,32 @@
++"""Skill registry lookup with alias-fallback.
++
++``lookup_skill_info`` resolves a skill key (canonical name or alias) to
++its registry metadata dict. It loads the global skill registry on
++first call and supports an explicit ``force_reload`` for callers that
++expect on-disk SKILL.md edits to take effect mid-process (param-hint
++debug paths).
++"""
++
++from __future__ import annotations
++
++from omicsclaw.core.registry import registry
++
++
++def lookup_skill_info(skill_key: str, force_reload: bool = False) -> dict:
++    skill_registry = registry
++    if force_reload:
++        skill_registry.reload()
++    else:
++        skill_registry.load_all()
++
++    info = skill_registry.skills.get(skill_key)
++    if info:
++        return info
++
++    for _k, meta in skill_registry.skills.items():
++        if meta.get("alias") == skill_key:
++            return meta
++    return {}
++
++
++__all__ = ["lookup_skill_info"]
+diff --git a/tests/test_no_reverse_imports.py b/tests/test_no_reverse_imports.py
+index a6f4a811..948d19bd 100644
+--- a/tests/test_no_reverse_imports.py
++++ b/tests/test_no_reverse_imports.py
+@@ -36,10 +36,10 @@
+ SCAN_ROOT = REPO_ROOT / "omicsclaw"
+ 
+ 
+-# Lazy reverse imports that already exist as of Phase 1 P0-D (16 total).
+-# All are inside function bodies; none execute at import time. Each
+-# entry is a deferred dependency that the corresponding bot helper
+-# should eventually move into omicsclaw/ to retire.
++# Lazy reverse imports remaining as the bot-side helpers are progressively
++# moved into ``omicsclaw/``. All are inside function bodies; none execute
++# at import time. Each entry is a deferred dependency the next slice can
++# retire by lifting the bot helper into ``omicsclaw/``.
+ GRANDFATHERED_LAZY_IMPORTS: frozenset[tuple[str, int]] = frozenset(
+     {
+         # omicsclaw/app/server.py — desktop /bridge/* endpoints reach
+@@ -61,14 +61,6 @@
+         ("omicsclaw/interactive/tui.py", 856),
+         ("omicsclaw/interactive/tui.py", 872),
+         ("omicsclaw/interactive/tui.py", 1016),
+-        # omicsclaw/runtime/preflight/sc_batch.py — explicitly
+-        # late-imports per the author's comment at L265-267. Future
+-        # fix: move _lookup_skill_info / _run_omics_skill_step /
+-        # execute_omicsclaw into omicsclaw/runtime/.
+-        ("omicsclaw/runtime/preflight/sc_batch.py", 271),
+-        ("omicsclaw/runtime/preflight/sc_batch.py", 378),
+-        ("omicsclaw/runtime/preflight/sc_batch.py", 477),
+-        ("omicsclaw/runtime/preflight/sc_batch.py", 478),
+     }
+ )
+ 
+@@ -178,5 +170,5 @@ def test_grandfathered_set_documents_phase_2_target() -> None:
+     leaving the strict checks (top-level + lazy = ∅) as the
+     canonical guards."""
+     assert (
+-        len(GRANDFATHERED_LAZY_IMPORTS) == 16
++        len(GRANDFATHERED_LAZY_IMPORTS) == 12
+     ), "Allowlist size changed — update the count or remove this test once allowlist is empty."

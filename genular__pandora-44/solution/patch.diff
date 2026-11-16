@@ -1,0 +1,60 @@
+diff --git a/src/app/translations/files/translated/ar.json b/src/app/translations/files/translated/ar.json
+index 80b5fc42..1a99f4eb 100644
+--- a/src/app/translations/files/translated/ar.json
++++ b/src/app/translations/files/translated/ar.json
+@@ -392,6 +392,7 @@
+   "globals.buttons.guide.nextBtnText": "القادم",
+   "globals.buttons.guide.prevBtnText": "السابقة",
+   "globals.messages.success": "النجاح",
++  "globals.messages.failed": "فشل",
+   "globals.messages.canceled": "إلغاء",
+   "globals.messages.deleted": "حذف",
+   "globals.messages.upload_sucessfull": "التي تم تحميلها بنجاح",
+diff --git a/src/app/translations/files/translated/de.json b/src/app/translations/files/translated/de.json
+index 152dd465..5c5ae852 100644
+--- a/src/app/translations/files/translated/de.json
++++ b/src/app/translations/files/translated/de.json
+@@ -392,6 +392,7 @@
+   "globals.buttons.guide.nextBtnText": "Nächste",
+   "globals.buttons.guide.prevBtnText": "Vorherige",
+   "globals.messages.success": "Erfolg",
++  "globals.messages.failed": "fehlgeschlagen",
+   "globals.messages.canceled": "abgebrochen",
+   "globals.messages.deleted": "gelöscht",
+   "globals.messages.upload_sucessfull": "erfolgreich hochgeladen",
+diff --git a/src/app/translations/files/translated/en.json b/src/app/translations/files/translated/en.json
+index b979f139..3e012f0a 100644
+--- a/src/app/translations/files/translated/en.json
++++ b/src/app/translations/files/translated/en.json
+@@ -392,6 +392,7 @@
+   "globals.buttons.guide.nextBtnText": "Next",
+   "globals.buttons.guide.prevBtnText": "Previous",
+   "globals.messages.success": "success",
++  "globals.messages.failed": "failed",
+   "globals.messages.canceled": "canceled",
+   "globals.messages.deleted": "deleted",
+   "globals.messages.upload_sucessfull": "uploaded successfully",
+diff --git a/src/app/translations/files/translated/fr.json b/src/app/translations/files/translated/fr.json
+index b7135db8..fbe5fcd8 100644
+--- a/src/app/translations/files/translated/fr.json
++++ b/src/app/translations/files/translated/fr.json
+@@ -392,6 +392,7 @@
+   "globals.buttons.guide.nextBtnText": "Prochaine",
+   "globals.buttons.guide.prevBtnText": "Précédente",
+   "globals.messages.success": "succès",
++  "globals.messages.failed": "échoué",
+   "globals.messages.canceled": "annulé",
+   "globals.messages.deleted": "supprimé",
+   "globals.messages.upload_sucessfull": "téléchargé avec succès",
+diff --git a/src/app/translations/files/translated/zh.json b/src/app/translations/files/translated/zh.json
+index 3a0b26dd..66effe29 100644
+--- a/src/app/translations/files/translated/zh.json
++++ b/src/app/translations/files/translated/zh.json
+@@ -392,6 +392,7 @@
+   "globals.buttons.guide.nextBtnText": "下",
+   "globals.buttons.guide.prevBtnText": "以前的",
+   "globals.messages.success": "成功",
++  "globals.messages.failed": "失败的",
+   "globals.messages.canceled": "取消",
+   "globals.messages.deleted": "已删除",
+   "globals.messages.upload_sucessfull": "上传功",

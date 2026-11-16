@@ -1,0 +1,71 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-183"
+description = "refactor(skill-template): rebuild templates/skill/ as runnable human-copy starter"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "fe4cf5bf37bbf7c6591cc87db6101b0cc76abd61"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/183"
+source_access = "auto"
+built_at = "2026-11-15T18:17:04.246017+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:e8bc5fe57dcee9d108cff3b99f8cddbada4a1c8072f2d9a1cf382d9ccca77a92"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-05-12T12:06:47Z"
+diff_format = "unified"
+context_files = [
+    "docs/adr/0003-skill-template-is-human-copy-only.md",
+    "templates/skill/README.md",
+    "templates/skill/SKILL.md",
+    "templates/skill/parameters.yaml",
+    "templates/skill/references/methodology.md",
+    "templates/skill/references/output_contract.md",
+    "templates/skill/references/parameters.md",
+    "templates/skill/replace_me.py",
+    "templates/skill/tests/__init__.py",
+    "templates/skill/tests/test_replace_me.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 769
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

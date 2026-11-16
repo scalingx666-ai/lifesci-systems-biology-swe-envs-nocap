@@ -1,0 +1,68 @@
+version = "1.0"
+
+[task]
+name = "default/aertslab__SCope-415"
+description = "Search/Search space updates"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "SCope",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aertslab/SCope"
+ref = "8af1e3dfc351b18b54a8e9b3b75840b25db1fcdb"
+reference = "https://github.com/aertslab/SCope/pull/415"
+source_access = "auto"
+built_at = "2026-11-15T19:37:54.700800+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:b233fa8f07386eeae1ab07c5096a418ebe67245373640ec16c296ee045e68f56"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2021-03-02T11:15:53Z"
+diff_format = "unified"
+context_files = [
+    ".gitignore",
+    "opt/scopeserver/bindserver/package-lock.json",
+    "opt/scopeserver/dataserver/data/gene_mappings/terminal_mappings.pickle",
+    "opt/scopeserver/dataserver/utils/search.py",
+    "opt/scopeserver/dataserver/utils/search_space.py",
+    "package-lock.json",
+    "package.json",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 6184
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

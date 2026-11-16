@@ -1,0 +1,1405 @@
+diff --git a/.env.example b/.env.example
+index f637832a..915d54f3 100644
+--- a/.env.example
++++ b/.env.example
+@@ -93,6 +93,11 @@ LLM_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+ #
+ # Session TTL in days (default: 30)
+ # OMICSCLAW_MEMORY_TTL_DAYS=30
++#
++# Encryption key for securing sensitive memory fields (64-character hex string)
++# Generate with: python -c "import secrets; print(secrets.token_hex(32))"
++# If not set, a temporary random key is generated (memories unreadable after restart)
++# ENCRYPTION_KEY=
+ 
+ # ---------------------------------------------------------------------------
+ # Bot Behavior Limits
+@@ -104,10 +109,3 @@ LLM_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+ # Maximum tool call iterations per message (default: 20)
+ # Prevents infinite loops while supporting complex multi-step workflows
+ # OMICSCLAW_MAX_TOOL_ITERATIONS=20
+-#
+-# Encryption key for securing sensitive memory fields (e.g. file paths, dataset
+-# metadata). Must be a 32-byte hex string. If not set, a temporary random key
+-# is generated at startup (memories will be unreadable after restart).
+-# Generate a permanent key:  python -c "import secrets; print(secrets.token_hex(32))"
+-# NOTE: bot/core.py reads OMICSCLAW_MEMORY_ENCRYPTION_KEY — rename if needed.
+-# ENCRYPTION_KEY=
+diff --git a/.gitignore b/.gitignore
+index bc4e1d7c..d3932267 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -102,3 +102,4 @@ htmlcov/
+ .coverage.*
+ coverage.xml
+ *.cover
++bot/data/
+diff --git a/bot/core.py b/bot/core.py
+index 21509216..3f5b11be 100644
+--- a/bot/core.py
++++ b/bot/core.py
+@@ -436,7 +436,7 @@ def init(
+             from bot.memory import SQLiteBackend, SecureFieldEncryptor
+ 
+             db_path = os.getenv("OMICSCLAW_MEMORY_DB_PATH", "bot/data/memory.db")
+-            encryption_key = os.getenv("OMICSCLAW_MEMORY_ENCRYPTION_KEY")
++            encryption_key = os.getenv("ENCRYPTION_KEY")
+ 
+             if not encryption_key:
+                 import secrets
+@@ -464,14 +464,14 @@ def init(
+ 
+ def get_role_guardrails() -> str:
+     domain_names = ", ".join(d["name"].lower() for d in registry.domains.values())
+-    
++
+     routing_lines = []
+     for alias, info in registry.skills.items():
+         desc = info.get("description", alias).split("—")[0].split("(")[0].strip()
+         routing_lines.append(f"   - {desc}: skill='{alias}'")
+-        
++
+     routing_text = "\n".join(routing_lines)
+-    
++
+     return f"""
+ Operational constraints:
+ 1. You are a multi-omics analysis assistant powered by OmicsClaw skills.
+@@ -480,6 +480,18 @@ def get_role_guardrails() -> str:
+ 4. When the user sends omics data or asks about analysis, use the omicsclaw tool. Skill routing:
+ {routing_text}
+    - Auto-detect skill: skill='auto'
++4b. METHOD PARAMETER (CRITICAL): When user specifies a method, pass it LOWERCASE via method parameter:
++   - spatial-deconv methods: flashdeconv, cell2location, rctd, destvi, stereoscope, tangram, spotlight, card
++   - spatial-domains methods: leiden, louvain, spagcn, stagate, graphst
++   - spatial-annotate methods: tangram, scanvi, cellassign, sctype
++   - spatial-communication methods: liana, cellphonedb, fastccc
++   - spatial-trajectory methods: dpt, cellrank, palantir
++   - spatial-genes methods: spatialde, sparkx
++   - spatial-integration methods: harmony, bbknn, scanorama
++   - spatial-velocity methods: scvelo, velovi
++   Examples: "Cell2location" → method='cell2location', "Tangram" → method='tangram'
++   IMPORTANT: Deep learning methods (cell2location, destvi, stereoscope, tangram, spagcn, stagate, graphst, scvi, velovi)
++   may take 10-30 minutes. Inform user: "This will take 10-30 minutes, please wait..."
+ 5. TOOL OUTPUT RELAY (STRICT): When the omicsclaw tool returns results, relay
+    the output VERBATIM. Do not paraphrase, summarise, or rewrite. The output
+    contains precise numerical data that must not be altered. You may add a brief
+@@ -513,6 +525,14 @@ def get_role_guardrails() -> str:
+      asks to save or export specific data. All such files go to the output/ directory.
+    - Do NOT use list_directory to browse output directories after an omicsclaw call —
+      the tool result already contains all the information you need.
++11. NO SILENT FALLBACK (STRICT): When a user specifies a method and it FAILS:
++    - NEVER silently switch to a different method. This is a CRITICAL violation.
++    - Report the EXACT error message from the failed method to the user.
++    - Ask the user if they want to try an alternative method.
++    - Only switch methods with EXPLICIT user confirmation.
++    Example: User asks for DestVI, it fails → Tell user "DestVI failed: <error>.
++    Would you like to try Tangram or Cell2Location instead?"
++    WRONG: Silently run Tangram and say "The Tangram analysis succeeded".
+ """
+ 
+ def build_system_prompt(memory_context: str = "") -> str:
+@@ -607,6 +627,15 @@ def get_tools() -> list[dict]:
+                             "type": "string",
+                             "description": "Analysis method override passed as --method.",
+                         },
++                        "n_epochs": {
++                            "type": "integer",
++                            "description": (
++                                "Number of training epochs for deep learning methods. "
++                                "Defaults per method if omitted: "
++                                "cell2location=30000, destvi=2500, stereoscope=150000, tangram=1000. "
++                                "Only set when the user explicitly requests a custom epoch count."
++                            ),
++                        },
+                         "data_type": {
+                             "type": "string",
+                             "description": "Data platform type passed as --data-type.",
+@@ -921,13 +950,20 @@ def validate_input_path(filepath: str) -> Path | None:
+     _ensure_trusted_dirs()
+     p = Path(filepath).expanduser()
+     if not p.is_absolute():
+-        for d in TRUSTED_DATA_DIRS:
+-            candidate = d / p
+-            if candidate.exists() and candidate.is_file():
+-                p = candidate
+-                break
++        # 1. Try relative to project root first (most common case)
++        candidate = OMICSCLAW_DIR / p
++        if candidate.exists() and candidate.is_file():
++            p = candidate
+         else:
+-            p = DATA_DIR / p
++            # 2. Try each trusted data directory
++            for d in TRUSTED_DATA_DIRS:
++                candidate = d / p
++                if candidate.exists() and candidate.is_file():
++                    p = candidate
++                    break
++            else:
++                # 3. Fall back to DATA_DIR
++                p = DATA_DIR / p
+ 
+     resolved = p.resolve()
+     if not resolved.exists() or not resolved.is_file():
+@@ -940,6 +976,13 @@ def validate_input_path(filepath: str) -> Path | None:
+         except ValueError:
+             continue
+ 
++    # Also allow files anywhere under project root
++    try:
++        resolved.relative_to(OMICSCLAW_DIR.resolve())
++        return resolved
++    except ValueError:
++        pass
++
+     logger.warning(f"Path not in trusted dirs: {resolved}")
+     audit("security", severity="MEDIUM", detail="untrusted_path_rejected", path=str(resolved))
+     return None
+@@ -981,8 +1024,16 @@ def discover_file(filename_or_pattern: str) -> list[Path]:
+ # ---------------------------------------------------------------------------
+ 
+ 
++# Deep learning methods that may take a long time
++DEEP_LEARNING_METHODS = {
++    "cell2location", "destvi", "stereoscope", "tangram",
++    "spagcn", "stagate", "graphst", "scvi", "velovi",
++    "scanvi", "cellassign",
++}
++
++
+ async def execute_omicsclaw(args: dict, session_id: str = None, chat_id: int | str = 0) -> str:
+-    """Execute an OmicsClaw skill via subprocess."""
++    """Execute an OmicsClaw skill via subprocess (waits until completion)."""
+     skill_key = args.get("skill", "auto")
+     mode = args.get("mode", "demo")
+     query = args.get("query", "")
+@@ -1112,6 +1163,11 @@ async def execute_omicsclaw(args: dict, session_id: str = None, chat_id: int | s
+     if data_type:
+         cmd.extend(["--data-type", data_type])
+ 
++    # Pass n_epochs if user specified
++    n_epochs = args.get("n_epochs")
++    if n_epochs is not None:
++        cmd.extend(["--n-epochs", str(int(n_epochs))])
++
+     extra_args = args.get("extra_args")
+     if extra_args and isinstance(extra_args, list):
+         # Filter out --output to prevent overriding bot-managed output directory
+@@ -1135,21 +1191,16 @@ async def execute_omicsclaw(args: dict, session_id: str = None, chat_id: int | s
+             stdout=asyncio.subprocess.PIPE,
+             stderr=asyncio.subprocess.PIPE,
+         )
+-        stdout_bytes, stderr_bytes = await asyncio.wait_for(
+-            proc.communicate(), timeout=300,
+-        )
++
++        # Log start for deep learning methods
++        is_dl = method.lower() in DEEP_LEARNING_METHODS
++        if is_dl:
++            logger.info(f"Starting {skill_key} with {method} (no timeout, may take 10-60 minutes)")
++
++        # Wait until completion — no timeout
++        stdout_bytes, stderr_bytes = await proc.communicate()
+         stdout_str = stdout_bytes.decode(errors="replace")
+         stderr_str = stderr_bytes.decode(errors="replace")
+-    except asyncio.TimeoutError:
+-        try:
+-            proc.kill()
+-            await proc.wait()
+-        except Exception:
+-            pass
+-        # Clean up empty output directory on timeout
+-        if out_dir.exists():
+-            shutil.rmtree(out_dir, ignore_errors=True)
+-        return f"{skill_key} timed out after 300 seconds."
+     except Exception as e:
+         import traceback as _tb
+         # Clean up empty output directory on crash
+@@ -1848,28 +1899,43 @@ async def execute_get_file_size(args: dict) -> str:
+ # ---------------------------------------------------------------------------
+ 
+ 
+-async def llm_tool_loop(chat_id: int | str, user_content: str | list, user_id: str = None, platform: str = None) -> str:
++async def llm_tool_loop(chat_id: int | str, user_content: str | list, user_id: str = None, platform: str = None, progress_fn=None, progress_update_fn=None) -> str:
+     """
+     Run the LLM tool-use loop:
+     1. Append user message to history
+     2. Call LLM with system prompt + history + tools
+     3. If tool_calls -> execute -> append results -> call again
+     4. Return final text
++
++    progress_fn: async callable(msg) -> handle. Sends a progress message, returns a handle.
++    progress_update_fn: async callable(handle, msg). Updates a previously sent progress message.
+     """
+     # Handle commands before LLM call
+     if isinstance(user_content, str) and user_content.strip().startswith("/"):
+         cmd = user_content.strip().lower()
+ 
+-        if cmd == "/clear" or cmd == "/new":
++        if cmd == "/clear":
++            # Only clear conversation history, keep memory intact
++            if chat_id in conversations:
++                del conversations[chat_id]
++            return "✓ Conversation history cleared. (Memory preserved)"
++
++        elif cmd == "/new":
++            # Clear conversation history but keep memory
++            if chat_id in conversations:
++                del conversations[chat_id]
++            return "✓ New conversation started. (Memory preserved)"
++
++        elif cmd == "/forget":
++            # Clear both conversation and memory for a complete reset
+             if chat_id in conversations:
+                 del conversations[chat_id]
+ 
+-            # Clear memory session if enabled
+             if session_manager and user_id and platform:
+                 session_id = f"{platform}:{user_id}:{chat_id}"
+                 await memory_store.delete_session(session_id)
+ 
+-            return "✓ New conversation started." if cmd == "/new" else "✓ Conversation history cleared."
++            return "✓ Memory and conversation cleared. (Fresh start)"
+ 
+         elif cmd == "/files":
+             try:
+@@ -1984,8 +2050,9 @@ async def llm_tool_loop(chat_id: int | str, user_content: str | list, user_id: s
+             return """# OmicsClaw Bot Commands
+ 
+ **Quick Commands:**
+-- `/new` - Start new conversation
+-- `/clear` - Clear conversation history
++- `/new` - Start new conversation (memory preserved)
++- `/clear` - Clear conversation history (memory preserved)
++- `/forget` - Clear conversation + memory (complete reset)
+ - `/help` - Show this help message
+ - `/files` - List data files
+ - `/outputs` - Show recent analysis results
+@@ -1996,6 +2063,11 @@ async def llm_tool_loop(chat_id: int | str, user_content: str | list, user_id: s
+ - `/status` - Bot status and uptime
+ - `/version` - Show version info
+ 
++**Memory System:**
++- `/clear` and `/new` preserve your analysis history and preferences
++- Only `/forget` completely clears all memory
++- Bot remembers your datasets, analyses, and preferences across sessions
++
+ **Literature Analysis:**
+ - Upload PDF or send article URL/DOI
+ - "Fetch GEO metadata for GSE123456"
+@@ -2010,7 +2082,7 @@ async def llm_tool_loop(chat_id: int | str, user_content: str | list, user_id: s
+ - "Run spatial-preprocessing on data.h5ad"
+ - "Analyze GSE123456 dataset"
+ 
+-For more info: https://github.com/zhou-1314/OmicsClaw"""
++For more info: https://github.com/TianGzlab/OmicsClaw"""
+ 
+     _ensure_system_prompt()
+     if llm is None:
+@@ -2064,6 +2136,7 @@ async def llm_tool_loop(chat_id: int | str, user_content: str | list, user_id: s
+     history[:] = sanitised
+ 
+     last_message = None
++    _notified_methods: set[str] = set()  # Avoid duplicate progress messages
+     for _iteration in range(MAX_TOOL_ITERATIONS):
+         try:
+             response = await llm.chat.completions.create(
+@@ -2108,6 +2181,21 @@ async def llm_tool_loop(chat_id: int | str, user_content: str | list, user_id: s
+                 logger.info(f"Tool call: {func_name}({json.dumps(func_args)[:200]})")
+                 audit("tool_call", chat_id=str(chat_id), tool=func_name,
+                       args_preview=json.dumps(func_args, default=str)[:300])
++
++                # Send progress message for deep learning methods (once per method)
++                _progress_handle = None
++                if func_name == "omicsclaw" and progress_fn:
++                    dl_method = (func_args.get("method") or "").lower()
++                    if dl_method in DEEP_LEARNING_METHODS and dl_method not in _notified_methods:
++                        _notified_methods.add(dl_method)
++                        method_display = func_args.get("method", dl_method)
++                        _progress_handle = await progress_fn(
++                            f"⏳ **{method_display}** is a deep learning method and may take "
++                            f"10-60 minutes depending on data size. Please be patient...\n\n"
++                            f"💡 The analysis is running on the server, you can leave this "
++                            f"chat open and come back later."
++                        )
++
+                 try:
+                     # Pass session_id and chat_id to omicsclaw executor
+                     if func_name == "omicsclaw" and user_id and platform:
+@@ -2117,11 +2205,27 @@ async def llm_tool_loop(chat_id: int | str, user_content: str | list, user_id: s
+                         result = await executor(func_args, chat_id=chat_id)
+                     else:
+                         result = await executor(func_args)
++
++                    # Update progress message on success
++                    if _progress_handle and progress_update_fn:
++                        method_display = (func_args.get("method") or "analysis")
++                        await progress_update_fn(
++                            _progress_handle,
++                            f"✅ **{method_display}** analysis complete!"
++                        )
+                 except Exception as tool_err:
+                     logger.error(f"Tool {func_name} raised: {tool_err}", exc_info=True)
+                     audit("tool_error", chat_id=str(chat_id), tool=func_name,
+                           error=str(tool_err)[:300])
+                     result = f"Error executing {func_name}: {type(tool_err).__name__}: {tool_err}"
++
++                    # Update progress message on failure
++                    if _progress_handle and progress_update_fn:
++                        method_display = (func_args.get("method") or "analysis")
++                        await progress_update_fn(
++                            _progress_handle,
++                            f"❌ **{method_display}** failed: {type(tool_err).__name__}"
++                        )
+             else:
+                 result = f"Unknown tool: {func_name}"
+ 
+diff --git a/bot/feishu_bot.py b/bot/feishu_bot.py
+index 64473de4..66e1765d 100644
+--- a/bot/feishu_bot.py
++++ b/bot/feishu_bot.py
+@@ -689,11 +689,23 @@ async def _process_message_async(
+ 
+         user_content = text
+ 
++    # Create progress callbacks to notify user about long-running tasks
++    async def _progress(msg: str):
++        """Send progress message, return message_id as handle."""
++        return _send_text(chat_id, core.strip_markup(msg))
++
++    async def _progress_update(handle, msg: str):
++        """Update a previously sent progress message."""
++        if handle:
++            _update_text(handle, core.strip_markup(msg))
++
+     reply = await core.llm_tool_loop(
+         pure_chat_id,  # Pass pure chat_id, llm_tool_loop will construct session_id
+         user_content,
+         user_id=user_id,
+-        platform="feishu"
++        platform="feishu",
++        progress_fn=_progress,
++        progress_update_fn=_progress_update,
+     )
+ 
+     if core.pending_text:
+@@ -793,9 +805,10 @@ def _send_thinking():
+         try:
+             # Pass pure chat_id (not session_key) to llm_tool_loop
+             # llm_tool_loop will construct session_id internally as f"{platform}:{user_id}:{chat_id}"
++            # No timeout — wait until analysis completes
+             reply = _run_async(
+                 _process_message_async(chat_id, sender_id if chat_type == 'p2p' else chat_id, text, attachments, sender_id),
+-                timeout=300,
++                timeout=None,
+             )
+         except Exception as e:
+             logger.error(f"Message processing error: {e}", exc_info=True)
+@@ -837,7 +850,8 @@ def _send_thinking():
+             with placeholder_lock:
+                 if placeholder_id:
+                     try:
+-                        _delete_message(placeholder_id)
++                        # Update placeholder instead of deleting it
++                        _update_text(placeholder_id, "✓ 分析完成，正在发送结果…")
+                     except Exception:
+                         pass
+                     placeholder_id = ""
+diff --git a/bot/telegram_bot.py b/bot/telegram_bot.py
+index 19a13b84..c909c5cf 100644
+--- a/bot/telegram_bot.py
++++ b/bot/telegram_bot.py
+@@ -223,11 +223,20 @@ async def cmd_demo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+     await update.message.reply_text(f"Running {skill} demo -- this may take a moment...")
+     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+     try:
++        async def _progress(msg: str):
++            return await update.message.reply_text(core.strip_markup(msg))
++        async def _progress_update(handle, msg: str):
++            try:
++                await handle.edit_text(core.strip_markup(msg))
++            except Exception:
++                pass
+         reply = await core.llm_tool_loop(
+             update.effective_chat.id,
+             f"Run the {skill} demo using the omicsclaw tool with mode='demo'.",
+             user_id=str(update.effective_user.id),
+-            platform="telegram"
++            platform="telegram",
++            progress_fn=_progress,
++            progress_update_fn=_progress_update,
+         )
+         if core.pending_text:
+             reply = "\n\n".join(core.pending_text)
+@@ -315,11 +324,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+ 
+     try:
+         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
++        async def _progress(msg: str):
++            return await update.message.reply_text(core.strip_markup(msg))
++        async def _progress_update(handle, msg: str):
++            try:
++                await handle.edit_text(core.strip_markup(msg))
++            except Exception:
++                pass
+         reply = await core.llm_tool_loop(
+             update.effective_chat.id,
+             user_text,
+             user_id=str(update.effective_user.id),
+-            platform="telegram"
++            platform="telegram",
++            progress_fn=_progress,
++            progress_update_fn=_progress_update,
+         )
+         if core.pending_text:
+             reply = "\n\n".join(core.pending_text)
+@@ -407,11 +425,20 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+                 ),
+             })
+ 
++        async def _progress(msg: str):
++            return await update.message.reply_text(core.strip_markup(msg))
++        async def _progress_update(handle, msg: str):
++            try:
++                await handle.edit_text(core.strip_markup(msg))
++            except Exception:
++                pass
+         reply = await core.llm_tool_loop(
+             update.effective_chat.id,
+             content_blocks,
+             user_id=str(update.effective_user.id),
+-            platform="telegram"
++            platform="telegram",
++            progress_fn=_progress,
++            progress_update_fn=_progress_update,
+         )
+         if core.pending_text:
+             reply = "\n\n".join(core.pending_text)
+@@ -505,11 +532,20 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
+                 f"If unsure, use skill='auto'."
+             )
+ 
++        async def _progress(msg: str):
++            return await update.message.reply_text(core.strip_markup(msg))
++        async def _progress_update(handle, msg: str):
++            try:
++                await handle.edit_text(core.strip_markup(msg))
++            except Exception:
++                pass
+         reply = await core.llm_tool_loop(
+             update.effective_chat.id,
+             "\n\n".join(parts),
+             user_id=str(update.effective_user.id),
+-            platform="telegram"
++            platform="telegram",
++            progress_fn=_progress,
++            progress_update_fn=_progress_update,
+         )
+         if core.pending_text:
+             reply = "\n\n".join(core.pending_text)
+diff --git a/omicsclaw.py b/omicsclaw.py
+index 8946d1f4..5a62384d 100644
+--- a/omicsclaw.py
++++ b/omicsclaw.py
+@@ -191,9 +191,8 @@ def run_skill(
+     demo: bool = False,
+     session_path: str | None = None,
+     extra_args: list[str] | None = None,
+-    timeout: int = 600,
+ ) -> dict:
+-    """Run a single skill via subprocess."""
++    """Run a single skill via subprocess (waits until completion)."""
+ 
+     # Resolve legacy aliases
+     skill_name = resolve_skill_alias(skill_name)
+@@ -204,7 +203,6 @@ def run_skill(
+             input_path=input_path,
+             output_dir=output_dir,
+             session_path=session_path,
+-            timeout=timeout,
+         )
+ 
+     skill_info = SKILLS.get(skill_name)
+@@ -284,13 +282,9 @@ def run_skill(
+             cmd,
+             capture_output=True,
+             text=True,
+-            timeout=timeout,
+             cwd=str(script_path.parent),
+             env=env,
+         )
+-    except subprocess.TimeoutExpired:
+-        duration = time.time() - t0
+-        return _err(skill_name, f"Timed out after {timeout}s", duration=duration)
+     except Exception as e:
+         duration = time.time() - t0
+         return _err(skill_name, str(e), duration=duration)
+@@ -324,7 +318,6 @@ def _run_spatial_pipeline(
+     input_path: str | None = None,
+     output_dir: str | None = None,
+     session_path: str | None = None,
+-    timeout: int = 600,
+ ) -> dict:
+     """Run the standard spatial analysis pipeline end-to-end."""
+     if not input_path and not session_path:
+@@ -348,7 +341,6 @@ def _run_spatial_pipeline(
+             input_path=current_input,
+             output_dir=str(skill_out),
+             session_path=session_path,
+-            timeout=timeout,
+         )
+         all_results[skill_name] = {
+             "success": result["success"],
+@@ -456,7 +448,6 @@ def main():
+     run_p.add_argument("--input", dest="input_path")
+     run_p.add_argument("--output", dest="output_dir")
+     run_p.add_argument("--session", dest="session_path")
+-    run_p.add_argument("--timeout", type=int, default=600)
+     # Skill-specific flags (forwarded to the skill script)
+     run_p.add_argument("--data-type", dest="data_type")
+     run_p.add_argument("--species")
+@@ -504,6 +495,10 @@ def main():
+     run_p.add_argument("--n-perms", type=int)
+     # deconv-specific
+     run_p.add_argument("--n-epochs", type=int)
++    run_p.add_argument("--no-gpu", "--cpu", action="store_true",
++                       help="Force CPU even when GPU is available")
++    run_p.add_argument("--use-gpu", action="store_true",
++                       help="(deprecated, GPU is now default for capable methods)")
+     # cnv-specific
+     run_p.add_argument("--window-size", type=int)
+     run_p.add_argument("--step", type=int)
+@@ -550,13 +545,19 @@ def main():
+         print(f"\n{BOLD}Standalone Layer:{RESET}")
+         standalone_layers = [
+             ("Spatial-Domains",   "spatial-domains",   "Deep learning spatial domain methods, e.g., SpaGCN"),
+-            ("Spatial-Velocity",  "spatial-velocity",  "RNA velocity analysis, e.g., scVelo"),
++            ("Spatial-Annotate",  "spatial-annotate",  "Cell type annotation, e.g., Tangram, scANVI"),
++            ("Spatial-Deconv",    "spatial-deconv",    "Cell type deconvolution, e.g., Cell2Location, FlashDeconv"),
++            ("Spatial-Trajectory","spatial-trajectory","Trajectory inference, e.g., CellRank, Palantir"),
++            ("Spatial-Genes",     "spatial-genes",     "Spatially variable genes, e.g., SpatialDE"),
++            ("Spatial-Statistics","spatial-statistics","Spatial statistics, e.g., Moran's I, Geary's C"),
++            ("Spatial-Condition", "spatial-condition", "Condition comparison, e.g., PyDESeq2 pseudobulk"),
++            ("Spatial-Velocity",  "spatial-velocity",  "RNA velocity analysis, e.g., scVelo, VeloVI"),
+             ("Spatial-CNV",       "spatial-cnv",       "Copy number variation inference, e.g., inferCNVpy"),
+             ("Spatial-Enrichment","spatial-enrichment", "Pathway enrichment, e.g., GSEApy"),
+             ("Spatial-Comm",      "spatial-communication", "Cell communication, e.g., LIANA+, CellPhoneDB"),
+             ("Spatial-Integrate", "spatial-integration","Multi-sample integration, e.g., Harmony, BBKNN"),
+             ("Spatial-Register",  "spatial-registration","Spatial registration, e.g., PASTE"),
+-            ("Spatial-R-Bridge",  "spatial-r-bridge",  "R language bridge, e.g., rpy2, PyDESeq2"),
++            ("Spatial-R-Bridge",  "spatial-r-bridge",  "R language bridge, e.g., rpy2"),
+             ("BANKSY",            "banksy",            "BANKSY spatial domains (requires numpy<2.0, isolated env)"),
+         ]
+         for label, tier_key, desc in standalone_layers:
+@@ -655,6 +656,8 @@ def main():
+         # boolean flags
+         if getattr(args, "refine", False):
+             extra.append("--refine")
++        if getattr(args, "no_gpu", False):
++            extra.append("--no-gpu")
+         # nargs="+" args
+         if getattr(args, "reference_cat", None):
+             extra.extend(["--reference-cat"] + args.reference_cat)
+@@ -666,7 +669,6 @@ def main():
+             demo=args.demo,
+             session_path=args.session_path,
+             extra_args=extra if extra else None,
+-            timeout=args.timeout,
+         )
+ 
+         if result["success"]:
+diff --git a/omicsclaw/core/dependency_manager.py b/omicsclaw/core/dependency_manager.py
+index c07752b9..7a8cd91e 100644
+--- a/omicsclaw/core/dependency_manager.py
++++ b/omicsclaw/core/dependency_manager.py
+@@ -105,10 +105,17 @@ def get_installed_tiers() -> dict[str, bool]:
+         "spatial-domains": importlib.util.find_spec("SpaGCN") is not None and importlib.util.find_spec("torch") is not None,
+         "spatial": importlib.util.find_spec("rpy2") is not None or importlib.util.find_spec("scvi") is not None,
+         "singlecell": importlib.util.find_spec("scrublet") is not None,
+-        "genomics": False, # Genomics currently uses external CLI tools generally, placeholders for now
+-        "proteomics": False,
+-        "metabolomics": False,
++        "genomics": importlib.util.find_spec("pandas") is not None,  # Uses core deps only
++        "proteomics": importlib.util.find_spec("pandas") is not None,  # Uses core deps only
++        "metabolomics": importlib.util.find_spec("pandas") is not None,  # Uses core deps only
++        "bulkrna": importlib.util.find_spec("pydeseq2") is not None or importlib.util.find_spec("gseapy") is not None,
+         # Standalone layers
++        "spatial-annotate": importlib.util.find_spec("tangram") is not None or importlib.util.find_spec("scvi") is not None,
++        "spatial-deconv": importlib.util.find_spec("flashdeconv") is not None or importlib.util.find_spec("cell2location") is not None,
++        "spatial-trajectory": importlib.util.find_spec("cellrank") is not None or importlib.util.find_spec("palantir") is not None,
++        "spatial-genes": importlib.util.find_spec("SpatialDE") is not None,
++        "spatial-statistics": importlib.util.find_spec("esda") is not None or importlib.util.find_spec("libpysal") is not None,
++        "spatial-condition": importlib.util.find_spec("pydeseq2") is not None,
+         "spatial-velocity": importlib.util.find_spec("scvelo") is not None,
+         "spatial-cnv": importlib.util.find_spec("infercnvpy") is not None,
+         "spatial-enrichment": importlib.util.find_spec("gseapy") is not None,
+diff --git a/omicsclaw/core/registry.py b/omicsclaw/core/registry.py
+index 06a3c060..b9f926d7 100644
+--- a/omicsclaw/core/registry.py
++++ b/omicsclaw/core/registry.py
+@@ -201,7 +201,7 @@ def load_lightweight(self, skills_dir: Path | None = None) -> None:
+         "script": SKILLS_DIR / "spatial" / "spatial-deconv" / "spatial_deconv.py",
+         "demo_args": ["--demo"],
+         "description": "Deconvolution — cell type proportions (NNLS, Cell2Location, RCTD, Tangram, CARD)",
+-        "allowed_extra_flags": {"--method", "--reference", "--cell-type-key", "--n-epochs"},
++        "allowed_extra_flags": {"--method", "--reference", "--cell-type-key", "--n-epochs", "--no-gpu"},
+         "requires_preprocessed": True,
+         "saves_h5ad": True,
+     },
+diff --git a/pyproject.toml b/pyproject.toml
+index 0da38f1d..ece11c1e 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -154,6 +154,8 @@ spatial-velocity = [
+ 
+ spatial-cnv = [
+     "infercnvpy>=0.4.0",             # Copy number variation inference (inferCNVpy)
++    "rpy2>=3.5.0,<3.7",              # R bridge for Numbat
++    "anndata2ri>=1.3.0",              # AnnData <-> R bridge
+ ]
+ 
+ spatial-enrichment = [
+@@ -184,11 +186,13 @@ spatial-annotate = [
+ ]
+ 
+ spatial-deconv = [
+-    "flashdeconv>=0.1.0",            # FlashDeconv method
+-    "cell2location>=0.1.4",          # Cell2Location method
+-    "scvi-tools>=1.0.0,<2.0",        # DestVI, Stereoscope methods
+-    "tangram-sc>=1.0.0",              # Tangram method
+-    "torch>=2.0.0,<3.0",             # PyTorch (required by scvi-tools)
++    "flashdeconv>=0.1.0",            # FlashDeconv: fast CPU deconvolution
++    "cell2location>=0.1.4",          # Cell2Location: Bayesian spatial deconvolution
++    "scvi-tools>=1.0.0,<2.0",        # DestVI (CondSCVI+DestVI) and Stereoscope
++    "tangram-sc>=1.0.0",             # Tangram: deep learning cell-to-spot mapping
++    "torch>=2.0.0,<3.0",             # PyTorch backend for scvi-tools and Tangram
++    "rpy2>=3.5.0,<3.7",              # R bridge for RCTD, SPOTlight, CARD
++    "anndata2ri>=1.3.0",             # AnnData <-> R object conversion
+ ]
+ 
+ spatial-trajectory = [
+@@ -198,6 +202,8 @@ spatial-trajectory = [
+ 
+ spatial-genes = [
+     "SpatialDE>=1.1.3",              # SpatialDE spatially variable genes
++    "rpy2>=3.5.0,<3.7",              # R bridge for SPARK-X
++    "anndata2ri>=1.3.0",              # AnnData <-> R bridge
+ ]
+ 
+ spatial-statistics = [
+diff --git a/skills/spatial/spatial-annotate/spatial_annotate.py b/skills/spatial/spatial-annotate/spatial_annotate.py
+index 74ec7864..1f9ca5e3 100644
+--- a/skills/spatial/spatial-annotate/spatial_annotate.py
++++ b/skills/spatial/spatial-annotate/spatial_annotate.py
+@@ -306,56 +306,140 @@ def annotate_cellassign(
+     *,
+     marker_genes: dict[str, list[str]],
+     max_epochs: int = 400,
++    batch_key: str | None = None,
++    layer: str | None = None,
+ ) -> dict:
+-    """Assign cell types using CellAssign probabilistic model."""
++    """Assign cell types using CellAssign probabilistic model.
++
++    CellAssign is a **marker-gene-only** method — it uses a binary marker
++    matrix (genes × cell types) and a negative-binomial mixture model to
++    probabilistically assign each cell to a type.  It does NOT support
++    reference-based transfer (use scANVI / Tangram for that).
++
++    Key implementation notes (per scvi-tools docs):
++      - Size factors must be computed on the **full** gene set *before*
++        subsetting to marker genes.
++      - ``predict()`` always returns a ``pd.DataFrame`` whose columns are
++        the cell-type names from the marker matrix.
++      - The model supports ``batch_key`` for batch-effect correction and
++        ``layer`` to specify which AnnData layer contains raw counts.
++    """
+     require("scvi", feature="CellAssign cell type annotation")
+     from scvi.external import CellAssign
+ 
++    # ---- validate marker genes against adata ----
+     valid_markers = {}
+     all_genes = set(adata.var_names)
++    dropped_genes: dict[str, list[str]] = {}
+     for ct, genes in marker_genes.items():
+         found = [g for g in genes if g in all_genes]
++        missing = [g for g in genes if g not in all_genes]
+         if found:
+             valid_markers[ct] = found
++        if missing:
++            dropped_genes[ct] = missing
++
++    if dropped_genes:
++        n_dropped = sum(len(v) for v in dropped_genes.values())
++        logger.warning(
++            "Dropped %d marker gene(s) not present in the dataset: %s",
++            n_dropped,
++            {ct: gs for ct, gs in dropped_genes.items() if gs},
++        )
+ 
+     if not valid_markers:
+-        raise ValueError("No marker genes found in the dataset")
++        raise ValueError(
++            "No marker genes found in the dataset. "
++            "Check that gene names in marker_genes match adata.var_names "
++            "(case-sensitive)."
++        )
+ 
+     cell_types = list(valid_markers.keys())
+-    marker_gene_list = list({g for genes in valid_markers.values() for g in genes})
++    marker_gene_list = sorted({g for genes in valid_markers.values() for g in genes})
+ 
++    logger.info(
++        "CellAssign: %d cell types, %d marker genes (from %d provided)",
++        len(cell_types),
++        len(marker_gene_list),
++        sum(len(v) for v in marker_genes.values()),
++    )
++
++    # ---- build binary marker matrix (genes × cell types) ----
+     marker_matrix = pd.DataFrame(
+-        np.zeros((len(marker_gene_list), len(cell_types))),
++        np.zeros((len(marker_gene_list), len(cell_types)), dtype=np.float64),
+         index=marker_gene_list,
+         columns=cell_types,
+     )
+     for ct, genes in valid_markers.items():
+         for g in genes:
+-            marker_matrix.loc[g, ct] = 1
+-
++            marker_matrix.loc[g, ct] = 1.0
++
++    # ---- compute size factors on FULL gene set before subsetting ----
++    # scvi-tools docs: "the library size should ideally be computed before
++    # any gene subsetting"
++    data_for_libsize = adata.layers[layer] if layer else adata.X
++    lib_size = np.asarray(data_for_libsize.sum(axis=1)).flatten().astype(np.float64)
++    mean_lib = np.mean(lib_size)
++    if mean_lib == 0:
++        raise ValueError("All cells have zero total counts — cannot compute size factors")
++    size_factors = lib_size / mean_lib
++    # Clamp to avoid numerical issues with near-zero cells
++    size_factors = np.maximum(size_factors, 1e-6)
++
++    # ---- subset to marker genes ----
+     adata_sub = adata[:, marker_gene_list].copy()
++    adata_sub.obs["size_factors"] = size_factors
++
++    # ---- setup & train ----
++    setup_kwargs: dict = {"size_factor_key": "size_factors"}
++    if batch_key is not None:
++        if batch_key not in adata_sub.obs.columns:
++            raise ValueError(f"batch_key '{batch_key}' not found in adata.obs")
++        setup_kwargs["batch_key"] = batch_key
++    if layer is not None:
++        if layer in adata_sub.layers:
++            setup_kwargs["layer"] = layer
++        else:
++            logger.warning(
++                "Layer '%s' not found in subsetted adata; using adata.X", layer
++            )
+ 
+-    lib_size = np.asarray(adata_sub.X.sum(axis=1)).flatten()
+-    adata_sub.obs["size_factors"] = np.maximum(lib_size, 1e-6) / np.mean(np.maximum(lib_size, 1e-6))
+-
+-    CellAssign.setup_anndata(adata_sub, size_factor_key="size_factors")
++    CellAssign.setup_anndata(adata_sub, **setup_kwargs)
+     model = CellAssign(adata_sub, marker_matrix)
+-    model.train(max_epochs=max_epochs)
+ 
+-    predictions = model.predict()
+-    if isinstance(predictions, pd.DataFrame):
+-        labels = [cell_types[i] for i in predictions.values.argmax(axis=1)]
+-    else:
+-        labels = [cell_types[i] for i in predictions]
++    logger.info("Training CellAssign (max_epochs=%d, early_stopping=True) ...", max_epochs)
++    model.train(max_epochs=max_epochs, early_stopping=True)
++
++    # ---- predict ----
++    # predict() always returns pd.DataFrame with columns = cell type names
++    predictions = model.predict()  # DataFrame: cells × cell_types, values = probabilities
++
++    # Best cell type per cell (highest probability)
++    labels = predictions.idxmax(axis=1).values
++    # Confidence = max probability per cell
++    confidence = predictions.max(axis=1).values
+ 
+     adata.obs["cell_type"] = pd.Categorical(labels)
++    adata.obs["cellassign_confidence"] = confidence
++    # Store full probability matrix for downstream analysis
++    adata.obsm["cellassign_probabilities"] = predictions.values
++
+     counts = adata.obs["cell_type"].value_counts().to_dict()
++    mean_confidence = float(np.mean(confidence))
++
++    logger.info(
++        "CellAssign: %d cell types, mean confidence %.3f",
++        len(counts),
++        mean_confidence,
++    )
+ 
+     return {
+         "method": "cellassign",
+         "n_cell_types": len(counts),
+         "cell_type_counts": counts,
+         "n_marker_genes": len(marker_gene_list),
++        "mean_confidence": round(mean_confidence, 4),
++        "cell_type_names": cell_types,
+     }
+ 
+ 
+@@ -517,7 +601,9 @@ def main():
+     parser.add_argument("--cell-type-key", default="cell_type", help="Cell type column in reference")
+     parser.add_argument("--cluster-key", default="leiden", help="Cluster key for marker_based")
+     parser.add_argument("--species", default="human", choices=["human", "mouse"])
+-    parser.add_argument("--model", default=None, help="Pre-trained model path (future)")
++    parser.add_argument("--batch-key", default=None, help="Batch key in adata.obs (for cellassign batch correction)")
++    parser.add_argument("--layer", default=None, help="AnnData layer with raw counts (for cellassign)")
++    parser.add_argument("--model", default=None, help="Pre-trained model path or marker gene JSON (for cellassign)")
+     args = parser.parse_args()
+ 
+     output_dir = Path(args.output_dir)
+@@ -559,9 +645,16 @@ def main():
+         if marker_file and Path(marker_file).exists():
+             with open(marker_file) as f:
+                 marker_genes = json.load(f)
++            logger.info("Loaded marker genes from: %s", marker_file)
+         else:
+             marker_genes = _get_default_signatures(args.species)
+-        summary = annotate_cellassign(adata, marker_genes=marker_genes)
++            logger.info("Using default %s marker signatures", args.species)
++        summary = annotate_cellassign(
++            adata,
++            marker_genes=marker_genes,
++            batch_key=args.batch_key,
++            layer=args.layer,
++        )
+     else:
+         print(f"ERROR: Unknown method {args.method}", file=sys.stderr)
+         sys.exit(1)
+diff --git a/skills/spatial/spatial-deconv/spatial_deconv.py b/skills/spatial/spatial-deconv/spatial_deconv.py
+index 2df46d21..6d994926 100644
+--- a/skills/spatial/spatial-deconv/spatial_deconv.py
++++ b/skills/spatial/spatial-deconv/spatial_deconv.py
+@@ -187,12 +187,14 @@ def _common_genes(adata_sp, adata_ref) -> list[str]:
+     return common
+ 
+ 
+-def _get_accelerator(prefer_gpu: bool = False) -> str:
++def _get_accelerator(prefer_gpu: bool = True) -> str:
++    """Return 'gpu' if CUDA is available and preferred, else 'cpu'."""
+     if not prefer_gpu:
+         return "cpu"
+     try:
+         import torch
+         if torch.cuda.is_available():
++            logger.info("GPU detected: %s", torch.cuda.get_device_name(0))
+             return "gpu"
+     except ImportError:
+         pass
+@@ -291,7 +293,7 @@ def deconvolve_cell2location(
+     cell_type_key: str = "cell_type",
+     n_epochs: int = 30000,
+     n_cells_per_spot: int = 30,
+-    use_gpu: bool = False,
++    use_gpu: bool = True,
+ ) -> tuple[pd.DataFrame, dict]:
+     """Deconvolve using Cell2Location (Bayesian, scvi-tools backend)."""
+     require("scvi", feature="Cell2Location deconvolution")
+@@ -313,9 +315,12 @@ def deconvolve_cell2location(
+     if "counts" not in adata_sp.layers:
+         adata_sp.layers["counts"] = adata_sp.X.copy()
+ 
++    accelerator = _get_accelerator(use_gpu)
++    logger.info("Cell2Location accelerator: %s", accelerator)
++
+     RegressionModel.setup_anndata(adata_ref_sub, layer="counts", labels_key=cell_type_key)
+     ref_model = RegressionModel(adata_ref_sub)
+-    ref_model.train(max_epochs=min(250, n_epochs // 10))
++    ref_model.train(max_epochs=min(250, n_epochs // 10), accelerator=accelerator)
+ 
+     inf_aver = ref_model.export_posterior(adata_ref_sub, sample_kwargs={"num_samples": 1000})
+ 
+@@ -341,7 +346,7 @@ def deconvolve_cell2location(
+     model = cell2location.models.Cell2location(
+         adata_sp, cell_state_df=inf_aver_df, N_cells_per_location=n_cells_per_spot,
+     )
+-    model.train(max_epochs=n_epochs)
++    model.train(max_epochs=n_epochs, accelerator=accelerator)
+ 
+     adata_sp = model.export_posterior(adata_sp)
+     q05 = adata_sp.obsm["q05_cell_abundance_w_sf"]
+@@ -360,6 +365,7 @@ def deconvolve_cell2location(
+ 
+     return prop_df, _deconv_stats(
+         prop_df, common, "cell2location",
++        device=accelerator,
+         n_epochs=n_epochs,
+         n_cells_per_spot=n_cells_per_spot,
+     )
+@@ -475,20 +481,29 @@ def deconvolve_destvi(
+     *,
+     reference_path: str,
+     cell_type_key: str = "cell_type",
+-    n_epochs: int = 10000,
++    n_epochs: int = 2500,  # Official tutorial uses max_epochs=2500 for DestVI
+     n_hidden: int = 128,
+-    n_latent: int = 10,
+-    n_layers: int = 1,
+-    dropout_rate: float = 0.1,
+-    learning_rate: float = 1e-3,
++    n_latent: int = 5,    # Official CondSCVI default
++    n_layers: int = 2,    # Official CondSCVI default
++    dropout_rate: float = 0.05,  # Official CondSCVI default
+     vamp_prior_p: int = 15,
+-    l1_reg: float = 10.0,
+-    use_gpu: bool = False,
++    use_gpu: bool = True,
+ ) -> tuple[pd.DataFrame, dict]:
+-    """Deconvolve using DestVI (scvi-tools CondSCVI + DestVI)."""
++    """Deconvolve using DestVI (scvi-tools CondSCVI + DestVI).
++
++    Re-implemented following the official scvi-tools 1.4.x tutorial:
++    https://docs.scvi-tools.org/en/stable/tutorials/notebooks/spatial/DestVI_tutorial.html
++
++    Key design choices from official tutorial:
++      - prior="mog" (Mixture of Gaussians) — avoids mean_vprior type errors
++      - weight_obs=False (default) — no cell type abundance reweighting
++      - CondSCVI trains with default max_epochs (converges ~300)
++      - DestVI trains with user-controlled max_epochs (default 2500)
++    """
+     require("scvi", feature="DestVI deconvolution")
+ 
+     import scvi
++    from scvi.model import CondSCVI, DestVI
+ 
+     adata_ref = _load_reference(reference_path, cell_type_key)
+     adata_sp = _restore_counts(adata)
+@@ -498,44 +513,59 @@ def deconvolve_destvi(
+     adata_sp = adata_sp[:, common].copy()
+     adata_ref = adata_ref[:, common].copy()
+ 
+-    adata_ref.obs[cell_type_key] = (
+-        adata_ref.obs[cell_type_key].astype("category")
+-    )
++    adata_ref.obs[cell_type_key] = adata_ref.obs[cell_type_key].astype("category")
+ 
+-    condscvi_epochs = max(400, n_epochs // 5)
+-    destvi_epochs = max(200, n_epochs // 10)
+     accelerator = _get_accelerator(use_gpu)
+-    plan_kwargs = {"lr": learning_rate}
+ 
+-    scvi.model.CondSCVI.setup_anndata(adata_ref, labels_key=cell_type_key)
+-    condscvi_model = scvi.model.CondSCVI(
++    # --- Step 1: CondSCVI on reference (scLVM) ---
++    # Determine layer for counts (prefer "counts" layer, fall back to X)
++    sc_layer = "counts" if "counts" in adata_ref.layers else None
++    CondSCVI.setup_anndata(
++        adata_ref,
++        labels_key=cell_type_key,
++        **({"layer": sc_layer} if sc_layer else {}),
++    )
++
++    # Official tutorial: prior="mog" with num_classes_mog, weight_obs=False
++    condscvi_model = CondSCVI(
+         adata_ref,
+         n_hidden=n_hidden,
+         n_latent=n_latent,
+         n_layers=n_layers,
+         dropout_rate=dropout_rate,
++        weight_obs=False,
++        prior="mog",
++        num_classes_mog=vamp_prior_p,
+     )
+-    condscvi_model.train(
+-        max_epochs=condscvi_epochs,
+-        accelerator=accelerator,
+-        train_size=0.9,
+-        plan_kwargs=plan_kwargs,
++
++    condscvi_epochs = 300  # Official default, converges quickly
++    logger.info(
++        "Training CondSCVI (reference model): max_epochs=%d, accelerator=%s",
++        condscvi_epochs, accelerator,
+     )
++    condscvi_model.train(max_epochs=condscvi_epochs, accelerator=accelerator)
+ 
+-    scvi.model.DestVI.setup_anndata(adata_sp)
+-    destvi_model = scvi.model.DestVI.from_rna_model(
++    # --- Step 2: DestVI on spatial data (stLVM) ---
++    st_layer = "counts" if "counts" in adata_sp.layers else None
++    DestVI.setup_anndata(
++        adata_sp,
++        **({"layer": st_layer} if st_layer else {}),
++    )
++
++    destvi_epochs = n_epochs
++    logger.info(
++        "Training DestVI (spatial model): max_epochs=%d, accelerator=%s",
++        destvi_epochs, accelerator,
++    )
++
++    destvi_model = DestVI.from_rna_model(
+         adata_sp,
+         condscvi_model,
+         vamp_prior_p=vamp_prior_p,
+-        l1_reg=l1_reg,
+-    )
+-    destvi_model.train(
+-        max_epochs=destvi_epochs,
+-        accelerator=accelerator,
+-        train_size=0.9,
+-        plan_kwargs=plan_kwargs,
+     )
++    destvi_model.train(max_epochs=destvi_epochs, accelerator=accelerator)
+ 
++    # --- Step 3: Extract proportions ---
+     prop_df = destvi_model.get_proportions()
+     prop_df.index = adata_sp.obs_names
+ 
+@@ -545,9 +575,9 @@ def deconvolve_destvi(
+     return prop_df, _deconv_stats(
+         prop_df, common, "destvi",
+         device=accelerator,
+-        n_epochs=n_epochs,
++        n_epochs=destvi_epochs,
+         condscvi_epochs=condscvi_epochs,
+-        destvi_epochs=destvi_epochs,
++        prior="mog",
+     )
+ 
+ 
+@@ -564,7 +594,7 @@ def deconvolve_stereoscope(
+     n_epochs: int = 150000,
+     learning_rate: float = 0.01,
+     batch_size: int = 128,
+-    use_gpu: bool = False,
++    use_gpu: bool = True,
+ ) -> tuple[pd.DataFrame, dict]:
+     """Deconvolve using Stereoscope (scvi-tools RNAStereoscope + SpatialStereoscope)."""
+     require("scvi", feature="Stereoscope deconvolution")
+@@ -632,25 +662,33 @@ def deconvolve_tangram(
+     reference_path: str,
+     cell_type_key: str = "cell_type",
+     n_epochs: int = 1000,
+-    use_gpu: bool = False,
++    use_gpu: bool = True,
+ ) -> tuple[pd.DataFrame, dict]:
+     """Deconvolve using Tangram deep learning mapping."""
+     require("tangram", feature="Tangram deconvolution")
+     import tangram as tg
+ 
+     adata_ref = _load_reference(reference_path, cell_type_key)
++    adata_sp = _restore_counts(adata)
++
++    # Check common genes first (for early error detection)
++    common = _common_genes(adata_sp, adata_ref)
+ 
++    # Select HVG as training genes
+     if "highly_variable" not in adata_ref.var.columns:
+         sc.pp.highly_variable_genes(adata_ref, n_top_genes=2000)
+     genes = list(adata_ref.var_names[adata_ref.var["highly_variable"]])
+ 
+-    adata_sp = _restore_counts(adata)
+     spatial_key = get_spatial_key(adata)
+     if spatial_key and spatial_key not in adata_sp.obsm:
+         adata_sp.obsm[spatial_key] = adata.obsm[spatial_key].copy()
+ 
++    # Let tg.pp_adatas handle gene matching internally
+     tg.pp_adatas(adata_ref, adata_sp, genes=genes)
+ 
++    # Get actual training genes used by Tangram
++    training_genes = adata_sp.uns.get('training_genes', common)
++
+     device = "cuda" if _get_accelerator(use_gpu) == "gpu" else "cpu"
+     logger.info("Tangram mapping (%d epochs, device=%s) ...", n_epochs, device)
+     ad_map = tg.map_cells_to_space(
+@@ -664,9 +702,8 @@ def deconvolve_tangram(
+     ct_pred = adata_sp.obsm["tangram_ct_pred"]
+     prop_df = ct_pred.div(ct_pred.sum(axis=1), axis=0)
+ 
+-    common = list(set(adata.var_names) & set(adata_ref.var_names))
+     return prop_df, _deconv_stats(
+-        prop_df, common, "tangram", device=device, n_epochs=n_epochs
++        prop_df, training_genes, "tangram", device=device, n_epochs=n_epochs
+     )
+ 
+ 
+@@ -1131,7 +1168,10 @@ def main() -> None:
+     parser.add_argument("--cell-type-key",  default="cell_type",
+                         help="Cell type column in reference obs (default: cell_type)")
+     parser.add_argument("--n-epochs",       type=int, default=None)
+-    parser.add_argument("--use-gpu",        action="store_true")
++    parser.add_argument("--no-gpu", "--cpu", action="store_true",
++                        help="Force CPU even when GPU is available")
++    parser.add_argument("--use-gpu",        action="store_true",
++                        help="(deprecated, GPU is now default for capable methods)")
+     parser.add_argument("--rctd-mode",      default="full",
+                         choices=["full", "doublet", "single"],
+                         help="RCTD mode (default: full)")
+@@ -1175,10 +1215,20 @@ def main() -> None:
+         "reference_path": args.reference,
+         "cell_type_key": args.cell_type_key,
+     }
++    # Methods that accept n_epochs parameter
++    _EPOCH_METHODS = {"cell2location", "destvi", "stereoscope", "tangram"}
+     if args.n_epochs is not None:
+-        kwargs["n_epochs"] = args.n_epochs
++        if args.method in _EPOCH_METHODS:
++            kwargs["n_epochs"] = args.n_epochs
++            logger.info("Using user-specified n_epochs=%d", args.n_epochs)
++        else:
++            logger.warning(
++                "Method '%s' does not support --n-epochs (ignored). "
++                "Supported: %s", args.method, ", ".join(sorted(_EPOCH_METHODS))
++            )
+     if cfg.supports_gpu:
+-        kwargs["use_gpu"] = args.use_gpu
++        # GPU is default for capable methods; --no-gpu / --cpu opts out
++        kwargs["use_gpu"] = not getattr(args, 'no_gpu', False)
+     if args.method == "rctd":
+         kwargs["mode"] = args.rctd_mode
+     if args.method == "card":
+diff --git a/skills/spatial/spatial-genes/spatial_genes.py b/skills/spatial/spatial-genes/spatial_genes.py
+index 2875b299..39c8091c 100644
+--- a/skills/spatial/spatial-genes/spatial_genes.py
++++ b/skills/spatial/spatial-genes/spatial_genes.py
+@@ -158,22 +158,47 @@ def run_spatialde(
+     fdr_threshold: float = 0.05,
+     omnibus: bool = True,
+ ) -> tuple[pd.DataFrame, dict]:
+-    """SpatialDE2 SVG detection with Gaussian process regression.
+-
+-    Identifies genes whose expression patterns have significant spatial structure
+-    by comparing spatial GP models against a constant model. Can also assign
+-    genes to spatial expression patterns via automatic expression histology (AEH).
++    """SpatialDE SVG detection with Gaussian process regression.
++
++    Re-implemented following the official Teichlab/SpatialDE GitHub tutorial:
++    https://github.com/Teichlab/SpatialDE
++
++    Pipeline:
++      1. NaiveDE.stabilize — Anscombe variance-stabilizing transform
++      2. NaiveDE.regress_out — regress library size (total_counts)
++      3. SpatialDE.run — GP-based spatial DE test
++      4. (optional) SpatialDE.spatial_patterns — AEH pattern assignment
++
++    Key output columns:
++      - g: gene name
++      - pval / qval: raw / FDR-corrected p-value
++      - l: lengthscale (spatial distance of expression change)
++      - FSV: fraction of variance explained by spatial variation
++      - LLR: log-likelihood ratio
+     """
+-    require("spatialde", feature="SpatialDE spatially variable gene detection")
++    # --- scipy compat shims for SpatialDE 1.x ---
++    # IMPORTANT: These shims MUST run BEFORE require() AND import SpatialDE,
++    # because SpatialDE/base.py does `from scipy.misc import derivative` at
++    # module load time, and SpatialDE/util.py uses `import scipy as sp` then
++    # calls sp.arange, sp.array, sp.argsort, sp.zeros_like which were removed
++    # in scipy >= 1.14.
++    import scipy as _scipy
++    _NUMPY_COMPAT_ATTRS = [
++        "arange", "array", "argsort", "bool_", "concatenate", "diag", "dot",
++        "empty", "exp", "eye", "float64", "inf", "int32", "log", "log2",
++        "newaxis", "ones", "sqrt", "sum", "zeros", "zeros_like", "isnan",
++        "nan", "pi", "linspace", "meshgrid",
++    ]
++    for _attr in _NUMPY_COMPAT_ATTRS:
++        if not hasattr(_scipy, _attr) and hasattr(np, _attr):
++            setattr(_scipy, _attr, getattr(np, _attr))
+ 
+-    # scipy.misc.derivative was removed in scipy>=1.14; patch it back so
+-    # SpatialDE 1.x (which imports it at module load time) can be imported.
++    # scipy.misc.derivative — removed in scipy >= 1.14, needed by base.py
+     import scipy.misc as _scipy_misc
+     if not hasattr(_scipy_misc, "derivative"):
+-        import numpy as _np
+ 
+         def _derivative_compat(func, x0, dx=1.0, n=1, args=(), order=3):
+-            """Central-difference numerical derivative (scipy.misc compat shim)."""
++            """Central-difference numerical derivative (scipy.misc compat)."""
+             if n == 1:
+                 return (func(x0 + dx, *args) - func(x0 - dx, *args)) / (2.0 * dx)
+             if n == 2:
+@@ -182,28 +207,31 @@ def _derivative_compat(func, x0, dx=1.0, n=1, args=(), order=3):
+                     - 2.0 * func(x0, *args)
+                     + func(x0 - dx, *args)
+                 ) / dx**2
+-            # General n: use higher-order central differences
+             from math import comb
+             ho = order >> 1
+-            weights = _np.array(
++            weights = np.array(
+                 [(-1) ** (n - k + ho) * comb(n, abs(k - ho)) for k in range(order)],
+                 dtype=float,
+             )
+-            vals = _np.array(
++            vals = np.array(
+                 [func(x0 + (k - ho) * dx, *args) for k in range(order)]
+             )
+-            return _np.dot(weights, vals) / dx**n
++            return np.dot(weights, vals) / dx**n
+ 
+         _scipy_misc.derivative = _derivative_compat
+ 
++    # NOW safe to require/import
++    require("spatialde", feature="SpatialDE spatially variable gene detection")
+     import SpatialDE
+     import NaiveDE
+ 
++    # ----- Prepare data (following official tutorial) -----
+     spatial_key = require_spatial_coords(adata)
+     coords = adata.obsm[spatial_key]
+ 
+     logger.info("Running SpatialDE on %d genes ...", adata.n_vars)
+ 
++    # Build counts DataFrame (samples × genes)
+     adata_work = adata.copy()
+     if sparse.issparse(adata_work.X):
+         adata_work.X = adata_work.X.toarray()
+@@ -213,43 +241,64 @@ def _derivative_compat(func, x0, dx=1.0, n=1, args=(), order=3):
+         index=adata_work.obs_names,
+         columns=adata_work.var_names,
+     )
++
++    # Filter practically unobserved genes (official: counts.sum(0) >= 3)
++    gene_totals = counts.sum(axis=0)
++    counts = counts.T[gene_totals >= 3].T
++    if counts.shape[1] == 0:
++        raise ValueError("All genes have < 3 total counts — cannot run SpatialDE.")
++    logger.info("SpatialDE: %d genes remain after count filter (>= 3)", counts.shape[1])
++
++    # Build sample_info with spatial coords + total_counts
+     sample_info = pd.DataFrame(
+         {"x": coords[:, 0], "y": coords[:, 1], "total_counts": counts.sum(axis=1)},
+         index=adata_work.obs_names,
+     )
+ 
+-    # Drop genes with zero total counts to avoid log(0) in NaiveDE.stabilize.
+-    gene_totals = counts.sum(axis=0)
+-    counts = counts.loc[:, gene_totals > 0]
+-    if counts.shape[1] == 0:
+-        raise ValueError("All genes have zero counts after filtering — cannot run SpatialDE.")
+-    logger.info("SpatialDE: %d genes remain after zero-count filter", counts.shape[1])
+-
+-    # Step 1 — variance-stabilize.
+-    # NaiveDE.stabilize expects genes × samples (rows=genes), returns same shape.
++    # Step 1 — Anscombe variance-stabilizing transform (official tutorial)
++    # NaiveDE.stabilize expects genes × samples (rows=genes), returns same
+     norm_expr = NaiveDE.stabilize(counts.T).T
+ 
+-    # Step 2 — regress out per-cell total-count effect.
+-    # Without this step, cells with high library size inflate expression values
+-    # across all genes, causing SpatialDE's LR test to produce p-values > 1
+-    # and triggering the "p-values should be between 0 and 1" AssertionError.
++    # Step 2 — Regress out per-cell library size (official tutorial)
+     resid_expr = NaiveDE.regress_out(
+         sample_info, norm_expr.T, "np.log(total_counts)"
+     ).T
+ 
+-    # Step 3 — drop zero-variance genes (constant after regress_out → degenerate GP).
++    # Step 3 — Drop zero-variance genes (constant after regress_out → degenerate GP)
+     gene_var = resid_expr.var(axis=0)
+     resid_expr = resid_expr.loc[:, gene_var > 0]
+     if resid_expr.shape[1] == 0:
+         raise ValueError(
+-            "All genes have zero variance after regress_out — cannot run SpatialDE."
++            "All genes have zero variance after normalization — cannot run SpatialDE."
+         )
+     logger.info("SpatialDE: %d genes pass variance filter", resid_expr.shape[1])
+ 
+-    # Convert to numpy array: SpatialDE.base uses [:, None] indexing which
+-    # is incompatible with pandas Series in newer pandas versions.
+-    coords_xy = sample_info[["x", "y"]].to_numpy()
+-    results = SpatialDE.run(coords_xy, resid_expr)
++    # Step 4 — Run SpatialDE GP test (official: SpatialDE.run(X, resid_expr))
++    X = sample_info[["x", "y"]]
++    results = SpatialDE.run(X, resid_expr)
++
++    # Step 5 — Optional: AEH (Automatic Expression Histology)
++    # Groups significant genes into spatial co-expression patterns
++    aeh_results = None
++    aeh_patterns = None
++    if omnibus:
++        sign_results = results.query("qval < @fdr_threshold")
++        if len(sign_results) >= 5:
++            # Use median optimal lengthscale from significant genes
++            l_aeh = float(sign_results["l"].median())
++            n_patterns = min(max(3, len(sign_results) // 10), 10)
++            try:
++                logger.info(
++                    "Running AEH: %d significant genes, %d patterns, l=%.2f",
++                    len(sign_results), n_patterns, l_aeh,
++                )
++                aeh_results, aeh_patterns = SpatialDE.spatial_patterns(
++                    X, resid_expr, sign_results, C=n_patterns, l=l_aeh, verbosity=0,
++                )
++            except Exception as aeh_err:
++                logger.warning("AEH failed (non-fatal): %s", aeh_err)
++
++    # ----- Format results -----
+     results = results.sort_values("qval")
+ 
+     col_map = {"g": "gene", "qval": "pval_norm", "LLR": "I"}
+@@ -270,7 +319,17 @@ def _derivative_compat(func, x0, dx=1.0, n=1, args=(), order=3):
+         "top_genes": top["gene"].tolist(),
+     }
+ 
++    if aeh_results is not None:
++        n_patterns = int(aeh_results["pattern"].nunique())
++        summary["aeh_patterns"] = n_patterns
++        logger.info("AEH assigned %d genes to %d spatial patterns", len(aeh_results), n_patterns)
++
++    # Store full results for downstream use
+     adata.uns["spatialde_results"] = results
++    if aeh_results is not None:
++        adata.uns["spatialde_aeh"] = aeh_results
++    if aeh_patterns is not None:
++        adata.uns["spatialde_patterns"] = aeh_patterns
+ 
+     logger.info(
+         "SpatialDE: %d/%d genes significant (qval < %.2f), reporting top %d",
+diff --git a/skills/spatial/spatial-preprocess/spatial_preprocess.py b/skills/spatial/spatial-preprocess/spatial_preprocess.py
+index c4a4bbc9..8fc57fe6 100644
+--- a/skills/spatial/spatial-preprocess/spatial_preprocess.py
++++ b/skills/spatial/spatial-preprocess/spatial_preprocess.py
+@@ -50,8 +50,8 @@
+ def preprocess(
+     adata,
+     *,
+-    min_genes: int = 200,
+-    min_cells: int = 3,
++    min_genes: int = 0,
++    min_cells: int = 0,
+     max_mt_pct: float = 20.0,
+     n_top_hvg: int = 2000,
+     n_pcs: int = 50,
+@@ -97,7 +97,7 @@ def preprocess(
+ 
+     # HVG
+     n_hvg = min(n_top_hvg, adata.n_vars - 1)
+-    sc.pp.highly_variable_genes(adata, n_top_genes=n_hvg, flavor="seurat")
++    sc.pp.highly_variable_genes(adata, n_top_genes=n_hvg, flavor="seurat_v3")
+     logger.info("Selected %d highly variable genes", adata.var["highly_variable"].sum())
+ 
+     # Scale + PCA on HVG
+@@ -330,13 +330,13 @@ def main():
+     parser.add_argument("--demo", action="store_true")
+     parser.add_argument("--data-type", default="generic")
+     parser.add_argument("--species", default="human")
+-    parser.add_argument("--min-genes", type=int, default=200)
+-    parser.add_argument("--min-cells", type=int, default=3)
++    parser.add_argument("--min-genes", type=int, default=0)
++    parser.add_argument("--min-cells", type=int, default=0)
+     parser.add_argument("--max-mt-pct", type=float, default=20.0)
+     parser.add_argument("--n-top-hvg", type=int, default=2000)
+-    parser.add_argument("--n-pcs", type=int, default=50)
++    parser.add_argument("--n-pcs", type=int, default=30)
+     parser.add_argument("--n-neighbors", type=int, default=15)
+-    parser.add_argument("--leiden-resolution", type=float, default=1.0)
++    parser.add_argument("--leiden-resolution", type=float, default=0.5)
+     args = parser.parse_args()
+ 
+     output_dir = Path(args.output_dir)

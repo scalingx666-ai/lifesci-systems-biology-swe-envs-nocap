@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__muon-212"
+description = "Fix prot.pp.clr for old-style sparse matrices"
+
+[metadata]
+difficulty = "small"
+category = "bugfix"
+keywords = [
+    "muon",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/muon"
+ref = "cf925bc0ae97f763ddc3bc91ca628791437f6d59"
+reference = "https://github.com/scverse/muon/pull/212"
+source_access = "auto"
+built_at = "2026-11-15T16:59:36.711038+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:5aaed34d74387733075ca4f59735e66604069c381d6582dc3b6cabdbb2a5f495"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-07-23T16:05:08Z"
+diff_format = "unified"
+context_files = [
+    "muon/_prot/preproc.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 11
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

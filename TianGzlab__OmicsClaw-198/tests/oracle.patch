@@ -1,0 +1,469 @@
+diff --git a/bot/agent_loop.py b/bot/agent_loop.py
+index 890bb959..bf38183b 100644
+--- a/bot/agent_loop.py
++++ b/bot/agent_loop.py
+@@ -279,12 +279,24 @@ def _extract_tool_timeout_seconds(execution_result, display_output) -> int | Non
+     return None
+ 
+ 
+-def _build_tool_result_callback_metadata(execution_result, display_output) -> dict[str, object]:
++def _build_tool_result_callback_metadata(
++    execution_result,
++    display_output,
++    *,
++    pending_preflight: dict | None = None,
++) -> dict[str, object]:
+     timeout_seconds = _extract_tool_timeout_seconds(execution_result, display_output)
++    is_error = bool(not getattr(execution_result, "success", False) or timeout_seconds)
++    # A preflight that needs user input is not a failure — the subprocess
++    # exits non-zero by design so callers can stash state and prompt. UIs
++    # gating on ``is_error`` would otherwise hide the confirmation text.
++    if pending_preflight and not timeout_seconds:
++        is_error = False
++
+     metadata: dict[str, object] = {
+         "status": getattr(execution_result, "status", ""),
+         "success": bool(getattr(execution_result, "success", False)),
+-        "is_error": bool(not getattr(execution_result, "success", False) or timeout_seconds),
++        "is_error": is_error,
+     }
+ 
+     error = getattr(execution_result, "error", None)
+@@ -293,6 +305,9 @@ def _build_tool_result_callback_metadata(execution_result, display_output) -> di
+     if timeout_seconds is not None:
+         metadata["timed_out"] = True
+         metadata["elapsed_seconds"] = timeout_seconds
++    if pending_preflight:
++        metadata["preflight_pending"] = True
++        metadata["preflight_payload"] = pending_preflight
+     return metadata
+ 
+ 
+@@ -405,6 +420,7 @@ async def after_tool(execution_result, result_record, tool_state):
+ 
+         if request.executor:
+             display_output = result_record.content
++            pending_payload_for_metadata: dict | None = None
+             if func_name == "omicsclaw":
+                 pending_payload = _extract_pending_preflight_payload(display_output)
+                 if _preflight_payload_needs_reply(pending_payload):
+@@ -413,6 +429,7 @@ async def after_tool(execution_result, result_record, tool_state):
+                         args=func_args,
+                         payload=pending_payload,
+                     )
++                    pending_payload_for_metadata = pending_payload
+                 else:
+                     pending_preflight_requests.pop(chat_id, None)
+             if func_name == "consult_knowledge":
+@@ -428,7 +445,11 @@ async def after_tool(execution_result, result_record, tool_state):
+                 on_tool_result,
+                 func_name,
+                 display_output,
+-                _build_tool_result_callback_metadata(execution_result, display_output),
++                _build_tool_result_callback_metadata(
++                    execution_result,
++                    display_output,
++                    pending_preflight=pending_payload_for_metadata,
++                ),
+             )
+ 
+     def on_llm_error(exc: Exception) -> str:
+diff --git a/omicsclaw/app/server.py b/omicsclaw/app/server.py
+index bf8bd8ac..7a566b71 100644
+--- a/omicsclaw/app/server.py
++++ b/omicsclaw/app/server.py
+@@ -1533,6 +1533,21 @@ def _tool_timeout_seconds(metadata: Any) -> int | None:
+     def _tool_result_is_error(metadata: Any) -> bool:
+         return isinstance(metadata, dict) and bool(metadata.get("is_error"))
+ 
++    def _tool_result_preflight_payload(metadata: Any) -> dict | None:
++        """Return the preflight ``needs_user_input`` payload when present.
++
++        ``bot.agent_loop`` tags tool results that ended in a preflight
++        confirmation request with ``preflight_pending=True`` and the
++        original payload. The desktop surface uses this to render a
++        dedicated prompt rather than collapsing the result as an error.
++        """
++        if not isinstance(metadata, dict):
++            return None
++        if not metadata.get("preflight_pending"):
++            return None
++        payload = metadata.get("preflight_payload")
++        return payload if isinstance(payload, dict) else None
++
+     async def on_tool_result(tool_name: str, display_output: Any, metadata: Any = None):
+         content_str = str(display_output) if display_output is not None else ""
+         pending_ids = tool_call_ids_by_name.get(tool_name)
+@@ -1567,6 +1582,21 @@ async def on_tool_result(tool_name: str, display_output: Any, metadata: Any = No
+             "tool_result",
+             json.dumps(result_data, ensure_ascii=False, default=str),
+         )
++        preflight_payload = _tool_result_preflight_payload(metadata)
++        if preflight_payload is not None:
++            await _queue_event(
++                "preflight_pending",
++                json.dumps(
++                    {
++                        "tool_use_id": tool_use_id,
++                        "tool_name": tool_name,
++                        "session_id": session_id,
++                        "payload": preflight_payload,
++                    },
++                    ensure_ascii=False,
++                    default=str,
++                ),
++            )
+         if timeout_seconds is not None:
+             await _queue_event(
+                 "tool_timeout",
+diff --git a/tests/bot/test_agent_loop.py b/tests/bot/test_agent_loop.py
+index 0f229fbe..b738ae96 100644
+--- a/tests/bot/test_agent_loop.py
++++ b/tests/bot/test_agent_loop.py
+@@ -164,3 +164,242 @@ def test_format_llm_api_error_message_provides_actionable_text_for_common_errors
+     # Empty exception still produces a message (no crash)
+     msg2 = _format_llm_api_error_message(Exception())
+     assert msg2  # non-empty string
++
++
++class _FakeExecutionResult:
++    """Minimal stand-in for an ExecutionResult — only attributes the
++    metadata builder reads."""
++
++    def __init__(self, *, success: bool, status: str = "", error: Exception | None = None):
++        self.success = success
++        self.status = status
++        self.error = error
++
++
++def test_build_tool_result_callback_metadata_marks_failure_as_error():
++    """Baseline: a non-success tool result without a preflight payload
++    is reported as ``is_error=True`` so UIs can collapse it as a
++    failure tile."""
++    from bot.agent_loop import _build_tool_result_callback_metadata
++
++    metadata = _build_tool_result_callback_metadata(
++        _FakeExecutionResult(success=False), display_output="boom"
++    )
++
++    assert metadata["is_error"] is True
++    assert metadata.get("preflight_pending") is None
++
++
++def test_build_tool_result_callback_metadata_demotes_preflight_pending_from_error():
++    """A preflight that needs user input is the structured ``needs_user_input``
++    path — the subprocess exits non-zero by design so callers can stash
++    state and prompt. UIs that gate on ``is_error`` would otherwise hide
++    the confirmation text. With ``pending_preflight`` passed in, the
++    metadata must:
++
++      - report ``is_error=False`` (so the desktop frontend renders the
++        guidance instead of collapsing it as an error)
++      - carry ``preflight_pending=True`` and the original payload so
++        surfaces can light up dedicated confirmation UI
++      - preserve ``success`` and ``status`` from the underlying result —
++        the run did fail at the process level; only the UX classification
++        changes
++    """
++    from bot.agent_loop import _build_tool_result_callback_metadata
++
++    payload = {
++        "kind": "preflight",
++        "status": "needs_user_input",
++        "skill_name": "sc-preprocessing",
++        "confirmations": ["confirm defaults are acceptable"],
++        "pending_fields": [],
++    }
++    metadata = _build_tool_result_callback_metadata(
++        _FakeExecutionResult(success=False, status="error"),
++        display_output="preflight check failed",
++        pending_preflight=payload,
++    )
++
++    assert metadata["is_error"] is False
++    assert metadata["preflight_pending"] is True
++    assert metadata["preflight_payload"] == payload
++    assert metadata["success"] is False
++    assert metadata["status"] == "error"
++
++
++def test_after_tool_forwards_pending_preflight_payload_to_on_tool_result(monkeypatch):
++    """Integration: the ``after_tool`` callback constructed by
++    ``_build_bot_query_engine_callbacks`` must detect a preflight
++    ``needs_user_input`` payload in an ``omicsclaw`` tool result, stash
++    it, AND forward the payload to ``on_tool_result`` so a surface
++    (desktop / TUI / bot) can surface a confirmation UI instead of
++    rendering the run as a generic error.
++
++    This is the regression test for the desktop app failing silently on
++    sc-preprocessing preflight blocks (no confirmation surfaced).
++    """
++    import asyncio
++    import json
++    from types import SimpleNamespace
++
++    import bot.agent_loop as agent_loop
++    import bot.core as core
++
++    # Isolate the global stash so we don't leak across tests.
++    monkeypatch.setattr(core, "pending_preflight_requests", {}, raising=False)
++
++    captured: list[tuple[str, object, dict]] = []
++
++    async def fake_on_tool_result(name, output, metadata):
++        captured.append((name, output, metadata))
++
++    async def noop(*args, **kwargs):
++        return None
++
++    callbacks = agent_loop._build_bot_query_engine_callbacks(
++        chat_id="chat-preflight",
++        progress_fn=None,
++        progress_update_fn=None,
++        on_tool_call=noop,
++        on_tool_result=fake_on_tool_result,
++        on_stream_content=noop,
++        on_stream_reasoning=noop,
++        request_tool_approval=noop,
++        logger_obj=SimpleNamespace(
++            info=lambda *a, **k: None,
++            debug=lambda *a, **k: None,
++            warning=lambda *a, **k: None,
++            error=lambda *a, **k: None,
++        ),
++        audit_fn=lambda *a, **k: None,
++        deep_learning_methods=set(),
++        usage_accumulator=lambda *_a, **_k: {},
++    )
++
++    payload = {
++        "kind": "preflight",
++        "status": "needs_user_input",
++        "skill_name": "sc-preprocessing",
++        "confirmations": ["Confirm defaults are acceptable"],
++        "pending_fields": [],
++        "missing_requirements": [],
++    }
++    tool_content = (
++        "Important follow-up\n\n"
++        f"USER_GUIDANCE_JSON: {json.dumps(payload)}\n"
++        "preflight check failed\n"
++    )
++
++    request = SimpleNamespace(
++        name="omicsclaw",
++        arguments={"skill": "preprocess", "file_path": "/tmp/x.h5ad"},
++        spec=None,
++        policy_decision=None,
++        executor=lambda *_a, **_k: None,
++    )
++    execution_result = SimpleNamespace(
++        request=request,
++        success=False,
++        status="error",
++        error=None,
++        policy_decision=None,
++    )
++    result_record = SimpleNamespace(content=tool_content)
++
++    asyncio.run(callbacks.after_tool(execution_result, result_record, {}))
++
++    assert len(captured) == 1
++    name, output, metadata = captured[0]
++    assert name == "omicsclaw"
++    assert metadata["is_error"] is False, (
++        "preflight needs_user_input must not be classified as an error — "
++        "the desktop frontend hides error tile content"
++    )
++    assert metadata["preflight_pending"] is True
++    assert metadata["preflight_payload"]["status"] == "needs_user_input"
++    assert metadata["preflight_payload"]["skill_name"] == "sc-preprocessing"
++    # State is also stashed for the resume path on the next user message.
++    assert "chat-preflight" in core.pending_preflight_requests
++
++
++def test_after_tool_does_not_mark_preflight_pending_for_normal_failure(monkeypatch):
++    """Sanity inverse: an ordinary tool failure (no preflight payload in
++    the result) must NOT carry ``preflight_pending`` — otherwise every
++    failed run would leak the marker and confuse downstream UIs."""
++    import asyncio
++    from types import SimpleNamespace
++
++    import bot.agent_loop as agent_loop
++    import bot.core as core
++
++    monkeypatch.setattr(core, "pending_preflight_requests", {}, raising=False)
++
++    captured: list[dict] = []
++
++    async def fake_on_tool_result(name, output, metadata):
++        captured.append(metadata)
++
++    async def noop(*args, **kwargs):
++        return None
++
++    callbacks = agent_loop._build_bot_query_engine_callbacks(
++        chat_id="chat-normal-fail",
++        progress_fn=None,
++        progress_update_fn=None,
++        on_tool_call=noop,
++        on_tool_result=fake_on_tool_result,
++        on_stream_content=noop,
++        on_stream_reasoning=noop,
++        request_tool_approval=noop,
++        logger_obj=SimpleNamespace(
++            info=lambda *a, **k: None,
++            debug=lambda *a, **k: None,
++            warning=lambda *a, **k: None,
++            error=lambda *a, **k: None,
++        ),
++        audit_fn=lambda *a, **k: None,
++        deep_learning_methods=set(),
++        usage_accumulator=lambda *_a, **_k: {},
++    )
++
++    request = SimpleNamespace(
++        name="omicsclaw",
++        arguments={"skill": "qc"},
++        spec=None,
++        policy_decision=None,
++        executor=lambda *_a, **_k: None,
++    )
++    execution_result = SimpleNamespace(
++        request=request,
++        success=False,
++        status="error",
++        error=None,
++        policy_decision=None,
++    )
++    result_record = SimpleNamespace(content="skill crashed with KeyError 'foo'")
++
++    asyncio.run(callbacks.after_tool(execution_result, result_record, {}))
++
++    assert len(captured) == 1
++    metadata = captured[0]
++    assert metadata["is_error"] is True
++    assert metadata.get("preflight_pending") is None
++
++
++def test_build_tool_result_callback_metadata_timeout_overrides_preflight_demotion():
++    """If the tool genuinely timed out, that is an error regardless of
++    any preflight payload — don't let a stale payload mask a hung run.
++    """
++    from bot.agent_loop import _build_tool_result_callback_metadata
++
++    metadata = _build_tool_result_callback_metadata(
++        _FakeExecutionResult(success=False),
++        display_output="timed out after 120 seconds",
++        pending_preflight={"kind": "preflight", "status": "needs_user_input"},
++    )
++
++    assert metadata["is_error"] is True
++    assert metadata.get("timed_out") is True
++    # The marker is still emitted so callers can choose to react, but
++    # is_error wins on a real timeout.
++    assert metadata["preflight_pending"] is True
+diff --git a/tests/test_app_server.py b/tests/test_app_server.py
+index 2525f343..d6e618ab 100644
+--- a/tests/test_app_server.py
++++ b/tests/test_app_server.py
+@@ -1211,6 +1211,99 @@ async def fake_llm_tool_loop(**kwargs):
+     assert captured_kwargs["policy_state"]["auto_approve_ask"] is True
+ 
+ 
++@pytest.mark.asyncio
++async def test_chat_stream_emits_preflight_pending_event_for_omicsclaw_tool(monkeypatch):
++    """Desktop regression: when an omicsclaw tool result carries the
++    ``preflight_pending`` metadata marker, the server must:
++
++      - keep the ``tool_result`` event with ``is_error=False`` so the
++        frontend renders the guidance content (otherwise the user only
++        sees a collapsed error tile, as in the original sc-preprocessing
++        bug report)
++      - additionally emit a dedicated ``preflight_pending`` SSE event
++        with the structured payload so the frontend can light up a
++        confirmation prompt without parsing free-form text
++    """
++    pytest.importorskip("fastapi")
++
++    from omicsclaw.app import server
++
++    payload = {
++        "kind": "preflight",
++        "status": "needs_user_input",
++        "skill_name": "sc-preprocessing",
++        "confirmations": ["Confirm defaults are acceptable"],
++        "pending_fields": [],
++    }
++
++    async def fake_llm_tool_loop(**kwargs):
++        await kwargs["on_tool_call"](
++            "omicsclaw", {"skill": "preprocess", "file_path": "/tmp/x.h5ad"}
++        )
++        await kwargs["on_tool_result"](
++            "omicsclaw",
++            "USER_GUIDANCE: confirm defaults",
++            {
++                "success": False,
++                "is_error": False,
++                "preflight_pending": True,
++                "preflight_payload": payload,
++            },
++        )
++        await kwargs["on_stream_content"]("waiting on your confirm")
++        return "waiting on your confirm"
++
++    fake_core = SimpleNamespace(
++        init=lambda **kwargs: None,
++        llm_tool_loop=fake_llm_tool_loop,
++        LLM_PROVIDER_NAME="env",
++        OMICSCLAW_MODEL="gpt-test",
++        OUTPUT_DIR=ROOT / "output",
++        _skill_registry=lambda: SimpleNamespace(skills={}),
++        get_tool_executors=lambda: {"omicsclaw": object()},
++        _accumulate_usage=lambda response_usage: {
++            "prompt_tokens": 0,
++            "completion_tokens": 0,
++            "total_tokens": 0,
++        },
++        _get_token_price=lambda model: (0.0, 0.0),
++    )
++
++    monkeypatch.setattr(server, "_core", fake_core, raising=False)
++    monkeypatch.setattr(server, "_mcp_load_fn", None, raising=False)
++
++    response = await server.chat_stream(
++        server.ChatRequest(
++            session_id="session-preflight",
++            content="please preprocess",
++            mode="plan",
++            permission_profile="full_access",
++        )
++    )
++    payload_str = await _read_streaming_response(response)
++    events = _parse_sse_events(payload_str)
++    event_types = [event["type"] for event in events]
++
++    assert "tool_result" in event_types
++    assert "preflight_pending" in event_types, (
++        "desktop must emit a dedicated preflight_pending SSE event so the "
++        "frontend can render a confirmation UI instead of relying on the LLM "
++        "to verbalise the structured guidance"
++    )
++
++    tool_result_event = next(e for e in events if e["type"] == "tool_result")
++    # is_error MUST NOT be set for a preflight-pending result — that's
++    # what was hiding the guidance in the original bug report.
++    assert "is_error" not in tool_result_event["data"] or tool_result_event["data"]["is_error"] is False
++
++    preflight_event = next(e for e in events if e["type"] == "preflight_pending")
++    pf_data = preflight_event["data"]
++    assert pf_data["tool_name"] == "omicsclaw"
++    assert pf_data["session_id"] == "session-preflight"
++    assert pf_data["payload"]["skill_name"] == "sc-preprocessing"
++    assert pf_data["payload"]["status"] == "needs_user_input"
++
++
+ @pytest.mark.asyncio
+ async def test_chat_stream_updates_bound_remote_chat_job_lifecycle(monkeypatch, tmp_path: Path):
+     pytest.importorskip("fastapi")

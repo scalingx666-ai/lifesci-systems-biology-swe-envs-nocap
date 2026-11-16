@@ -1,0 +1,60 @@
+diff --git a/src/app/translations/files/translated/ar.json b/src/app/translations/files/translated/ar.json
+index ab22f7e7..80b5fc42 100644
+--- a/src/app/translations/files/translated/ar.json
++++ b/src/app/translations/files/translated/ar.json
+@@ -278,6 +278,7 @@
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.models_table.messages.failed_model": "نموذج لم تنتهي بنجاح",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.variableImportanceTab.title": "متغير أهمية",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.summaryTab.title": "ملخص",
++  "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.modelDetailsTab.title": "نموذج ملخص",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.samrAnalysisTab.title": "سام",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.catBoostTab.title": "CatBoost",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.messages.max_classes": "اختيار الحد الأقصى 5 فئات هي المعتمدة حاليا",
+diff --git a/src/app/translations/files/translated/de.json b/src/app/translations/files/translated/de.json
+index 06e1fca1..152dd465 100644
+--- a/src/app/translations/files/translated/de.json
++++ b/src/app/translations/files/translated/de.json
+@@ -278,6 +278,7 @@
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.models_table.messages.failed_model": "Modell nicht erfolgreich abgeschlossen",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.variableImportanceTab.title": "Variable Bedeutung",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.summaryTab.title": "Zusammenfassung",
++  "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.modelDetailsTab.title": "Modell Zusammenfassung",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.samrAnalysisTab.title": "SAM",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.catBoostTab.title": "CatBoost",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.messages.max_classes": "Auswahl von maximal 5 Klassen wird derzeit unterstützt",
+diff --git a/src/app/translations/files/translated/en.json b/src/app/translations/files/translated/en.json
+index 8c1332a0..b979f139 100644
+--- a/src/app/translations/files/translated/en.json
++++ b/src/app/translations/files/translated/en.json
+@@ -278,6 +278,7 @@
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.models_table.messages.failed_model": "Model did not finished successfully",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.variableImportanceTab.title": "Variable Importance",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.summaryTab.title": "Summary",
++  "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.modelDetailsTab.title": "Model Summary",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.samrAnalysisTab.title": "SAM",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.catBoostTab.title": "CatBoost",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.messages.max_classes": "Selection of maximum 5 classes is currently supported",
+diff --git a/src/app/translations/files/translated/fr.json b/src/app/translations/files/translated/fr.json
+index 868e4b89..b7135db8 100644
+--- a/src/app/translations/files/translated/fr.json
++++ b/src/app/translations/files/translated/fr.json
+@@ -278,6 +278,7 @@
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.models_table.messages.failed_model": "Le modèle n'a pas terminé avec succès",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.variableImportanceTab.title": "Importance Variable",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.summaryTab.title": "Résumé",
++  "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.modelDetailsTab.title": "Modèle De Résumé",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.samrAnalysisTab.title": "SAM",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.catBoostTab.title": "CatBoost",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.messages.max_classes": "Sélection d'un maximum de 5 classes est actuellement pris en charge",
+diff --git a/src/app/translations/files/translated/zh.json b/src/app/translations/files/translated/zh.json
+index 2b8b7b84..3a0b26dd 100644
+--- a/src/app/translations/files/translated/zh.json
++++ b/src/app/translations/files/translated/zh.json
+@@ -278,6 +278,7 @@
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.models_table.messages.failed_model": "模式并不成功完成",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.variableImportanceTab.title": "可变的重要性",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.summaryTab.title": "摘要",
++  "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.modelDetailsTab.title": "模式摘要",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.samrAnalysisTab.title": "SAM",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.catBoostTab.title": "CatBoost",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.messages.max_classes": "选择最多5类是目前支持的",

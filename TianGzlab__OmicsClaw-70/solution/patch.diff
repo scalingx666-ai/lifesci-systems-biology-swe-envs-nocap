@@ -1,0 +1,348 @@
+diff --git a/skills/singlecell/_lib/viz/r/embedding.R b/skills/singlecell/_lib/viz/r/embedding.R
+index 1e7da3fa..1b8020e8 100644
+--- a/skills/singlecell/_lib/viz/r/embedding.R
++++ b/skills/singlecell/_lib/viz/r/embedding.R
+@@ -13,12 +13,29 @@
+ #' @param params Named list. Optional: color_by (column name, default "cell_type").
+ plot_embedding_discrete <- function(data_dir, out_path, params) {
+   tryCatch({
+-    csv_path <- file.path(data_dir, "annotation_embedding_points.csv")
+-    if (!file.exists(csv_path)) {
+-      stop("annotation_embedding_points.csv not found in ", data_dir)
++    # Try multiple CSV sources for embedding coordinates
++    candidates <- c("annotation_embedding_points.csv", "pseudotime_points.csv",
++                     "embedding_points.csv")
++    csv_path <- NULL
++    for (f in candidates) {
++      p <- file.path(data_dir, f)
++      if (file.exists(p)) { csv_path <- p; break }
++    }
++    if (is.null(csv_path)) {
++      stop("No embedding CSV found. Expected: ", paste(candidates, collapse=", "))
+     }
+     df <- read.csv(csv_path, stringsAsFactors = FALSE)
+ 
++    # Normalize coordinate column names to dim1/dim2
++    if (!"dim1" %in% colnames(df) && "coord1" %in% colnames(df)) {
++      colnames(df)[colnames(df) == "coord1"] <- "dim1"
++      colnames(df)[colnames(df) == "coord2"] <- "dim2"
++    }
++    if (!"dim1" %in% colnames(df) && "UMAP_1" %in% colnames(df)) {
++      colnames(df)[colnames(df) == "UMAP_1"] <- "dim1"
++      colnames(df)[colnames(df) == "UMAP_2"] <- "dim2"
++    }
++
+     # Determine color column
+     color_col <- params[["color_by"]]
+     if (is.null(color_col) || !color_col %in% colnames(df)) {
+@@ -81,27 +98,52 @@ plot_embedding_discrete <- function(data_dir, out_path, params) {
+ #' @param params Named list. Optional: feature (column name, default "annotation_score").
+ plot_embedding_feature <- function(data_dir, out_path, params) {
+   tryCatch({
+-    csv_path <- file.path(data_dir, "annotation_embedding_points.csv")
+-    if (!file.exists(csv_path)) {
+-      stop("annotation_embedding_points.csv not found in ", data_dir)
++    candidates <- c("annotation_embedding_points.csv", "pseudotime_points.csv",
++                     "embedding_points.csv")
++    csv_path <- NULL
++    for (f in candidates) {
++      p <- file.path(data_dir, f)
++      if (file.exists(p)) { csv_path <- p; break }
++    }
++    if (is.null(csv_path)) {
++      stop("No embedding CSV found. Expected: ", paste(candidates, collapse=", "))
+     }
+     df <- read.csv(csv_path, stringsAsFactors = FALSE)
+ 
+-    # Determine feature column
++    # Normalize coordinate column names
++    if (!"dim1" %in% colnames(df) && "coord1" %in% colnames(df)) {
++      colnames(df)[colnames(df) == "coord1"] <- "dim1"
++      colnames(df)[colnames(df) == "coord2"] <- "dim2"
++    }
++    if (!"dim1" %in% colnames(df) && "UMAP_1" %in% colnames(df)) {
++      colnames(df)[colnames(df) == "UMAP_1"] <- "dim1"
++      colnames(df)[colnames(df) == "UMAP_2"] <- "dim2"
++    }
++
++    # Determine feature column — try multiple common names
+     feature_col <- params[["feature"]]
+     if (is.null(feature_col) || !feature_col %in% colnames(df)) {
+-      if ("annotation_score" %in% colnames(df)) {
+-        feature_col <- "annotation_score"
++      feature_candidates <- c("annotation_score", "pseudotime", "dpt_pseudotime",
++                              "score", "doublet_score", "velocity_magnitude")
++      feature_col <- intersect(feature_candidates, colnames(df))
++      if (length(feature_col) == 0) {
++        # Try any numeric column that isn't a coordinate
++        skip <- c("cell_id", "dim1", "dim2", "coord1", "coord2", "UMAP_1", "UMAP_2")
++        num_cols <- setdiff(colnames(df), skip)
++        num_cols <- num_cols[sapply(df[num_cols], function(x) is.numeric(x) || all(grepl("^[0-9.eE+-]+$", x[!is.na(x)])))]
++        if (length(num_cols) > 0) feature_col <- num_cols[1]
++        else stop("No continuous feature column found \u2014 pass feature=<colname>")
+       } else {
+-        stop("No continuous feature column found \u2014 pass feature=<colname>")
++        feature_col <- feature_col[1]
+       }
+     }
+ 
+-    # Convert to numeric, warn on NAs
++    # Convert to numeric, filter Inf, warn on NAs
+     df[[feature_col]] <- suppressWarnings(as.numeric(df[[feature_col]]))
++    df[[feature_col]][!is.finite(df[[feature_col]])] <- NA
+     n_na <- sum(is.na(df[[feature_col]]))
+     if (n_na > 0) {
+-      cat("WARNING:", n_na, "NA values in", feature_col, "- shown as grey\n",
++      cat("WARNING:", n_na, "NA/Inf values in", feature_col, "- shown as grey\n",
+           file = stderr())
+     }
+ 
+diff --git a/skills/singlecell/_lib/viz/r/pseudotime.R b/skills/singlecell/_lib/viz/r/pseudotime.R
+index 54993329..8b2cf631 100644
+--- a/skills/singlecell/_lib/viz/r/pseudotime.R
++++ b/skills/singlecell/_lib/viz/r/pseudotime.R
+@@ -245,3 +245,105 @@ plot_pseudotime_dynamic <- function(data_dir, out_path, params) {
+     quit(status = 1)
+   })
+ }
++
++
++# ---- Function 3: plot_pseudotime_heatmap ----
++
++#' DynamicHeatmap: gene expression binned along pseudotime.
++#'
++#' Reads pseudotime_points.csv and gene_expression.csv.
++#' Bins cells by pseudotime, computes mean expression per bin per gene,
++#' and renders a heatmap with genes on rows and pseudotime bins on columns.
++#'
++#' @param data_dir Character. figure_data/ directory.
++#' @param out_path Character. Output PNG path.
++#' @param params Named list. Optional: n_genes (default 30), n_bins (default 50).
++plot_pseudotime_heatmap <- function(data_dir, out_path, params) {
++  tryCatch({
++    pt_csv <- file.path(data_dir, "pseudotime_points.csv")
++    expr_csv <- file.path(data_dir, "gene_expression.csv")
++
++    if (!file.exists(pt_csv) || !file.exists(expr_csv)) {
++      stop("Need both pseudotime_points.csv and gene_expression.csv in ", data_dir)
++    }
++
++    pt_df <- read.csv(pt_csv, stringsAsFactors = FALSE)
++    expr_df <- read.csv(expr_csv, stringsAsFactors = FALSE)
++
++    # Find pseudotime column
++    pt_col <- intersect(c("pseudotime", "dpt_pseudotime", "palantir_pseudotime"),
++                        colnames(pt_df))
++    if (length(pt_col) == 0) stop("No pseudotime column found")
++    pt_col <- pt_col[1]
++
++    # Merge pseudotime with expression, filter Inf/NA
++    merged <- merge(expr_df, pt_df[, c("cell_id", pt_col)], by = "cell_id")
++    merged <- merged[!is.na(merged[[pt_col]]) & is.finite(merged[[pt_col]]), ]
++    if (nrow(merged) == 0) stop("No cells with valid (finite) pseudotime and expression")
++
++    # Select top genes (by variance across pseudotime)
++    n_genes <- as.integer(params[["n_genes"]] %||% 30)
++    n_bins <- as.integer(params[["n_bins"]] %||% 50)
++
++    gene_var <- aggregate(expression ~ gene, data = merged, FUN = var)
++    gene_var <- gene_var[order(-gene_var$expression), ]
++    top_genes <- head(gene_var$gene, n_genes)
++    merged <- merged[merged$gene %in% top_genes, ]
++
++    # Bin cells by pseudotime
++    merged$pt_bin <- cut(merged[[pt_col]],
++                         breaks = seq(0, max(merged[[pt_col]], na.rm = TRUE) * 1.001,
++                                      length.out = n_bins + 1),
++                         labels = FALSE, include.lowest = TRUE)
++
++    # Compute mean expression per gene × bin
++    mat <- aggregate(expression ~ gene + pt_bin, data = merged, FUN = mean)
++
++    # Scale per gene (z-score)
++    gene_means <- aggregate(expression ~ gene, data = mat, FUN = mean)
++    gene_sds <- aggregate(expression ~ gene, data = mat, FUN = sd)
++    colnames(gene_means)[2] <- "gene_mean"
++    colnames(gene_sds)[2] <- "gene_sd"
++    mat <- merge(mat, gene_means, by = "gene")
++    mat <- merge(mat, gene_sds, by = "gene")
++    mat$z <- (mat$expression - mat$gene_mean) / pmax(mat$gene_sd, 1e-6)
++    mat$z <- pmin(pmax(mat$z, -3), 3)  # Clamp to [-3, 3]
++
++    # Order genes by peak pseudotime position
++    peak_bin <- aggregate(expression ~ gene, data = mat, FUN = function(x) {
++      which.max(x)
++    })
++    peak_bin <- peak_bin[order(peak_bin$expression), ]
++    mat$gene <- factor(mat$gene, levels = peak_bin$gene)
++
++    # Build heatmap
++    p <- ggplot(mat, aes(x = pt_bin, y = gene, fill = z)) +
++      geom_tile() +
++      scale_fill_gradient2(
++        low = "#2166AC", mid = "white", high = "#B2182B",
++        midpoint = 0, name = "Z-score",
++        limits = c(-3, 3),
++        guide = guide_colorbar(frame.colour = "black", ticks.colour = "black")
++      ) +
++      scale_x_continuous(
++        expand = expansion(0, 0),
++        breaks = c(1, round(n_bins / 2), n_bins),
++        labels = c("Early", "Mid", "Late")
++      ) +
++      labs(x = "Pseudotime", y = "",
++           title = "Gene dynamics along pseudotime") +
++      theme_omics() +
++      theme(
++        axis.text.y = element_text(size = 7, face = "italic"),
++        panel.grid = element_blank(),
++        panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5)
++      )
++
++    height <- max(5, length(top_genes) * 0.25 + 2)
++    ggsave_standard(p, out_path, width = 10, height = height)
++
++  }, error = function(e) {
++    cat("ERROR:", conditionMessage(e), "\n", file = stderr())
++    quit(status = 1)
++  })
++}
+diff --git a/skills/singlecell/_lib/viz/r/registry.R b/skills/singlecell/_lib/viz/r/registry.R
+index 88b46afc..2a95210a 100644
+--- a/skills/singlecell/_lib/viz/r/registry.R
++++ b/skills/singlecell/_lib/viz/r/registry.R
+@@ -74,7 +74,8 @@ R_PLOT_REGISTRY <- list(
+   plot_cell_barplot          = plot_cell_barplot,
+   plot_cell_proportion       = plot_cell_proportion,
+   plot_enrichment_dotplot    = plot_enrichment_dotplot,
+-  plot_enrichment_lollipop   = plot_enrichment_lollipop
++  plot_enrichment_lollipop   = plot_enrichment_lollipop,
++  plot_pseudotime_heatmap    = plot_pseudotime_heatmap
+ )
+ 
+ # ---- CLI dispatcher (runs only when script is invoked directly) ----
+diff --git a/skills/singlecell/scrna/sc-batch-integration/sc_integrate.py b/skills/singlecell/scrna/sc-batch-integration/sc_integrate.py
+index 67385ea1..8b97d6b1 100644
+--- a/skills/singlecell/scrna/sc-batch-integration/sc_integrate.py
++++ b/skills/singlecell/scrna/sc-batch-integration/sc_integrate.py
+@@ -52,6 +52,7 @@
+ R_ENHANCED_PLOTS = {
+     "plot_embedding_discrete": "r_embedding_discrete.png",
+     "plot_embedding_feature": "r_embedding_feature.png",
++    "plot_cell_barplot": "r_cell_barplot.png",
+ }
+ 
+ METHOD_REGISTRY: dict[str, MethodConfig] = {
+diff --git a/skills/singlecell/scrna/sc-clustering/sc_cluster.py b/skills/singlecell/scrna/sc-clustering/sc_cluster.py
+index 5711c345..5fea65fb 100644
+--- a/skills/singlecell/scrna/sc-clustering/sc_cluster.py
++++ b/skills/singlecell/scrna/sc-clustering/sc_cluster.py
+@@ -59,6 +59,8 @@
+ R_ENHANCED_PLOTS = {
+     "plot_embedding_discrete": "r_embedding_discrete.png",
+     "plot_embedding_feature": "r_embedding_feature.png",
++    "plot_cell_barplot": "r_cell_barplot.png",
++    "plot_cell_proportion": "r_cell_proportion.png",
+ }
+ 
+ 
+diff --git a/skills/singlecell/scrna/sc-doublet-detection/sc_doublet.py b/skills/singlecell/scrna/sc-doublet-detection/sc_doublet.py
+index 0ec81d63..31dc54a4 100644
+--- a/skills/singlecell/scrna/sc-doublet-detection/sc_doublet.py
++++ b/skills/singlecell/scrna/sc-doublet-detection/sc_doublet.py
+@@ -72,6 +72,7 @@
+ R_ENHANCED_PLOTS = {
+     "plot_embedding_discrete": "r_embedding_discrete.png",
+     "plot_embedding_feature": "r_embedding_feature.png",
++    "plot_feature_violin": "r_feature_violin.png",
+ }
+ 
+ METHOD_REGISTRY: dict[str, MethodConfig] = {
+diff --git a/skills/singlecell/scrna/sc-gene-programs/sc_gene_programs.py b/skills/singlecell/scrna/sc-gene-programs/sc_gene_programs.py
+index 03d2c908..9f12a008 100644
+--- a/skills/singlecell/scrna/sc-gene-programs/sc_gene_programs.py
++++ b/skills/singlecell/scrna/sc-gene-programs/sc_gene_programs.py
+@@ -55,6 +55,7 @@
+ R_ENHANCED_PLOTS = {
+     "plot_embedding_discrete": "r_embedding_discrete.png",
+     "plot_embedding_feature": "r_embedding_feature.png",
++    "plot_feature_violin": "r_feature_violin.png",
+ }
+ 
+ 
+diff --git a/skills/singlecell/scrna/sc-grn/sc_grn.py b/skills/singlecell/scrna/sc-grn/sc_grn.py
+index 634e8f8a..ee5ff22c 100644
+--- a/skills/singlecell/scrna/sc-grn/sc_grn.py
++++ b/skills/singlecell/scrna/sc-grn/sc_grn.py
+@@ -69,6 +69,7 @@
+ # R Enhanced plotting configuration
+ R_ENHANCED_PLOTS = {
+     "plot_embedding_discrete": "r_embedding_discrete.png",
++    "plot_embedding_feature": "r_embedding_feature.png",
+ }
+ 
+ 
+diff --git a/skills/singlecell/scrna/sc-metacell/sc_metacell.py b/skills/singlecell/scrna/sc-metacell/sc_metacell.py
+index 3bc0261d..6691f87a 100644
+--- a/skills/singlecell/scrna/sc-metacell/sc_metacell.py
++++ b/skills/singlecell/scrna/sc-metacell/sc_metacell.py
+@@ -39,6 +39,8 @@
+ # R Enhanced plotting configuration
+ R_ENHANCED_PLOTS = {
+     "plot_embedding_discrete": "r_embedding_discrete.png",
++    "plot_embedding_feature": "r_embedding_feature.png",
++    "plot_cell_barplot": "r_cell_barplot.png",
+ }
+ 
+ 
+diff --git a/skills/singlecell/scrna/sc-pathway-scoring/sc_pathway_scoring.py b/skills/singlecell/scrna/sc-pathway-scoring/sc_pathway_scoring.py
+index 6edf7ea9..db8aebc4 100644
+--- a/skills/singlecell/scrna/sc-pathway-scoring/sc_pathway_scoring.py
++++ b/skills/singlecell/scrna/sc-pathway-scoring/sc_pathway_scoring.py
+@@ -64,6 +64,7 @@
+ R_ENHANCED_PLOTS = {
+     "plot_embedding_discrete": "r_embedding_discrete.png",
+     "plot_embedding_feature": "r_embedding_feature.png",
++    "plot_feature_violin": "r_feature_violin.png",
+ }
+ R_SCRIPTS_DIR = Path(__file__).resolve().parent / "rscripts"
+ SHARED_PARAM_KEYS = ("method", "gene_sets", "groupby", "top_pathways")
+diff --git a/skills/singlecell/scrna/sc-pseudotime/sc_pseudotime.py b/skills/singlecell/scrna/sc-pseudotime/sc_pseudotime.py
+index 2726b766..eb062bb3 100644
+--- a/skills/singlecell/scrna/sc-pseudotime/sc_pseudotime.py
++++ b/skills/singlecell/scrna/sc-pseudotime/sc_pseudotime.py
+@@ -78,6 +78,9 @@
+ R_ENHANCED_PLOTS: dict[str, str] = {
+     "plot_pseudotime_lineage": "r_pseudotime_lineage.png",
+     "plot_pseudotime_dynamic": "r_pseudotime_dynamic.png",
++    "plot_pseudotime_heatmap": "r_pseudotime_heatmap.png",
++    "plot_embedding_discrete": "r_embedding_discrete.png",
++    "plot_embedding_feature": "r_embedding_feature.png",
+ }
+ 
+ 
+diff --git a/skills/singlecell/scrna/sc-qc/sc_qc.py b/skills/singlecell/scrna/sc-qc/sc_qc.py
+index 45a907de..9359b501 100644
+--- a/skills/singlecell/scrna/sc-qc/sc_qc.py
++++ b/skills/singlecell/scrna/sc-qc/sc_qc.py
+@@ -54,6 +54,7 @@
+ 
+ R_ENHANCED_PLOTS = {
+     "plot_embedding_discrete": "r_embedding_discrete.png",
++    "plot_cell_barplot": "r_cell_barplot.png",
+ }
+ QC_METHOD = "qc_metrics"
+ METHOD_PARAM_DEFAULTS = {
+diff --git a/skills/singlecell/scrna/sc-velocity/sc_velocity.py b/skills/singlecell/scrna/sc-velocity/sc_velocity.py
+index 420e0e9a..ba18fb5b 100644
+--- a/skills/singlecell/scrna/sc-velocity/sc_velocity.py
++++ b/skills/singlecell/scrna/sc-velocity/sc_velocity.py
+@@ -76,6 +76,8 @@
+ # Value = output filename (written to figures/r_enhanced/)
+ R_ENHANCED_PLOTS: dict[str, str] = {
+     "plot_velocity": "r_velocity.png",
++    "plot_embedding_discrete": "r_embedding_discrete.png",
++    "plot_embedding_feature": "r_embedding_feature.png",
+ }
+ 
+ 

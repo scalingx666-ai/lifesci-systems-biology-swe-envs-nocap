@@ -1,0 +1,67 @@
+version = "1.0"
+
+[task]
+name = "default/genular__pandora-18"
+description = "New Crowdin translations"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "pandora",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "genular/pandora"
+ref = "ff5ad74a9fe125b9d1dd1bca192675366d772258"
+reference = "https://github.com/genular/pandora/pull/18"
+source_access = "auto"
+built_at = "2026-11-16T11:02:31.481556+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:a53d7c1faeb2c70db87b114c5d47e9f8c16699f71dbae290080127d9231b58fd"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2019-02-11T18:01:08Z"
+diff_format = "unified"
+context_files = [
+    "src/app/translations/files/translated/de.json",
+    "src/app/translations/files/translated/en.json",
+    "src/app/translations/files/translated/es.json",
+    "src/app/translations/files/translated/fr.json",
+    "src/app/translations/files/translated/it.json",
+    "src/app/translations/files/translated/ru.json",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 228
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

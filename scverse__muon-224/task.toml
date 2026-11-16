@@ -1,0 +1,74 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__muon-224"
+description = "modernize test suite"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "muon",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/muon"
+ref = "55a032354d9a7fccfac2c786724737a571b125ff"
+reference = "https://github.com/scverse/muon/pull/224"
+source_access = "auto"
+built_at = "2026-11-15T16:59:31.851910+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:787c117a23655977ad206c31e22c191fcd291450cce416921f56b68fe06a97ac"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-08-27T08:31:40Z"
+diff_format = "unified"
+context_files = [
+    "src/muon/atac/pp.py",
+    "src/muon/pp.py",
+    "src/muon/tl.py",
+    "src/muon/utils.py",
+    "tests/__init__.py",
+    "tests/conftest.py",
+    "tests/data/tfidf.npz",
+    "tests/test_atac_preproc.py",
+    "tests/test_atac_tools.py",
+    "tests/test_key_parsing.py",
+    "tests/test_muon_plot.py",
+    "tests/test_muon_preproc.py",
+    "tests/test_muon_tools.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 977
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

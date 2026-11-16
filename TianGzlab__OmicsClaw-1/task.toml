@@ -1,0 +1,63 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-1"
+description = "Add Claude PR and Code Review workflows"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "88ed907859e2825b11800506745f5d04a771c6dc"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/1"
+source_access = "auto"
+built_at = "2026-11-15T18:18:48.188917+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:c9699c4ebfcc85abfa83307ecc6b32d7bc21c374d87d3e777f94d875f3b279fa"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-03-14T13:47:28Z"
+diff_format = "unified"
+context_files = [
+    ".github/workflows/claude-code-review.yml",
+    ".github/workflows/claude.yml",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 94
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

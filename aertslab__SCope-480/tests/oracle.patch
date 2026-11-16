@@ -1,0 +1,15 @@
+diff --git a/.github/workflows/continuous-integration-client.yml b/.github/workflows/continuous-integration-client.yml
+index d732a5b9..38b72c5e 100644
+--- a/.github/workflows/continuous-integration-client.yml
++++ b/.github/workflows/continuous-integration-client.yml
+@@ -31,6 +31,10 @@ jobs:
+         run: |
+           npm audit --audit-level=moderate
+         working-directory: ${{ env.working-directory }}
++      - name: Build production application
++        run: |
++          npm run build
++        working-directory: ${{ env.working-directory }}
+       - name: Lint
+         run: |
+           npm run lint

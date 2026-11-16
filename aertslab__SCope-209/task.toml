@@ -1,0 +1,71 @@
+version = "1.0"
+
+[task]
+name = "default/aertslab__SCope-209"
+description = "Bug 208 loom corruption"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "SCope",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aertslab/SCope"
+ref = "0aa1f43b5e056000e230911deb9d59094434583f"
+reference = "https://github.com/aertslab/SCope/pull/209"
+source_access = "auto"
+built_at = "2026-11-15T19:39:43.402184+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:e076c60634cd9f4436da686a6cda0d3fbb8ccdb8cb453f54894bf08ccc8dcf79"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2019-07-17T09:46:16Z"
+diff_format = "unified"
+context_files = [
+    "opt/scopeserver/dataserver/modules/gserver/GServer.py",
+    "opt/scopeserver/dataserver/modules/gserver/s_pb2.py",
+    "opt/scopeserver/dataserver/modules/pserver/PServer.py",
+    "opt/scopeserver/dataserver/utils/data_file_handler.py",
+    "opt/scopeserver/dataserver/utils/loom.py",
+    "opt/scopeserver/dataserver/utils/loom_file_handler.py",
+    "opt/setup.py",
+    "src/components/App.jsx",
+    "src/components/AppSidebar.jsx",
+    "src/proto/s.proto",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 1093
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

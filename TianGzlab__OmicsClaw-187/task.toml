@@ -1,0 +1,66 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-187"
+description = "fix(resolver+bot): stable WGCNA tie-break + drop dead spatial-domain-identification branches (OMI-12 audit P0)"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "dfc30352894f08f1d8a60d43d007b7562f48dca4"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/187"
+source_access = "auto"
+built_at = "2026-11-15T18:16:59.059173+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:e8583e24ade3d2ac1efce916c10305f6fd44bd51d36ebf238b2e6d854c6a07ad"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-05-12T13:28:37Z"
+diff_format = "unified"
+context_files = [
+    "bot/skill_orchestration.py",
+    "bot/tool_executors.py",
+    "omicsclaw/core/capability_resolver.py",
+    "tests/test_bot_n_epochs_routing.py",
+    "tests/test_capability_resolver.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 133
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

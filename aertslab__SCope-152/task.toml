@@ -1,0 +1,63 @@
+version = "1.0"
+
+[task]
+name = "default/aertslab__SCope-152"
+description = "Fix bug reading gene set when performing gene set enrichment."
+
+[metadata]
+difficulty = "small"
+category = "bugfix"
+keywords = [
+    "SCope",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aertslab/SCope"
+ref = "84155480a54c673b7cd330954068bb2c7813990a"
+reference = "https://github.com/aertslab/SCope/pull/152"
+source_access = "auto"
+built_at = "2026-11-15T19:40:13.313923+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:642cd4bcc1fa7b57921d7ff6c28105f5a1eca54d851d52fc5ecd92363d182abe"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2018-06-22T13:41:15Z"
+diff_format = "unified"
+context_files = [
+    "opt/scopeserver/dataserver/modules/gserver/GServer.py",
+    "opt/scopeserver/utils/GeneSetEnrichment.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 7
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

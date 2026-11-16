@@ -1,0 +1,104 @@
+diff --git a/src/app/translations/files/translated/ar.json b/src/app/translations/files/translated/ar.json
+index cd2425b8..4dc06147 100644
+--- a/src/app/translations/files/translated/ar.json
++++ b/src/app/translations/files/translated/ar.json
+@@ -392,7 +392,7 @@
+   "globals.messages.canceled": "إلغاء",
+   "globals.messages.deleted": "حذف",
+   "globals.messages.upload_sucessfull": "التي تم تحميلها بنجاح",
+-  "globals.messages.upload_unsucessfull": "file upload error",
++  "globals.messages.upload_unsucessfull": "تحميل ملف خطأ",
+   "globals.messages.not_implemented": "وظيفة لا تزال غير متوفرة في هذا الإصدار",
+   "globals.demo_server.function_disabled": "هذا يتم تعطيل وظيفة على demo server",
+   "globals.errors.request_general": "حدث خطأ أثناء معالجة طلبك. يرجى المحاولة مرة أخرى هذا الأخير.",
+@@ -487,9 +487,9 @@
+   "views.settings.danger_area.title": "عن منطقة الخطر",
+   "views.settings.danger_area.delete_button": "حذف حسابك",
+   "views.workspace.components.dropzone.messages.upload_placeholder": "وإسقاط الملفات هنا أو انقر على تحميل",
+-  "views.workspace.components.dropzone.messages.delimiters_check": "Please check file delimiters: use dot (.) for the decimal point and a comma (,) for the delimiter",
+-  "views.workspace.components.dropzone.messages.upload_sucessfull": "File successfully uploaded",
+-  "views.workspace.components.dropzone.messages.upload_unsucessfull": "Errors while uploading file",
++  "views.workspace.components.dropzone.messages.delimiters_check": "يرجى التحقق من ملف المحددات: استخدام نقطة (.) بالنسبة عشري نقطة فاصلة ( ، ) محدد",
++  "views.workspace.components.dropzone.messages.upload_sucessfull": "الملفات التي تم تحميلها بنجاح",
++  "views.workspace.components.dropzone.messages.upload_unsucessfull": "أخطاء أثناء تحميل الملف",
+   "views.workspace.components.dropzone.buttons.delete_file": "حذف",
+   "views.workspace.components.importers.public_import.button": "العامة استيراد",
+   "views.workspace.components.importers.public_import.dialog.title": "يرجى اختيار البيانات التي ترغب في استيراد",
+diff --git a/src/app/translations/files/translated/de.json b/src/app/translations/files/translated/de.json
+index 9ac4f33a..8a53bb26 100644
+--- a/src/app/translations/files/translated/de.json
++++ b/src/app/translations/files/translated/de.json
+@@ -392,7 +392,7 @@
+   "globals.messages.canceled": "abgebrochen",
+   "globals.messages.deleted": "gelöscht",
+   "globals.messages.upload_sucessfull": "erfolgreich hochgeladen",
+-  "globals.messages.upload_unsucessfull": "file upload error",
++  "globals.messages.upload_unsucessfull": "Datei hochladen-Fehler",
+   "globals.messages.not_implemented": "Funktion ist noch nicht verfügbar in dieser version",
+   "globals.demo_server.function_disabled": "Diese Funktion ist auf dem Demo-Server deaktiviert",
+   "globals.errors.request_general": "Es gab einen Fehler bei der Bearbeitung Ihrer Anfrage. Bitte versuchen Sie es erneut.",
+@@ -487,9 +487,9 @@
+   "views.settings.danger_area.title": "Gefahrenbereich",
+   "views.settings.danger_area.delete_button": "Löschen Sie Ihr Konto",
+   "views.workspace.components.dropzone.messages.upload_placeholder": "Dateien hier ablegen, oder klicken Sie auf hochladen",
+-  "views.workspace.components.dropzone.messages.delimiters_check": "Please check file delimiters: use dot (.) for the decimal point and a comma (,) for the delimiter",
+-  "views.workspace.components.dropzone.messages.upload_sucessfull": "File successfully uploaded",
+-  "views.workspace.components.dropzone.messages.upload_unsucessfull": "Errors while uploading file",
++  "views.workspace.components.dropzone.messages.delimiters_check": "Bitte überprüfen Sie die Datei-Trennzeichen: verwenden Sie einen Punkt (.) für das Dezimaltrennzeichen und ein Komma (,) als Trennzeichen",
++  "views.workspace.components.dropzone.messages.upload_sucessfull": "Datei erfolgreich hochgeladen",
++  "views.workspace.components.dropzone.messages.upload_unsucessfull": "Fehler beim hochladen der Datei",
+   "views.workspace.components.dropzone.buttons.delete_file": "Löschen",
+   "views.workspace.components.importers.public_import.button": "Öffentliche Importieren",
+   "views.workspace.components.importers.public_import.dialog.title": "Bitte wählen Sie dataset ein, das Sie importieren möchten",
+diff --git a/src/app/translations/files/translated/fr.json b/src/app/translations/files/translated/fr.json
+index 2de7d64b..2cea0a29 100644
+--- a/src/app/translations/files/translated/fr.json
++++ b/src/app/translations/files/translated/fr.json
+@@ -392,7 +392,7 @@
+   "globals.messages.canceled": "annulé",
+   "globals.messages.deleted": "supprimé",
+   "globals.messages.upload_sucessfull": "téléchargé avec succès",
+-  "globals.messages.upload_unsucessfull": "file upload error",
++  "globals.messages.upload_unsucessfull": "téléchargement du fichier d'erreur",
+   "globals.messages.not_implemented": "La fonction n'est pas encore disponible dans cette version",
+   "globals.demo_server.function_disabled": "Cette fonction est désactivée sur le serveur de démo",
+   "globals.errors.request_general": "Une erreur s'est produite lors du traitement de votre demande. Veuillez réessayer ultérieurement.",
+@@ -487,9 +487,9 @@
+   "views.settings.danger_area.title": "Zone de Danger",
+   "views.settings.danger_area.delete_button": "La suppression de votre compte",
+   "views.workspace.components.dropzone.messages.upload_placeholder": "Déposer des fichiers, ici ou cliquez pour télécharger",
+-  "views.workspace.components.dropzone.messages.delimiters_check": "Please check file delimiters: use dot (.) for the decimal point and a comma (,) for the delimiter",
+-  "views.workspace.components.dropzone.messages.upload_sucessfull": "File successfully uploaded",
+-  "views.workspace.components.dropzone.messages.upload_unsucessfull": "Errors while uploading file",
++  "views.workspace.components.dropzone.messages.delimiters_check": "Veuillez vérifier le fichier délimiteurs: utilisez le point (.) pour le point décimal et une virgule (,) comme séparateur",
++  "views.workspace.components.dropzone.messages.upload_sucessfull": "Fichier téléchargé",
++  "views.workspace.components.dropzone.messages.upload_unsucessfull": "Les erreurs pendant le téléchargement de fichier",
+   "views.workspace.components.dropzone.buttons.delete_file": "Supprimer",
+   "views.workspace.components.importers.public_import.button": "Public À L'Importation",
+   "views.workspace.components.importers.public_import.dialog.title": "Veuillez choisir dataset que vous souhaitez importer",
+diff --git a/src/app/translations/files/translated/zh.json b/src/app/translations/files/translated/zh.json
+index e964824c..85064683 100644
+--- a/src/app/translations/files/translated/zh.json
++++ b/src/app/translations/files/translated/zh.json
+@@ -392,7 +392,7 @@
+   "globals.messages.canceled": "取消",
+   "globals.messages.deleted": "已删除",
+   "globals.messages.upload_sucessfull": "上传功",
+-  "globals.messages.upload_unsucessfull": "file upload error",
++  "globals.messages.upload_unsucessfull": "文件上传错误",
+   "globals.messages.not_implemented": "功能仍然不可以在这个版本",
+   "globals.demo_server.function_disabled": "这一功能被禁止上演示的服务器",
+   "globals.errors.request_general": "有一个错误的处理您的请求。 请再试一次后者。",
+@@ -487,9 +487,9 @@
+   "views.settings.danger_area.title": "危险区域",
+   "views.settings.danger_area.delete_button": "删去你的帐户",
+   "views.workspace.components.dropzone.messages.upload_placeholder": "下降的文件在这里或者点击上传",
+-  "views.workspace.components.dropzone.messages.delimiters_check": "Please check file delimiters: use dot (.) for the decimal point and a comma (,) for the delimiter",
+-  "views.workspace.components.dropzone.messages.upload_sucessfull": "File successfully uploaded",
+-  "views.workspace.components.dropzone.messages.upload_unsucessfull": "Errors while uploading file",
++  "views.workspace.components.dropzone.messages.delimiters_check": "请查看文件符：使用点(.) 小数点和一个逗号(，)delimiter",
++  "views.workspace.components.dropzone.messages.upload_sucessfull": "文件上传成功的",
++  "views.workspace.components.dropzone.messages.upload_unsucessfull": "错误在上传文件",
+   "views.workspace.components.dropzone.buttons.delete_file": "删除",
+   "views.workspace.components.importers.public_import.button": "公众进口",
+   "views.workspace.components.importers.public_import.dialog.title": "请选择数据集要导入",

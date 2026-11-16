@@ -1,0 +1,68 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-137"
+description = "fix(memory): close cross-namespace data-loss + info-leak holes in legacy GraphService entrypoints"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "f09e35fafc1510f21476fde1af331807f3c94622"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/137"
+source_access = "auto"
+built_at = "2026-11-15T18:17:43.300379+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:ea5ce4a53ae22a16a0d8f47ebdf93298ee9e19d7017a3ee7cb4e52790302fb3e"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-05-10T07:37:14Z"
+diff_format = "unified"
+context_files = [
+    "omicsclaw/app/server.py",
+    "omicsclaw/memory/__init__.py",
+    "omicsclaw/memory/compat.py",
+    "omicsclaw/memory/graph.py",
+    "omicsclaw/memory/memory_client.py",
+    "tests/memory/test_compat_namespace.py",
+    "tests/memory/test_namespace_isolation.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 777
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

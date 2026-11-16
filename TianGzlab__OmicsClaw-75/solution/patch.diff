@@ -1,0 +1,1281 @@
+diff --git a/skills/singlecell/_lib/viz/r/communication.R b/skills/singlecell/_lib/viz/r/communication.R
+index 83caaf85..10f8f0ca 100644
+--- a/skills/singlecell/_lib/viz/r/communication.R
++++ b/skills/singlecell/_lib/viz/r/communication.R
+@@ -568,3 +568,399 @@ plot_ccc_stat_scatter <- function(data_dir, out_path, params) {
+     quit(status = 1)
+   })
+ }
++
++# ---- Function 7: plot_ccc_bipartite ----
++
++#' Ligand-focused bipartite network layout for cell-cell communication.
++#'
++#' Three-column layout: sender cell types (left) -> ligand/receptor pairs
++#' (center) -> receiver cell types (right). Edges connect through the
++#' focused ligand-receptor pair, with width proportional to score.
++#'
++#' Reads top_interactions.csv. Required columns: source, target, ligand,
++#' receptor, score.
++#'
++#' @param data_dir Character. Directory containing CCC CSV files.
++#' @param out_path Character. Absolute path for output PNG.
++#' @param params Named list. Optional: ligand (default auto-detect highest
++#'   total score), top_n (default 20).
++plot_ccc_bipartite <- function(data_dir, out_path, params) {
++  tryCatch({
++    csv_path <- file.path(data_dir, "top_interactions.csv")
++    if (!file.exists(csv_path)) {
++      stop("top_interactions.csv not found in ", data_dir)
++    }
++
++    df <- read.csv(csv_path, stringsAsFactors = FALSE)
++    required <- c("source", "target", "ligand", "receptor", "score")
++    missing <- setdiff(required, colnames(df))
++    if (length(missing) > 0) {
++      stop("Missing required columns in top_interactions.csv: ",
++           paste(missing, collapse = ", "))
++    }
++
++    df$score <- as.numeric(df$score)
++    df <- df[!is.na(df$score) & df$score > 0, ]
++    df <- df[!is.na(df$ligand) & nzchar(df$ligand), ]
++    if (nrow(df) == 0) stop("No valid interactions with ligand info found")
++
++    # Select focus ligand: user param or auto-detect by highest total score
++    focus_ligand <- params[["ligand"]]
++    if (is.null(focus_ligand) || !focus_ligand %in% df$ligand) {
++      lig_scores <- aggregate(score ~ ligand, data = df, FUN = sum)
++      focus_ligand <- lig_scores$ligand[which.max(lig_scores$score)]
++    }
++
++    # Filter to focus ligand
++    df <- df[df$ligand == focus_ligand, ]
++
++    # Keep top_n edges by score (T-20-05 mitigation: cap edge count)
++    top_n <- as.integer(params[["top_n"]] %||% 20)
++    if (nrow(df) > top_n) {
++      df <- df[order(-df$score), ][seq_len(top_n), ]
++    }
++
++    if (nrow(df) == 0) {
++      p <- ggplot() +
++        annotate("text", x = 0.5, y = 0.5,
++                 label = paste0("No interactions for ligand: ", focus_ligand),
++                 size = 5, color = "grey50") +
++        theme_void()
++      ggsave_standard(p, out_path, width = 8, height = 6)
++      return(invisible(NULL))
++    }
++
++    # Extract unique entities
++    senders <- sort(unique(df$source))
++    receptors <- sort(unique(df$receptor))
++    receivers <- sort(unique(df$target))
++    all_cell_types <- sort(unique(c(senders, receivers)))
++
++    # Build node positions: 3-column layout (x = 0, 0.5, 1)
++    # Left column: senders, evenly spaced
++    n_send <- length(senders)
++    sender_y <- if (n_send == 1) 0.5 else seq(0.85, 0.15, length.out = n_send)
++    sender_nodes <- data.frame(
++      label = senders, x = 0, y = sender_y,
++      node_type = "sender", stringsAsFactors = FALSE
++    )
++
++    # Center column: ligand at top, receptors below
++    n_rec <- length(receptors)
++    lig_y <- 0.9
++    rec_y <- if (n_rec == 1) 0.4 else seq(0.7, 0.15, length.out = n_rec)
++    center_nodes <- rbind(
++      data.frame(label = focus_ligand, x = 0.5, y = lig_y,
++                 node_type = "ligand", stringsAsFactors = FALSE),
++      data.frame(label = receptors, x = 0.5, y = rec_y,
++                 node_type = "receptor", stringsAsFactors = FALSE)
++    )
++
++    # Right column: receivers, evenly spaced
++    n_recv <- length(receivers)
++    recv_y <- if (n_recv == 1) 0.5 else seq(0.85, 0.15, length.out = n_recv)
++    receiver_nodes <- data.frame(
++      label = receivers, x = 1, y = recv_y,
++      node_type = "receiver", stringsAsFactors = FALSE
++    )
++
++    node_df <- rbind(sender_nodes, center_nodes, receiver_nodes)
++
++    # Palette for cell types
++    cell_pal <- omics_palette(length(all_cell_types))
++    names(cell_pal) <- all_cell_types
++
++    # Node colors: cell types get palette colors, LR nodes are white with grey border
++    node_df$fill <- ifelse(
++      node_df$node_type %in% c("sender", "receiver"),
++      cell_pal[node_df$label],
++      "white"
++    )
++    node_df$border <- ifelse(
++      node_df$node_type %in% c("ligand", "receptor"),
++      "grey50",
++      cell_pal[node_df$label]
++    )
++
++    # Build node position lookup
++    node_pos <- node_df
++    rownames(node_pos) <- paste0(node_pos$node_type, "::", node_pos$label)
++
++    # Scale edge width by score
++    score_range <- range(df$score)
++    if (diff(score_range) > 0) {
++      df$lwd <- scales::rescale(df$score, to = c(0.3, 2.5))
++    } else {
++      df$lwd <- rep(1, nrow(df))
++    }
++
++    # Build 3 edge segments per interaction:
++    # 1. sender -> ligand, 2. ligand -> receptor, 3. receptor -> receiver
++    edge_list <- list()
++    for (i in seq_len(nrow(df))) {
++      s_key <- paste0("sender::", df$source[i])
++      l_key <- paste0("ligand::", focus_ligand)
++      r_key <- paste0("receptor::", df$receptor[i])
++      v_key <- paste0("receiver::", df$target[i])
++
++      s_pos <- node_pos[s_key, ]
++      l_pos <- node_pos[l_key, ]
++      r_pos <- node_pos[r_key, ]
++      v_pos <- node_pos[v_key, ]
++
++      edge_col <- cell_pal[df$source[i]]
++      edge_list[[length(edge_list) + 1]] <- data.frame(
++        x = s_pos$x, y = s_pos$y, xend = l_pos$x, yend = l_pos$y,
++        lwd = df$lwd[i], edge_col = edge_col, stringsAsFactors = FALSE
++      )
++      edge_list[[length(edge_list) + 1]] <- data.frame(
++        x = l_pos$x, y = l_pos$y, xend = r_pos$x, yend = r_pos$y,
++        lwd = df$lwd[i], edge_col = "grey40", stringsAsFactors = FALSE
++      )
++      edge_list[[length(edge_list) + 1]] <- data.frame(
++        x = r_pos$x, y = r_pos$y, xend = v_pos$x, yend = v_pos$y,
++        lwd = df$lwd[i], edge_col = cell_pal[df$target[i]],
++        stringsAsFactors = FALSE
++      )
++    }
++    edge_df <- do.call(rbind, edge_list)
++
++    # Separate node subsets for plotting
++    cell_nodes <- node_df[node_df$node_type %in% c("sender", "receiver"), ]
++    lr_nodes <- node_df[node_df$node_type %in% c("ligand", "receptor"), ]
++
++    # Build plot
++    p <- ggplot() +
++      # Edges
++      geom_segment(
++        data = edge_df,
++        aes(x = x, y = y, xend = xend, yend = yend),
++        color = edge_df$edge_col,
++        linewidth = edge_df$lwd,
++        alpha = 0.6,
++        lineend = "round"
++      ) +
++      # Cell type nodes (circles)
++      geom_point(
++        data = cell_nodes,
++        aes(x = x, y = y),
++        fill = cell_nodes$fill, color = cell_nodes$border,
++        shape = 21, size = 6, stroke = 1.2
++      ) +
++      # LR nodes (squares)
++      geom_point(
++        data = lr_nodes,
++        aes(x = x, y = y),
++        fill = "white", color = "grey50",
++        shape = 22, size = 5, stroke = 1
++      ) +
++      # Labels: senders on the left
++      geom_text(
++        data = node_df[node_df$node_type == "sender", ],
++        aes(x = x - 0.06, y = y, label = label),
++        hjust = 1, size = 3, check_overlap = TRUE
++      ) +
++      # Labels: receivers on the right
++      geom_text(
++        data = node_df[node_df$node_type == "receiver", ],
++        aes(x = x + 0.06, y = y, label = label),
++        hjust = 0, size = 3, check_overlap = TRUE
++      ) +
++      # Labels: LR nodes above
++      geom_text(
++        data = lr_nodes,
++        aes(x = x, y = y + 0.04, label = label),
++        hjust = 0.5, size = 2.8, fontface = "italic"
++      ) +
++      # Column headers
++      annotate("text", x = 0, y = 1.0, label = "Senders",
++               size = 3.5, fontface = "bold") +
++      annotate("text", x = 0.5, y = 1.0, label = "L-R pairs",
++               size = 3.5, fontface = "bold") +
++      annotate("text", x = 1, y = 1.0, label = "Receivers",
++               size = 3.5, fontface = "bold") +
++      coord_cartesian(xlim = c(-0.3, 1.3), ylim = c(0.05, 1.05), clip = "off") +
++      theme_void() +
++      labs(title = paste0("Bipartite CCC network (ligand: ", focus_ligand, ")"))
++
++    n_rows <- max(n_send, n_rec, n_recv)
++    plot_height <- max(5, n_rows * 0.6 + 2)
++    ggsave_standard(p, out_path, width = 9, height = plot_height)
++
++  }, error = function(e) {
++    cat("ERROR:", conditionMessage(e), "\n", file = stderr())
++    quit(status = 1)
++  })
++}
++
++# ---- Function 8: plot_ccc_diff_network ----
++
++#' Differential CCC network between conditions.
++#'
++#' Shows changes in cell-cell communication between two conditions as a
++#' circular network. Edges colored by direction of change: red = increased,
++#' blue = decreased. Width proportional to |score_diff|.
++#'
++#' CSV input: ccc_diff_network.csv (preferred) or sender_receiver_summary.csv
++#' with a "condition" column (fallback). Graceful skip if neither available.
++#'
++#' @param data_dir Character. Directory containing CCC CSV files.
++#' @param out_path Character. Absolute path for output PNG.
++#' @param params Named list. Optional: min_diff (default 0), top_n (default 20).
++plot_ccc_diff_network <- function(data_dir, out_path, params) {
++  tryCatch({
++    diff_csv <- file.path(data_dir, "ccc_diff_network.csv")
++    sr_csv <- file.path(data_dir, "sender_receiver_summary.csv")
++
++    df <- NULL
++
++    # Primary: read ccc_diff_network.csv
++    if (file.exists(diff_csv)) {
++      raw <- read.csv(diff_csv, stringsAsFactors = FALSE)
++      if (nrow(raw) > 0 && all(c("source", "target", "score_diff") %in% colnames(raw))) {
++        df <- raw[, c("source", "target", "score_diff")]
++        df$score_diff <- as.numeric(df$score_diff)
++      }
++    }
++
++    # Fallback: compute diff from sender_receiver_summary with condition column
++    if (is.null(df) && file.exists(sr_csv)) {
++      raw <- read.csv(sr_csv, stringsAsFactors = FALSE)
++      if ("condition" %in% colnames(raw) && nrow(raw) > 0) {
++        conditions <- unique(raw$condition)
++        if (length(conditions) >= 2) {
++          cond_a <- conditions[1]
++          cond_b <- conditions[2]
++          raw$score <- as.numeric(raw$score)
++          df_a <- raw[raw$condition == cond_a, c("source", "target", "score")]
++          df_b <- raw[raw$condition == cond_b, c("source", "target", "score")]
++          colnames(df_a)[3] <- "score_a"
++          colnames(df_b)[3] <- "score_b"
++          df <- merge(df_a, df_b, by = c("source", "target"), all = TRUE)
++          df$score_a[is.na(df$score_a)] <- 0
++          df$score_b[is.na(df$score_b)] <- 0
++          df$score_diff <- df$score_b - df$score_a
++        }
++      }
++    }
++
++    # Graceful exit if no diff data
++    if (is.null(df) || nrow(df) == 0) {
++      cat("WARNING: No differential CCC data found. Skipping plot.\n")
++      return(invisible(NULL))
++    }
++
++    # Filter: remove self-loops and apply min_diff threshold
++    df <- df[df$source != df$target, ]
++    min_diff <- as.numeric(params[["min_diff"]] %||% 0)
++    df <- df[abs(df$score_diff) > min_diff, ]
++    df <- df[!is.na(df$score_diff) & is.finite(df$score_diff), ]
++
++    if (nrow(df) == 0) {
++      p <- ggplot() +
++        annotate("text", x = 0, y = 0,
++                 label = "No differential interactions above threshold",
++                 size = 5, color = "grey50") +
++        coord_equal() + theme_void() +
++        labs(title = "Differential CCC Network")
++      ggsave_standard(p, out_path, width = 8, height = 8)
++      return(invisible(NULL))
++    }
++
++    # Keep top_n edges by |score_diff|
++    top_n <- as.integer(params[["top_n"]] %||% 20)
++    if (nrow(df) > top_n) {
++      df <- df[order(-abs(df$score_diff)), ][seq_len(top_n), ]
++    }
++
++    # Direction: positive = increased, negative = decreased
++    df$direction <- ifelse(df$score_diff > 0, "Increased", "Decreased")
++
++    # Arrange nodes in a circle
++    all_types <- sort(unique(c(df$source, df$target)))
++    n_types <- length(all_types)
++    angles <- 2 * pi * (seq_len(n_types) - 1) / n_types
++    node_df <- data.frame(
++      cell_type = all_types,
++      x = cos(angles),
++      y = sin(angles),
++      stringsAsFactors = FALSE
++    )
++
++    # Node sizes: proportional to total |score_diff|
++    out_sums <- aggregate(abs(score_diff) ~ source, data = df, FUN = sum)
++    colnames(out_sums) <- c("cell_type", "out_diff")
++    in_sums <- aggregate(abs(score_diff) ~ target, data = df, FUN = sum)
++    colnames(in_sums) <- c("cell_type", "in_diff")
++    node_df <- merge(node_df, out_sums, by = "cell_type", all.x = TRUE)
++    node_df <- merge(node_df, in_sums, by = "cell_type", all.x = TRUE)
++    node_df$out_diff[is.na(node_df$out_diff)] <- 0
++    node_df$in_diff[is.na(node_df$in_diff)] <- 0
++    node_df$total_diff <- node_df$out_diff + node_df$in_diff
++
++    # Node colors
++    pal <- omics_palette(n_types)
++    names(pal) <- all_types
++
++    # Build edge data with coordinates
++    edge_df <- df
++    edge_df <- merge(edge_df,
++                     node_df[, c("cell_type", "x", "y")],
++                     by.x = "source", by.y = "cell_type")
++    colnames(edge_df)[colnames(edge_df) == "x"] <- "x_from"
++    colnames(edge_df)[colnames(edge_df) == "y"] <- "y_from"
++    edge_df <- merge(edge_df,
++                     node_df[, c("cell_type", "x", "y")],
++                     by.x = "target", by.y = "cell_type")
++    colnames(edge_df)[colnames(edge_df) == "x"] <- "x_to"
++    colnames(edge_df)[colnames(edge_df) == "y"] <- "y_to"
++
++    # Edge width proportional to |score_diff|
++    diff_range <- range(abs(edge_df$score_diff))
++    if (diff(diff_range) > 0) {
++      edge_df$lwd <- scales::rescale(abs(edge_df$score_diff), to = c(0.3, 3))
++    } else {
++      edge_df$lwd <- rep(1, nrow(edge_df))
++    }
++
++    # Build plot
++    p <- ggplot() +
++      # Edges colored by direction
++      geom_curve(
++        data = edge_df,
++        aes(x = x_from, y = y_from, xend = x_to, yend = y_to,
++            color = direction, linewidth = lwd),
++        curvature = 0.25, alpha = 0.6,
++        arrow = arrow(length = unit(0.1, "inches"), type = "closed")
++      ) +
++      scale_color_manual(
++        values = c("Increased" = "#E41A1C", "Decreased" = "#377EB8"),
++        name = "Direction"
++      ) +
++      scale_linewidth_identity() +
++      # Nodes
++      ggnewscale::new_scale_color() +
++      geom_point(
++        data = node_df,
++        aes(x = x, y = y, size = total_diff, color = cell_type)
++      ) +
++      scale_size_continuous(range = c(3, 12), name = "Total |diff|") +
++      scale_color_manual(values = pal, name = "Cell Type") +
++      # Labels outside circle
++      geom_text(
++        data = node_df,
++        aes(x = x * 1.18, y = y * 1.18, label = cell_type),
++        size = 3, check_overlap = TRUE
++      ) +
++      coord_equal() +
++      theme_void() +
++      theme(legend.position = "right") +
++      labs(title = "Differential CCC Network")
++
++    ggsave_standard(p, out_path, width = 8, height = 8)
++
++  }, error = function(e) {
++    cat("ERROR:", conditionMessage(e), "\n", file = stderr())
++    quit(status = 1)
++  })
++}
+diff --git a/skills/singlecell/_lib/viz/r/de.R b/skills/singlecell/_lib/viz/r/de.R
+index 99b21f6c..c6ad988d 100644
+--- a/skills/singlecell/_lib/viz/r/de.R
++++ b/skills/singlecell/_lib/viz/r/de.R
+@@ -306,3 +306,181 @@ plot_de_heatmap <- function(data_dir, out_path, params) {
+     quit(status = 1)
+   })
+ }
++
++
++# ============================================================
++# Function 3: DE Manhattan Plot
++# ============================================================
++
++#' DE manhattan plot -- multi-group jittered strip chart.
++#'
++#' Shows all groups side-by-side as vertical columns with jittered gene
++#' points colored by log2FC (blue-white-red gradient). Significant genes
++#' get a black outline; top genes per group are labeled.
++#'
++#' @param data_dir Character. Path to figure_data directory containing de_top_markers.csv.
++#' @param out_path Character. Absolute path for the output PNG.
++#' @param params  Named list of extra parameters.
++#'   padj_thresh (default 0.05), fc_thresh (default 0.25),
++#'   n_label (default 3), jitter_width (default 0.4).
++plot_de_manhattan <- function(data_dir, out_path, params) {
++  tryCatch({
++    df <- .read_de_csv(data_dir)
++    det <- .detect_de_columns(df)
++
++    # Unify column names
++    df$gene_name <- df[[det$gene]]
++    df$fc        <- as.numeric(df[[det$fc]])
++    df$pval      <- as.numeric(df[[det$pval]])
++
++    # Remove rows with NA in key columns
++    df <- df[!is.na(df$fc) & !is.na(df$pval), ]
++    if (nrow(df) == 0) {
++      cat("ERROR: No valid rows after removing NA values\n", file = stderr())
++      quit(status = 1)
++    }
++
++    # Parameters
++    padj_thresh  <- as.numeric(params[["padj_thresh"]]  %||% "0.05")
++    fc_thresh    <- as.numeric(params[["fc_thresh"]]    %||% "0.25")
++    n_label      <- as.integer(params[["n_label"]]       %||% "3")
++    jitter_width <- as.numeric(params[["jitter_width"]]  %||% "0.4")
++
++    # Ensure group column
++    if ("group" %in% colnames(df)) {
++      groups <- unique(df$group)
++    } else {
++      df$group <- "All"
++      groups <- "All"
++    }
++    n_groups <- length(groups)
++    df$group <- factor(df$group, levels = groups)
++
++    # Integer x position per group + jitter
++    set.seed(42)
++    df$x_num  <- as.numeric(df$group)
++    df$x_plot <- df$x_num + (stats::runif(nrow(df)) - 0.5) * jitter_width
++
++    # Significance flag
++    df$is_sig <- abs(df$fc) > fc_thresh & df$pval < padj_thresh
++
++    # Symmetric FC limits for color scale
++    fc_max <- max(abs(df$fc), na.rm = TRUE)
++    fc_lim <- c(-fc_max, fc_max)
++
++    # Clip extreme FC for display
++    df$fc_clipped <- pmax(pmin(df$fc, fc_max), -fc_max)
++
++    # ---- Label score: top N per group ----
++    df$label_score <- abs(df$fc) * (-log10(df$pval + 1e-300))
++    label_df <- do.call(rbind, lapply(split(df, df$group), function(gdf) {
++      gdf_sig <- gdf[gdf$is_sig, , drop = FALSE]
++      if (nrow(gdf_sig) == 0) gdf_sig <- gdf
++      head(gdf_sig[order(-gdf_sig$label_score), ], n_label)
++    }))
++
++    # ---- Tile data for group color bar at y = 0 ----
++    tile_colors <- omics_palette(n_groups)
++    names(tile_colors) <- levels(df$group)
++    tile_data <- data.frame(
++      group = factor(levels(df$group), levels = levels(df$group)),
++      x     = seq_len(n_groups),
++      y     = 0,
++      stringsAsFactors = FALSE
++    )
++
++    # ---- Background range columns per group ----
++    back_data <- do.call(rbind, lapply(split(df, df$group), function(gdf) {
++      data.frame(
++        group = gdf$group[1],
++        x_num = as.numeric(gdf$group)[1],
++        ymin  = min(gdf$fc, na.rm = TRUE) - 0.2,
++        ymax  = max(gdf$fc, na.rm = TRUE) + 0.2,
++        stringsAsFactors = FALSE
++      )
++    }))
++
++    # ---- Build plot ----
++    fc_label <- if (det$fc_is_scores) "Score" else "Average log2FoldChange"
++
++    p <- ggplot(df, aes(x = x_plot, y = fc))
++
++    # Background columns (white fill behind each group)
++    p <- p +
++      geom_col(data = back_data,
++               aes(x = x_num, y = ymin),
++               fill = "white", inherit.aes = FALSE) +
++      geom_col(data = back_data,
++               aes(x = x_num, y = ymax),
++               fill = "white", inherit.aes = FALSE)
++
++    # Significant points: black outline layer
++    if (any(df$is_sig)) {
++      sig_df <- df[df$is_sig, , drop = FALSE]
++      p <- p + geom_point(data = sig_df,
++                          aes(x = x_plot, y = fc),
++                          color = "black", size = 1.8, alpha = 0.8,
++                          inherit.aes = FALSE)
++    }
++
++    # All points colored by FC
++    p <- p + geom_point(aes(color = fc_clipped), size = 1, alpha = 0.7) +
++      scale_color_gradient2(
++        low = "#4575B4", mid = "white", high = "#D73027",
++        midpoint = 0, limits = fc_lim, name = "log2FC",
++        guide = guide_colorbar(frame.colour = "black",
++                               ticks.colour = "black")
++      )
++
++    # Tile color bar at y = 0
++    p <- p +
++      geom_tile(data = tile_data,
++                aes(x = x, y = y, fill = group),
++                color = "black", height = 0.5,
++                show.legend = FALSE, inherit.aes = FALSE) +
++      scale_fill_manual(values = tile_colors) +
++      geom_text(data = tile_data,
++                aes(x = x, y = y, label = group),
++                inherit.aes = FALSE, size = 3, color = "black")
++
++    # Gene labels
++    if (requireNamespace("ggrepel", quietly = TRUE)) {
++      p <- p + ggrepel::geom_text_repel(
++        data = label_df,
++        aes(x = x_plot, y = fc, label = gene_name),
++        inherit.aes = FALSE,
++        size = 3, max.overlaps = 50,
++        min.segment.length = 0,
++        segment.colour = "grey40",
++        color = "black", bg.color = "white", bg.r = 0.1,
++        force = 20
++      )
++    } else {
++      p <- p + geom_text(data = label_df,
++                         aes(x = x_plot, y = fc, label = gene_name),
++                         inherit.aes = FALSE, size = 2.5,
++                         nudge_y = 0.3, color = "black")
++    }
++
++    p <- p +
++      scale_x_continuous(breaks = seq_len(n_groups),
++                         labels = levels(df$group)) +
++      scale_y_continuous(n.breaks = 6) +
++      labs(x = NULL, y = fc_label) +
++      theme_omics() +
++      theme(panel.grid = element_blank(),
++            panel.border = element_blank(),
++            axis.line.x = element_blank(),
++            axis.line.y = element_line(),
++            axis.text.x = element_blank(),
++            axis.ticks.x = element_blank())
++
++    fig_w <- max(7, n_groups * 1.8 + 2)
++    fig_h <- 7
++    ggsave_standard(p, out_path, width = fig_w, height = fig_h)
++
++  }, error = function(e) {
++    cat("ERROR:", conditionMessage(e), "\n", file = stderr())
++    quit(status = 1)
++  })
++}
+diff --git a/skills/singlecell/_lib/viz/r/enrichment.R b/skills/singlecell/_lib/viz/r/enrichment.R
+index 743fb4cd..201a2d78 100644
+--- a/skills/singlecell/_lib/viz/r/enrichment.R
++++ b/skills/singlecell/_lib/viz/r/enrichment.R
+@@ -507,3 +507,445 @@ plot_enrichment_lollipop <- function(data_dir, out_path, params) {
+     quit(status = 1)
+   })
+ }
++
++
++# ---------------------------------------------------------------------------
++# Function 6: plot_enrichment_network
++# ---------------------------------------------------------------------------
++#' Enrichment gene-term network graph (bipartite network).
++#'
++#' Visualises the relationship between enriched terms and their associated
++#' genes as a bipartite graph. Term nodes are sized by gene count and colored
++#' by -log10(padj). Gene nodes are small grey labels.
++#'
++#' Requires the igraph package; exits gracefully (status 0) if unavailable.
++#'
++#' @param data_dir Character. Directory containing enrichment_results.csv.
++#' @param out_path Character. Absolute path for output PNG.
++#' @param params Named list. Optional: top_n (default 10), group, padj_cutoff (default 0.05).
++plot_enrichment_network <- function(data_dir, out_path, params) {
++  tryCatch({
++    # ---- igraph guard ----
++    if (!requireNamespace("igraph", quietly = TRUE)) {
++      cat("WARNING: igraph not installed -- skipping enrichment network\n",
++          file = stderr())
++      quit(status = 0)
++    }
++
++    # ---- Read CSV ----
++    csv_path <- file.path(data_dir, "enrichment_results.csv")
++    if (!file.exists(csv_path)) {
++      csv_path <- file.path(data_dir, "top_terms.csv")
++    }
++    if (!file.exists(csv_path)) {
++      cat("ERROR: No enrichment CSV found in ", data_dir, "\n",
++          sep = "", file = stderr())
++      quit(status = 1)
++    }
++    df <- read.csv(csv_path, stringsAsFactors = FALSE)
++
++    # ---- Parameters ----
++    top_n       <- as.integer(params[["top_n"]] %||% "10")
++    padj_cutoff <- as.numeric(params[["padj_cutoff"]] %||% "0.05")
++    group_use   <- params[["group"]]
++
++    # ---- Filter group ----
++    if ("group" %in% colnames(df)) {
++      if (is.null(group_use) || !group_use %in% df$group) {
++        group_use <- df$group[1]
++      }
++      df <- df[df$group == group_use, , drop = FALSE]
++    }
++
++    # ---- Standardize p-value column ----
++    if (!"pvalue_adj" %in% colnames(df) && "pvalue" %in% colnames(df)) {
++      df$pvalue_adj <- df$pvalue
++    }
++    if ("pvalue_adj" %in% colnames(df)) {
++      df$pvalue_adj <- as.numeric(df$pvalue_adj)
++      df <- df[!is.na(df$pvalue_adj) & df$pvalue_adj < padj_cutoff, , drop = FALSE]
++    }
++
++    if (nrow(df) == 0) {
++      cat("WARNING: No significant terms to plot\n", file = stderr())
++      quit(status = 0)
++    }
++
++    # ---- Detect gene column ----
++    gene_col <- NULL
++    for (cand in c("genes", "geneID", "leading_edge")) {
++      if (cand %in% colnames(df) && !all(is.na(df[[cand]]))) {
++        gene_col <- cand
++        break
++      }
++    }
++    if (is.null(gene_col)) {
++      cat("WARNING: No gene column found (genes/geneID/leading_edge) -- skipping network\n",
++          file = stderr())
++      quit(status = 0)
++    }
++
++    # ---- Sort and take top N ----
++    df$neg_log_padj <- -log10(df$pvalue_adj + 1e-300)
++    df <- df[order(df$neg_log_padj, decreasing = TRUE), ]
++    df <- head(df, top_n)
++
++    # ---- Parse gene lists ----
++    df$gene_list <- lapply(df[[gene_col]], function(x) {
++      genes <- unlist(strsplit(as.character(x), "[/,;]"))
++      trimws(genes[nzchar(trimws(genes))])
++    })
++    df$gene_count <- sapply(df$gene_list, length)
++    df <- df[df$gene_count > 0, , drop = FALSE]
++    if (nrow(df) == 0) {
++      cat("WARNING: No terms with parseable genes\n", file = stderr())
++      quit(status = 0)
++    }
++
++    # ---- Truncate long term names ----
++    df$term_short <- ifelse(nchar(df$term) > 45,
++                            paste0(substr(df$term, 1, 42), "..."),
++                            df$term)
++
++    # ---- Build bipartite graph ----
++    edges_list <- lapply(seq_len(nrow(df)), function(i) {
++      data.frame(from = df$term_short[i],
++                 to   = df$gene_list[[i]],
++                 stringsAsFactors = FALSE)
++    })
++    edges <- do.call(rbind, edges_list)
++
++    all_genes <- unique(edges$to)
++    nodes_term <- data.frame(
++      name  = df$term_short,
++      class = "term",
++      metric = df$neg_log_padj,
++      node_size = df$gene_count,
++      stringsAsFactors = FALSE
++    )
++    nodes_gene <- data.frame(
++      name  = all_genes,
++      class = "gene",
++      metric = 0,
++      node_size = 1,
++      stringsAsFactors = FALSE
++    )
++    nodes <- rbind(nodes_term, nodes_gene)
++
++    graph <- igraph::graph_from_data_frame(d = edges,
++                                           vertices = nodes,
++                                           directed = FALSE)
++    layout <- igraph::layout_with_fr(graph)
++    df_nodes <- nodes
++    df_nodes$dim1 <- layout[, 1]
++    df_nodes$dim2 <- layout[, 2]
++
++    # ---- Build edge coordinates ----
++    rownames(df_nodes) <- df_nodes$name
++    df_edges <- edges
++    df_edges$from_dim1 <- df_nodes[df_edges$from, "dim1"]
++    df_edges$from_dim2 <- df_nodes[df_edges$from, "dim2"]
++    df_edges$to_dim1   <- df_nodes[df_edges$to, "dim1"]
++    df_edges$to_dim2   <- df_nodes[df_edges$to, "dim2"]
++
++    term_nodes <- df_nodes[df_nodes$class == "term", , drop = FALSE]
++    gene_nodes <- df_nodes[df_nodes$class == "gene", , drop = FALSE]
++
++    # ---- Plot ----
++    p <- ggplot() +
++      geom_segment(data = df_edges,
++                   aes(x = from_dim1, y = from_dim2,
++                       xend = to_dim1, yend = to_dim2),
++                   color = "grey70", alpha = 0.5, linewidth = 0.3) +
++      geom_point(data = term_nodes,
++                 aes(x = dim1, y = dim2,
++                     size = node_size, fill = metric),
++                 shape = 21, color = "black", stroke = 0.5) +
++      scale_fill_viridis_c(option = "plasma", name = "-log10(padj)") +
++      scale_size_continuous(range = c(4, 12), name = "Gene count") +
++      geom_point(data = gene_nodes,
++                 aes(x = dim1, y = dim2),
++                 size = 1.5, color = "grey30", shape = 16)
++
++    # Label gene nodes
++    if (requireNamespace("ggrepel", quietly = TRUE)) {
++      p <- p + ggrepel::geom_text_repel(
++        data = gene_nodes,
++        aes(x = dim1, y = dim2, label = name),
++        size = 2.2, color = "grey30", max.overlaps = 30,
++        segment.size = 0.2, segment.color = "grey60"
++      )
++    } else {
++      p <- p + geom_text(data = gene_nodes,
++                         aes(x = dim1, y = dim2, label = name),
++                         size = 2.2, color = "grey30", nudge_y = 0.3)
++    }
++
++    # Label term nodes
++    if (requireNamespace("ggrepel", quietly = TRUE)) {
++      p <- p + ggrepel::geom_text_repel(
++        data = term_nodes,
++        aes(x = dim1, y = dim2, label = name),
++        size = 3, fontface = "bold", max.overlaps = 20,
++        segment.size = 0.3, segment.color = "grey50",
++        point.size = NA, force = 5
++      )
++    } else {
++      p <- p + geom_text(data = term_nodes,
++                         aes(x = dim1, y = dim2, label = name),
++                         size = 3, fontface = "bold", nudge_y = 0.5)
++    }
++
++    p <- p +
++      labs(title = paste0("Enrichment Network"),
++           x = NULL, y = NULL) +
++      theme_omics() +
++      theme(axis.text = element_blank(),
++            axis.ticks = element_blank(),
++            axis.line = element_blank(),
++            panel.grid.major.y = element_blank())
++
++    ggsave_standard(p, out_path, width = 10, height = 9)
++  }, error = function(e) {
++    cat("ERROR:", conditionMessage(e), "\n", file = stderr())
++    quit(status = 1)
++  })
++}
++
++
++# ---------------------------------------------------------------------------
++# Function 7: plot_enrichment_enrichmap
++# ---------------------------------------------------------------------------
++#' Enrichment term similarity map (clustered term network).
++#'
++#' Clusters enriched terms by gene overlap (Jaccard similarity) and displays
++#' them as a network. Edges represent shared genes, node size = gene count,
++#' node color = cluster membership. Top terms per cluster are labeled.
++#'
++#' Requires the igraph package; exits gracefully (status 0) if unavailable.
++#'
++#' @param data_dir Character. Directory containing enrichment_results.csv.
++#' @param out_path Character. Absolute path for output PNG.
++#' @param params Named list. Optional: top_n (default 50), group,
++#'   min_similarity (default 0.1), padj_cutoff (default 0.05).
++plot_enrichment_enrichmap <- function(data_dir, out_path, params) {
++  tryCatch({
++    # ---- igraph guard ----
++    if (!requireNamespace("igraph", quietly = TRUE)) {
++      cat("WARNING: igraph not installed -- skipping enrichmap\n",
++          file = stderr())
++      quit(status = 0)
++    }
++
++    # ---- Read CSV ----
++    csv_path <- file.path(data_dir, "enrichment_results.csv")
++    if (!file.exists(csv_path)) {
++      csv_path <- file.path(data_dir, "top_terms.csv")
++    }
++    if (!file.exists(csv_path)) {
++      cat("ERROR: No enrichment CSV found in ", data_dir, "\n",
++          sep = "", file = stderr())
++      quit(status = 1)
++    }
++    df <- read.csv(csv_path, stringsAsFactors = FALSE)
++
++    # ---- Parameters ----
++    top_n          <- as.integer(params[["top_n"]] %||% "50")
++    padj_cutoff    <- as.numeric(params[["padj_cutoff"]] %||% "0.05")
++    min_similarity <- as.numeric(params[["min_similarity"]] %||% "0.1")
++    group_use      <- params[["group"]]
++
++    # ---- Filter group ----
++    if ("group" %in% colnames(df)) {
++      if (is.null(group_use) || !group_use %in% df$group) {
++        group_use <- df$group[1]
++      }
++      df <- df[df$group == group_use, , drop = FALSE]
++    }
++
++    # ---- Standardize p-value column ----
++    if (!"pvalue_adj" %in% colnames(df) && "pvalue" %in% colnames(df)) {
++      df$pvalue_adj <- df$pvalue
++    }
++    if ("pvalue_adj" %in% colnames(df)) {
++      df$pvalue_adj <- as.numeric(df$pvalue_adj)
++      df <- df[!is.na(df$pvalue_adj) & df$pvalue_adj < padj_cutoff, , drop = FALSE]
++    }
++
++    if (nrow(df) == 0) {
++      cat("WARNING: No significant terms to plot\n", file = stderr())
++      quit(status = 0)
++    }
++
++    # ---- Detect gene column ----
++    gene_col <- NULL
++    for (cand in c("genes", "geneID", "leading_edge")) {
++      if (cand %in% colnames(df) && !all(is.na(df[[cand]]))) {
++        gene_col <- cand
++        break
++      }
++    }
++    if (is.null(gene_col)) {
++      cat("WARNING: No gene column found -- skipping enrichmap\n",
++          file = stderr())
++      quit(status = 0)
++    }
++
++    # ---- Sort and take top N ----
++    df$neg_log_padj <- -log10(df$pvalue_adj + 1e-300)
++    df <- df[order(df$neg_log_padj, decreasing = TRUE), ]
++    df <- head(df, top_n)
++
++    # ---- Parse gene lists ----
++    df$gene_list <- lapply(df[[gene_col]], function(x) {
++      genes <- unlist(strsplit(as.character(x), "[/,;]"))
++      trimws(genes[nzchar(trimws(genes))])
++    })
++    df$gene_count <- sapply(df$gene_list, length)
++    df <- df[df$gene_count > 0, , drop = FALSE]
++
++    if (nrow(df) < 2) {
++      cat("WARNING: Need at least 2 terms for enrichmap\n", file = stderr())
++      quit(status = 0)
++    }
++
++    # ---- Truncate long term names ----
++    df$term_short <- ifelse(nchar(df$term) > 45,
++                            paste0(substr(df$term, 1, 42), "..."),
++                            df$term)
++    # Ensure uniqueness
++    if (anyDuplicated(df$term_short)) {
++      df$term_short <- make.unique(df$term_short, sep = " ")
++    }
++
++    # ---- Build term-term similarity (Jaccard) ----
++    n_terms <- nrow(df)
++    edge_from <- character(0)
++    edge_to   <- character(0)
++    edge_wt   <- numeric(0)
++    for (i in seq_len(n_terms - 1)) {
++      for (j in (i + 1):n_terms) {
++        inter <- length(intersect(df$gene_list[[i]], df$gene_list[[j]]))
++        union_n <- length(union(df$gene_list[[i]], df$gene_list[[j]]))
++        if (union_n > 0) {
++          jacc <- inter / union_n
++          if (jacc >= min_similarity) {
++            edge_from <- c(edge_from, df$term_short[i])
++            edge_to   <- c(edge_to,   df$term_short[j])
++            edge_wt   <- c(edge_wt,   jacc)
++          }
++        }
++      }
++    }
++
++    # ---- Build graph ----
++    nodes <- data.frame(
++      name       = df$term_short,
++      gene_count = df$gene_count,
++      metric     = df$neg_log_padj,
++      stringsAsFactors = FALSE
++    )
++
++    if (length(edge_from) == 0) {
++      # No edges above threshold -- still render nodes without edges
++      edges <- data.frame(from = character(0), to = character(0),
++                          weight = numeric(0), stringsAsFactors = FALSE)
++      graph <- igraph::graph_from_data_frame(d = edges, vertices = nodes,
++                                             directed = FALSE)
++    } else {
++      edges <- data.frame(from = edge_from, to = edge_to,
++                          weight = edge_wt, stringsAsFactors = FALSE)
++      graph <- igraph::graph_from_data_frame(d = edges, vertices = nodes,
++                                             directed = FALSE)
++    }
++
++    layout <- igraph::layout_with_fr(graph)
++    nodes$dim1 <- layout[, 1]
++    nodes$dim2 <- layout[, 2]
++
++    # ---- Cluster ----
++    if (igraph::ecount(graph) > 0) {
++      clusters <- igraph::cluster_fast_greedy(graph)
++      nodes$cluster <- factor(paste0("C", clusters$membership))
++    } else {
++      nodes$cluster <- factor(paste0("C", seq_len(nrow(nodes))))
++    }
++
++    # ---- Select top 3 labels per cluster ----
++    label_nodes <- do.call(rbind, lapply(split(nodes, nodes$cluster), function(cl) {
++      cl <- cl[order(-cl$metric), ]
++      head(cl, 3)
++    }))
++
++    nodes$label <- ifelse(nodes$name %in% label_nodes$name, nodes$name, NA)
++
++    # ---- Edge coordinates ----
++    rownames(nodes) <- nodes$name
++    if (nrow(edges) > 0) {
++      df_edges <- edges
++      df_edges$from_dim1 <- nodes[df_edges$from, "dim1"]
++      df_edges$from_dim2 <- nodes[df_edges$from, "dim2"]
++      df_edges$to_dim1   <- nodes[df_edges$to, "dim1"]
++      df_edges$to_dim2   <- nodes[df_edges$to, "dim2"]
++      df_edges$alpha_val <- scales::rescale(df_edges$weight, to = c(0.15, 0.7))
++    } else {
++      df_edges <- NULL
++    }
++
++    # ---- Plot ----
++    n_clusters <- length(unique(nodes$cluster))
++    cluster_colors <- omics_palette(max(n_clusters, 3))[seq_len(n_clusters)]
++
++    p <- ggplot()
++
++    if (!is.null(df_edges) && nrow(df_edges) > 0) {
++      p <- p + geom_segment(data = df_edges,
++                            aes(x = from_dim1, y = from_dim2,
++                                xend = to_dim1, yend = to_dim2,
++                                alpha = alpha_val),
++                            color = "grey50", linewidth = 0.4,
++                            show.legend = FALSE) +
++        scale_alpha_identity()
++    }
++
++    p <- p +
++      geom_point(data = nodes,
++                 aes(x = dim1, y = dim2,
++                     size = gene_count, fill = cluster),
++                 shape = 21, color = "black", stroke = 0.4) +
++      scale_fill_manual(values = cluster_colors, name = "Cluster") +
++      scale_size_continuous(range = c(3, 10), name = "Gene count")
++
++    # Labels
++    if (requireNamespace("ggrepel", quietly = TRUE)) {
++      p <- p + ggrepel::geom_text_repel(
++        data = nodes[!is.na(nodes$label), , drop = FALSE],
++        aes(x = dim1, y = dim2, label = label),
++        size = 2.8, max.overlaps = 30,
++        segment.size = 0.25, segment.color = "grey50",
++        fontface = "bold"
++      )
++    } else {
++      p <- p + geom_text(
++        data = nodes[!is.na(nodes$label), , drop = FALSE],
++        aes(x = dim1, y = dim2, label = label),
++        size = 2.8, fontface = "bold", nudge_y = 0.3
++      )
++    }
++
++    p <- p +
++      labs(title = "Enrichment Map (term similarity)",
++           x = NULL, y = NULL) +
++      theme_omics() +
++      theme(axis.text = element_blank(),
++            axis.ticks = element_blank(),
++            axis.line = element_blank(),
++            panel.grid.major.y = element_blank())
++
++    fig_size <- max(8, sqrt(nrow(nodes)) * 1.5 + 4)
++    ggsave_standard(p, out_path, width = fig_size, height = fig_size)
++  }, error = function(e) {
++    cat("ERROR:", conditionMessage(e), "\n", file = stderr())
++    quit(status = 1)
++  })
++}
+diff --git a/skills/singlecell/_lib/viz/r/pseudotime.R b/skills/singlecell/_lib/viz/r/pseudotime.R
+index 8b2cf631..c0c6dbf3 100644
+--- a/skills/singlecell/_lib/viz/r/pseudotime.R
++++ b/skills/singlecell/_lib/viz/r/pseudotime.R
+@@ -132,9 +132,14 @@ plot_pseudotime_lineage <- function(data_dir, out_path, params) {
+ #' absolute correlation, merges with per-cell expression, and plots loess
+ #' trends with confidence-interval ribbons faceted per gene.
+ #'
++#' Multi-lineage support: when gene_expression.csv or pseudotime_points.csv
++#' contains a "lineage" column, each lineage gets its own loess curve overlaid
++#' on the same panel (per gene). If no lineage column, behavior is unchanged.
++#'
+ #' @param data_dir Character. Directory containing pseudotime_points.csv and trajectory_genes.csv.
+ #' @param out_path Character. Absolute path for output PNG.
+-#' @param params Named list. Optional: n_genes (default 5).
++#' @param params Named list. Optional: n_genes (default 5),
++#'   compare_lineages ("true"/"false", default "true" -- overlay lineages vs facet).
+ plot_pseudotime_dynamic <- function(data_dir, out_path, params) {
+   tryCatch({
+     # --- Step 1: Read CSVs ---
+@@ -200,45 +205,138 @@ plot_pseudotime_dynamic <- function(data_dir, out_path, params) {
+     if (!"cell_id" %in% colnames(pts_df)) {
+       pts_df$cell_id <- paste0("cell_", seq_len(nrow(pts_df)))
+     }
++
++    # Detect lineage column: check expression data first, then pseudotime points
++    has_lineage <- FALSE
++    lineage_source <- NULL
++    if ("lineage" %in% colnames(expr_df)) {
++      has_lineage <- TRUE
++      lineage_source <- "expr"
++    } else if ("lineage" %in% colnames(pts_df)) {
++      has_lineage <- TRUE
++      lineage_source <- "pts"
++    }
++
++    # Build merge columns: always include pseudotime, optionally lineage from pts
++    merge_cols <- c("cell_id", "pseudotime")
++    if (has_lineage && lineage_source == "pts") {
++      merge_cols <- c(merge_cols, "lineage")
++    }
+     df_long <- merge(
+       expr_df,
+-      pts_df[, c("cell_id", "pseudotime")],
++      pts_df[, intersect(merge_cols, colnames(pts_df)), drop = FALSE],
+       by = "cell_id"
+     )
+     if (nrow(df_long) == 0) stop("No cells matched between expression and pseudotime data")
+ 
++    # If lineage came from pts_df merge, it's now in df_long already.
++    # If lineage came from expr_df, it's already in df_long from the left side.
++    # Re-check after merge
++    has_lineage <- "lineage" %in% colnames(df_long) &&
++      length(unique(df_long$lineage[!is.na(df_long$lineage)])) > 1
++
+     # Ensure gene is a factor with consistent ordering
+     df_long$gene <- factor(df_long$gene, levels = top_genes)
+ 
+     # --- Step 5: Plot with stat_smooth CI ribbon ---
+-    # T-16a-02 mitigation: sample per gene for loess performance
+-    if (nrow(df_long) > 5000 * n_genes) {
+-      df_long <- do.call(rbind, lapply(split(df_long, df_long$gene), function(sub) {
+-        if (nrow(sub) > 5000) sub[sample(nrow(sub), 5000), ] else sub
+-      }))
++    # T-16a-02 mitigation: sample per gene (and lineage) for loess performance
++    if (has_lineage) {
++      df_long$lineage <- as.factor(df_long$lineage)
++      n_lineages <- length(levels(df_long$lineage))
++      max_per_group <- 5000
++      df_long <- do.call(rbind, lapply(
++        split(df_long, interaction(df_long$gene, df_long$lineage, drop = TRUE)),
++        function(sub) {
++          if (nrow(sub) > max_per_group) sub[sample(nrow(sub), max_per_group), ] else sub
++        }
++      ))
++    } else {
++      if (nrow(df_long) > 5000 * n_genes) {
++        df_long <- do.call(rbind, lapply(split(df_long, df_long$gene), function(sub) {
++          if (nrow(sub) > 5000) sub[sample(nrow(sub), 5000), ] else sub
++        }))
++      }
+     }
+ 
+-    p <- ggplot(df_long, aes(x = pseudotime, y = expression, group = gene)) +
+-      geom_point(aes(color = gene), size = 0.3, alpha = 0.3, show.legend = FALSE) +
+-      stat_smooth(
+-        aes(color = gene, fill = gene),
+-        method = "loess", formula = y ~ x, span = 0.75,
+-        geom = "smooth", alpha = 0.25, linewidth = 1
+-      ) +
+-      scale_color_manual(values = omics_palette(n_genes)) +
+-      scale_fill_manual(values = omics_palette(n_genes), guide = "none") +
+-      facet_wrap(~gene, scales = "free_y") +
+-      labs(
+-        title = "Gene dynamics over pseudotime",
+-        subtitle = subtitle_text,
+-        x = "Pseudotime", y = "Normalized expression",
+-        color = "Gene"
+-      ) +
+-      theme_omics() +
+-      theme(legend.position = "none")
++    # --- Step 5b: Build plot ---
++    if (has_lineage) {
++      # Multi-lineage mode: overlay per-lineage curves on each gene facet
++      compare_lineages <- tolower(params[["compare_lineages"]] %||% "true")
++      lineage_pal <- omics_palette(n_lineages)
++
++      if (compare_lineages == "true") {
++        # Overlay: lineages share same facet per gene, different colored curves
++        p <- ggplot(df_long, aes(x = pseudotime, y = expression)) +
++          geom_point(aes(color = lineage), size = 0.3, alpha = 0.3,
++                     show.legend = FALSE) +
++          stat_smooth(
++            aes(color = lineage, fill = lineage,
++                group = interaction(gene, lineage)),
++            method = "loess", formula = y ~ x, span = 0.75,
++            geom = "smooth", alpha = 0.2, linewidth = 1
++          ) +
++          scale_color_manual(values = lineage_pal) +
++          scale_fill_manual(values = lineage_pal, guide = "none") +
++          facet_wrap(~gene, scales = "free_y") +
++          labs(
++            title = "Gene dynamics over pseudotime (multi-lineage)",
++            subtitle = subtitle_text,
++            x = "Pseudotime", y = "Normalized expression",
++            color = "Lineage"
++          ) +
++          theme_omics() +
++          theme(legend.position = "bottom")
++      } else {
++        # Separate facets: facet by gene + lineage
++        p <- ggplot(df_long, aes(x = pseudotime, y = expression)) +
++          geom_point(aes(color = lineage), size = 0.3, alpha = 0.3,
++                     show.legend = FALSE) +
++          stat_smooth(
++            aes(color = lineage, fill = lineage),
++            method = "loess", formula = y ~ x, span = 0.75,
++            geom = "smooth", alpha = 0.2, linewidth = 1
++          ) +
++          scale_color_manual(values = lineage_pal) +
++          scale_fill_manual(values = lineage_pal, guide = "none") +
++          facet_wrap(~ gene + lineage, scales = "free_y") +
++          labs(
++            title = "Gene dynamics over pseudotime (per lineage)",
++            subtitle = subtitle_text,
++            x = "Pseudotime", y = "Normalized expression",
++            color = "Lineage"
++          ) +
++          theme_omics() +
++          theme(legend.position = "bottom")
++      }
++
++      plot_width <- max(8, n_genes * 2.5)
++      plot_height <- 5
++    } else {
++      # Original single-lineage behavior (backward compatible)
++      p <- ggplot(df_long, aes(x = pseudotime, y = expression, group = gene)) +
++        geom_point(aes(color = gene), size = 0.3, alpha = 0.3, show.legend = FALSE) +
++        stat_smooth(
++          aes(color = gene, fill = gene),
++          method = "loess", formula = y ~ x, span = 0.75,
++          geom = "smooth", alpha = 0.25, linewidth = 1
++        ) +
++        scale_color_manual(values = omics_palette(n_genes)) +
++        scale_fill_manual(values = omics_palette(n_genes), guide = "none") +
++        facet_wrap(~gene, scales = "free_y") +
++        labs(
++          title = "Gene dynamics over pseudotime",
++          subtitle = subtitle_text,
++          x = "Pseudotime", y = "Normalized expression",
++          color = "Gene"
++        ) +
++        theme_omics() +
++        theme(legend.position = "none")
++
++      plot_width <- max(8, n_genes * 2.5)
++      plot_height <- 5
++    }
+ 
+-    plot_width <- max(8, n_genes * 2.5)
+-    ggsave_standard(p, out_path, width = plot_width, height = 5, dpi = 200)
++    ggsave_standard(p, out_path, width = plot_width, height = plot_height, dpi = 200)
+ 
+   }, error = function(e) {
+     cat("ERROR:", conditionMessage(e), "\n", file = stderr())
+diff --git a/skills/singlecell/_lib/viz/r/registry.R b/skills/singlecell/_lib/viz/r/registry.R
+index a153252d..4f64f5ec 100644
+--- a/skills/singlecell/_lib/viz/r/registry.R
++++ b/skills/singlecell/_lib/viz/r/registry.R
+@@ -88,7 +88,12 @@ R_PLOT_REGISTRY <- list(
+   plot_ccc_stat_violin       = plot_ccc_stat_violin,
+   plot_ccc_stat_scatter      = plot_ccc_stat_scatter,
+   plot_feature_cor           = plot_feature_cor,
+-  plot_cytotrace_boxplot     = plot_cytotrace_boxplot
++  plot_cytotrace_boxplot     = plot_cytotrace_boxplot,
++  plot_enrichment_network    = plot_enrichment_network,
++  plot_enrichment_enrichmap  = plot_enrichment_enrichmap,
++  plot_de_manhattan          = plot_de_manhattan,
++  plot_ccc_bipartite         = plot_ccc_bipartite,
++  plot_ccc_diff_network      = plot_ccc_diff_network
+ )
+ 
+ # ---- CLI dispatcher (runs only when script is invoked directly) ----
+diff --git a/skills/singlecell/scrna/sc-cell-communication/sc_cell_communication.py b/skills/singlecell/scrna/sc-cell-communication/sc_cell_communication.py
+index 51ce048a..ea726191 100644
+--- a/skills/singlecell/scrna/sc-cell-communication/sc_cell_communication.py
++++ b/skills/singlecell/scrna/sc-cell-communication/sc_cell_communication.py
+@@ -75,6 +75,8 @@
+     "plot_ccc_stat_bar": "r_ccc_stat_bar.png",
+     "plot_ccc_stat_violin": "r_ccc_stat_violin.png",
+     "plot_ccc_stat_scatter": "r_ccc_stat_scatter.png",
++    "plot_ccc_bipartite": "r_ccc_bipartite.png",
++    "plot_ccc_diff_network": "r_ccc_diff_network.png",
+ }
+ 
+ 
+diff --git a/skills/singlecell/scrna/sc-de/sc_de.py b/skills/singlecell/scrna/sc-de/sc_de.py
+index d5ecc323..c59d2189 100644
+--- a/skills/singlecell/scrna/sc-de/sc_de.py
++++ b/skills/singlecell/scrna/sc-de/sc_de.py
+@@ -72,6 +72,7 @@
+     "plot_de_heatmap": "r_de_heatmap.png",
+     "plot_feature_violin": "r_feature_violin.png",
+     "plot_feature_cor": "r_feature_cor.png",
++    "plot_de_manhattan": "r_de_manhattan.png",
+ }
+ 
+ 
+diff --git a/skills/singlecell/scrna/sc-enrichment/sc_enrichment.py b/skills/singlecell/scrna/sc-enrichment/sc_enrichment.py
+index b2d112a4..7ddec29e 100644
+--- a/skills/singlecell/scrna/sc-enrichment/sc_enrichment.py
++++ b/skills/singlecell/scrna/sc-enrichment/sc_enrichment.py
+@@ -88,6 +88,8 @@
+     "plot_enrichment_bar": "r_enrichment_bar.png",
+     "plot_enrichment_dotplot": "r_enrichment_dotplot.png",
+     "plot_enrichment_lollipop": "r_enrichment_lollipop.png",
++    "plot_enrichment_network": "r_enrichment_network.png",
++    "plot_enrichment_enrichmap": "r_enrichment_enrichmap.png",
+ }
+ _R_ENHANCED_GSEA: dict[str, str] = {
+     "plot_gsea_mountain": "r_gsea_mountain.png",

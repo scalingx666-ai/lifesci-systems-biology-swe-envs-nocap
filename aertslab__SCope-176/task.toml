@@ -1,0 +1,65 @@
+version = "1.0"
+
+[task]
+name = "default/aertslab__SCope-176"
+description = "175 windows app fixes"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "SCope",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aertslab/SCope"
+ref = "ed3d914b015d5bf1a17badcf8d621b61ba456297"
+reference = "https://github.com/aertslab/SCope/pull/176"
+source_access = "auto"
+built_at = "2026-11-15T19:40:01.270553+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:9b73a4f911969f3229201eacd3eee08d9d37c52a16413e368cc2d132e5ac16cf"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2018-10-22T12:43:18Z"
+diff_format = "unified"
+context_files = [
+    "bin/install.js",
+    "index.js",
+    "opt/scopeserver/bindserver/server.js",
+    "package.json",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 103
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

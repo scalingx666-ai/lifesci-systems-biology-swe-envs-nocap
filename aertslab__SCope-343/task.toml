@@ -1,0 +1,64 @@
+version = "1.0"
+
+[task]
+name = "default/aertslab__SCope-343"
+description = "Fix modal positions"
+
+[metadata]
+difficulty = "small"
+category = "bugfix"
+keywords = [
+    "SCope",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aertslab/SCope"
+ref = "84179dbc0c4036c2a772df2e05be814f19d92fc1"
+reference = "https://github.com/aertslab/SCope/pull/343"
+source_access = "auto"
+built_at = "2026-11-15T19:38:36.073258+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:b37afb96bd0ebec3611e183f6620d9b66ecd3f7c8812e19c27124952588332b7"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2020-05-27T14:19:20Z"
+diff_format = "unified"
+context_files = [
+    "src/components/common/Metadata.jsx",
+    "src/components/common/UploadModal.jsx",
+    "src/css/features.css",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 18
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

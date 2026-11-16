@@ -1,0 +1,364 @@
+diff --git a/muon/__init__.py b/muon/__init__.py
+index 7a61a855..96f555bb 100644
+--- a/muon/__init__.py
++++ b/muon/__init__.py
+@@ -6,5 +6,6 @@
+ from ._core.io import *
+ 
+ from . import _atac as atac
++from . import _protein as prot
+ 
+ name = "muon"
+diff --git a/muon/_atac/tools.py b/muon/_atac/tools.py
+index 10688275..eea2f5c0 100644
+--- a/muon/_atac/tools.py
++++ b/muon/_atac/tools.py
+@@ -4,6 +4,7 @@
+ import pkgutil
+ from collections import OrderedDict
+ from typing import List, Union, Optional, Callable, Iterable
++from pathlib import Path
+ import logging
+ from datetime import datetime
+ 
+@@ -360,7 +361,7 @@ def _parse_motif_matrices(
+     except ImportError:
+         raise ImportError(
+             "MOODS is not available. Install MOODS from PyPI (`pip install MOODS-python`) \
+-			or from GitHub (`pip install git+https://github.com/jhkorhonen/MOODS`)"
++            or from GitHub (`pip install git+https://github.com/jhkorhonen/MOODS`)"
+         )
+ 
+     if files is None:
+@@ -485,7 +486,7 @@ def get_sequences(data: Union[AnnData, MuData], bed: str, fasta_file: str, bed_f
+         else:
+             raise FileNotFoundError(
+                 "Genome file has to be provided with `fasta_file` \
+-				or located using `muon.atac.tl.locate_genome`."
++                or located using `muon.atac.tl.locate_genome`."
+             )
+     else:
+         # TODO: have a function to check validity of the file
+@@ -607,8 +608,8 @@ def locate_fragments(data: Union[AnnData, MuData], fragments: str, return_fragme
+         except ImportError:
+             raise ImportError(
+                 "pysam is not available. It is required to work with the fragments file. \
+-				Install pysam from PyPI (`pip install pysam`) \
+-				or from GitHub (`pip install git+https://github.com/pysam-developers/pysam`)"
++                Install pysam from PyPI (`pip install pysam`) \
++                or from GitHub (`pip install git+https://github.com/pysam-developers/pysam`)"
+             )
+ 
+         # Here we make sure we can create a connection to the fragments file
+@@ -630,6 +631,44 @@ def locate_fragments(data: Union[AnnData, MuData], fragments: str, return_fragme
+             frag.close()
+ 
+ 
++def initialise_default_files(data: Union[AnnData, MuData], path: Union[str, Path]):
++    """
++    Locate default files for ATAC-seq
++
++    - attempt to locate peak annotation file (atac_peak_annotation.tsv)
++    - attempt to parse add peak annotation and store it as a DataFrame
++    - attempt to locate fragments file (atac_fragments.tsv.gz)
++    """
++
++    if isinstance(data, AnnData):
++        adata = data
++    elif isinstance(data, MuData) and "atac" in data.mod:
++        adata = data.mod["atac"]
++    else:
++        raise TypeError("Expected AnnData or MuData object with 'atac' modality")
++
++    # 2) Add peak annotation
++
++    default_annotation = os.path.join(os.path.dirname(path), "atac_peak_annotation.tsv")
++    if os.path.exists(default_annotation):
++        add_peak_annotation(adata, default_annotation)
++        print(f"Added peak annotation from {default_annotation} to .uns['atac']['peak_annotation']")
++
++        if isinstance(data, MuData):
++            try:
++                add_peak_annotation_gene_names(data)
++                print("Added gene names to peak annotation in .uns['atac']['peak_annotation']")
++            except Exception:
++                pass
++
++    # 3) Locate fragments file
++
++    default_fragments = os.path.join(os.path.dirname(path), "atac_fragments.tsv.gz")
++    if os.path.exists(default_annotation):
++        locate_fragments(adata, default_fragments)
++        print(f"Located fragments file: {default_fragments}")
++
++
+ def count_fragments_features(
+     data: Union[AnnData, MuData],
+     features: Optional[pd.DataFrame] = None,
+diff --git a/muon/_core/io.py b/muon/_core/io.py
+index dbd614e4..dd422d42 100644
+--- a/muon/_core/io.py
++++ b/muon/_core/io.py
+@@ -13,7 +13,7 @@
+ from .mudata import MuData
+ from .file_backing import MuDataFileManager, AnnDataFileManager
+ 
+-from .._atac.tools import add_peak_annotation, locate_fragments, add_peak_annotation_gene_names
++from .._atac.tools import initialise_default_files
+ 
+ #
+ # Reading data
+@@ -70,28 +70,44 @@ def read_10x_h5(filename: Union[str, Path], extended: bool = True, *args, **kwar
+ 
+     if extended:
+         if "atac" in mdata.mod:
++            initialise_default_files(mdata, filename)
+ 
+-            # 2) Add peak annotation
++    return mdata
+ 
+-            default_annotation = os.path.join(os.path.dirname(filename), "atac_peak_annotation.tsv")
+-            if os.path.exists(default_annotation):
+-                add_peak_annotation(mdata.mod["atac"], default_annotation)
+-                print(
+-                    f"Added peak annotation from {default_annotation} to .uns['atac']['peak_annotation']"
+-                )
+ 
+-                try:
+-                    add_peak_annotation_gene_names(mdata)
+-                    print("Added gene names to peak annotation in .uns['atac']['peak_annotation']")
+-                except Exception:
+-                    pass
++def read_10x_mtx(path: Union[str, Path], extended: bool = True, *args, **kwargs) -> MuData:
++    """
++    Read data from 10X Genomics-formatted files
++    (matrix.mtx.gz, features.tsv.gz, barcodes.tsv.gz)
++
++    This function uses scanpy.read_10x_mtx() internally
++    and patches its behaviour to:
++    - attempt to read `interval` field for features;
++    - (for ATAC-seq) attempt to locate peak annotation file and add peak annotation;
++    - (for ATAC-seq) attempt to locate fragments file.
+ 
+-            # 3) Locate fragments file
++    Ideally it is merged later to scanpy.read_10x_mtx().
+ 
+-            default_fragments = os.path.join(os.path.dirname(filename), "atac_fragments.tsv.gz")
+-            if os.path.exists(default_annotation):
+-                locate_fragments(mdata.mod["atac"], default_fragments)
+-                print(f"Located fragments file: {default_fragments}")
++    Parameters
++    ----------
++    path : str
++            Path to 10X folder (filtered_feature_bc_matrix or raw_feature_bc_matrix)
++            or to the matrix file inside it
++    extended : bool, optional (default: True)
++            Perform extended functionality automatically such as
++            locating peak annotation and fragments files.
++    """
++
++    adata = sc.read_10x_mtx(path, gex_only=False, *args, **kwargs)
++
++    mdata = MuData(adata)
++
++    # Patches sc.read_10x_h5 behaviour to:
++    # - attempt to add peak annotation
++    # - attempt to locate fragments file
++    if extended:
++        if "atac" in mdata.mod:
++            initialise_default_files(mdata, path)
+ 
+     return mdata
+ 
+diff --git a/muon/_core/mudata.py b/muon/_core/mudata.py
+index a258943b..b44172bb 100644
+--- a/muon/_core/mudata.py
++++ b/muon/_core/mudata.py
+@@ -45,7 +45,7 @@ def __init__(
+         feature_types_names: Optional[dict] = {
+             "Gene Expression": "rna",
+             "Peaks": "atac",
+-            "Antibody Capture": "cite",
++            "Antibody Capture": "prot",
+         },
+         as_view: bool = False,
+         index: Optional[
+@@ -76,7 +76,7 @@ def __init__(
+                     if feature_types_names is not None:
+                         if name in feature_types_names.keys():
+                             alias = feature_types_names[name]
+-                    self.mod[alias] = data[:, data.var.feature_types == name]
++                    self.mod[alias] = data[:, data.var.feature_types == name].copy()
+         else:
+             raise TypeError("Expected AnnData object or dictionary with AnnData objects as values")
+ 
+diff --git a/muon/_core/plot.py b/muon/_core/plot.py
+index fca88039..edc4e393 100644
+--- a/muon/_core/plot.py
++++ b/muon/_core/plot.py
+@@ -1,14 +1,131 @@
+-from typing import Union, List
++from typing import Union, List, Optional, Iterable, Sequence
++import warnings
+ 
+ from matplotlib.axes import Axes
++import numpy as np
++import pandas as pd
+ import scanpy as sc
++from anndata import AnnData
++
+ from .mudata import MuData
+ 
+ 
++def embedding(
++    data: Union[AnnData, MuData],
++    basis: str,
++    color: Optional[Union[str, Sequence[str]]] = None,
++    use_raw: Optional[bool] = None,
++    layer: Optional[str] = None,
++    **kwargs,
++):
++    """
++    Scatter plot in the define basis, which can also be
++    a basis inside any modality, e.g. "rna:X_pca".
++
++    See sc.pl.embedding for details.
++
++    Parameters
++    ----------
++    data : Union[AnnData, MuData]
++        MuData or AnnData object
++    basis : str
++        Name of the `obsm` basis to use
++    color : Optional[Union[str, typing.Sequence[str]]], optional (default: None)
++        Keys for variables or annotations of observations (.obs columns).
++        Can be from any modality.
++    use_raw : Optional[bool], optional (default: None)
++        Use `.raw` attribute of the modality where a feature (from `color`) is derived from.
++        If `None`, defaults to `True` if `.raw` is present and a valid `layer` is not provided.
++    layer : Optional[str], optional (default: None)
++        Name of the layer in the modality where a feature (from `color`) is derived from.
++        No layer is used by default. If a valid `layer` is provided, this takes precedence
++        over `use_raw=True`.
++    """
++    if isinstance(data, AnnData) or basis in data.obsm:
++        return sc.pl.embedding(data, basis=basis, color=color, use_raw=use_raw, **kwargs)
++
++    # `data` is MuData
++    # and basis is not a joint embedding
++    try:
++        mod, basis_mod = basis.split(":")
++    except ValueError as e:
++        raise ValueError(f"Basis {basis} is not present in the MuData object (.obsm)")
++
++    if mod not in data.mod:
++        raise ValueError(
++            f"Modality {mod} is not present in the MuData object with modalities {', '.join(data.mod)}"
++        )
++
++    adata = data.mod[mod]
++    if basis_mod not in adata.obsm:
++        if "X_" + basis_mod in adata.obsm:
++            basis_mod = "X_" + basis_mod
++        elif len(adata.obsm) > 0:
++            raise ValueError(
++                f"Basis {basis_mod} is not present in the modality {mod} with embeddings {', '.join(adata.obsm)}"
++            )
++        else:
++            raise ValueError(
++                f"Basis {basis_mod} is not present in the modality {mod} with no embeddings"
++            )
++
++    obs = data.obs.loc[adata.obs_names]
++
++    if color is None:
++        ad = AnnData(obs=obs, obsm=adata.obsm, obsp=adata.obsp)
++        return sc.pl.embedding(ad, basis=basis_mod, **kwargs)
++
++    # Some `color` has been provided
++    if isinstance(color, str):
++        keys = [color]
++    elif isinstance(color, Iterable):
++        keys = color
++    else:
++        raise TypeError("Expected color to be a string or an iterable.")
++
++    # Fetch respective features from the
++    if not all([key in obs for key in keys]):
++        # {'rna': [True, False], 'prot': [False, True]}
++        keys_in_mod = {m: [key in data.mod[m].var_names for key in keys] for m in data.mod}
++        for m in data.mod:
++            if np.sum(keys_in_mod[m]) > 0:
++                mod_keys = np.array(keys)[keys_in_mod[m]]
++
++                if use_raw is None or use_raw:
++                    if data.mod[m].raw is not None:
++                        fmod_adata = data.mod[m].raw[:, mod_keys]
++                    else:
++                        if use_raw:
++                            warnings.warn(
++                                f"Attibute .raw is None for the modality {m}, using .X instead"
++                            )
++                        fmod_adata = data.mod[m][:, mod_keys]
++                else:
++                    fmod_adata = data.mod[m][:, mod_keys]
++
++                if layer is not None:
++                    if layer in data.mod[m].layers:
++                        fmod_adata.X = data.mod[m][:, mod_keys].layers[layer].X
++                        if use_raw:
++                            warnings.warn(f"Layer='{layer}' superseded use_raw={use_raw}")
++                    else:
++                        warnings.warn(
++                            f"Layer {layer} is not present for the modality {m}, using count matrix instead"
++                        )
++
++                obs = obs.join(
++                    pd.DataFrame(fmod_adata.X, columns=mod_keys, index=fmod_adata.obs_names),
++                    how="left",
++                )
++
++    ad = AnnData(obs=obs, obsm=adata.obsm, obsp=adata.obsp)
++    return sc.pl.embedding(ad, basis=basis_mod, color=color, **kwargs)
++
++
+ def mofa(mdata: MuData, **kwargs) -> Union[Axes, List[Axes], None]:
+     """
+     Scatter plot in MOFA factors coordinates
+ 
+     See sc.pl.embedding for details.
+     """
+-    return sc.pl.embedding(mdata, "mofa", **kwargs)
++    return embedding(mdata, basis="mofa", **kwargs)
+diff --git a/muon/_protein/__init__.py b/muon/_protein/__init__.py
+new file mode 100644
+index 00000000..caad9572
+--- /dev/null
++++ b/muon/_protein/__init__.py
+@@ -0,0 +1 @@
++from .io import *
+diff --git a/muon/_protein/io.py b/muon/_protein/io.py
+new file mode 100644
+index 00000000..fe7c6682
+--- /dev/null
++++ b/muon/_protein/io.py
+@@ -0,0 +1,19 @@
++from typing import Union
++from pathlib import Path
++
++import scanpy as sc
++from anndata import AnnData
++
++
++def read_10x_h5(filename: Union[str, Path], prot_only: bool = True, *args, **kwargs) -> AnnData:
++    adata = sc.read_10x_h5(filename, gex_only=False, *args, **kwargs)
++    if prot_only:
++        adata = adata[:, list(map(lambda x: x == "Antibody Capture", adata.var["feature_types"]))]
++    return adata
++
++
++def read_10x_mtx(filename: Union[str, Path], prot_only: bool = True, *args, **kwargs) -> AnnData:
++    adata = sc.read_10x_mtx(filename, gex_only=False, *args, **kwargs)
++    if prot_only:
++        adata = adata[:, list(map(lambda x: x == "Antibody Capture", adata.var["feature_types"]))]
++    return adata

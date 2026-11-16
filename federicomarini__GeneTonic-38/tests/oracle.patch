@@ -1,0 +1,49 @@
+diff --git a/DESCRIPTION b/DESCRIPTION
+index fa63eaf3..fcb7cd85 100644
+--- a/DESCRIPTION
++++ b/DESCRIPTION
+@@ -1,8 +1,8 @@
+ Package: GeneTonic
+ Title: Enjoy Analyzing And Integrating The Results From Differential Expression 
+     Analysis And Functional Enrichment Analysis
+-Version: 2.1.2
+-Date: 2022-05-19
++Version: 2.1.3
++Date: 2022-08-03
+ Authors@R: 
+     c(
+         person(
+diff --git a/NEWS.md b/NEWS.md
+index c3a34e84..308133e7 100644
+--- a/NEWS.md
++++ b/NEWS.md
+@@ -3,6 +3,7 @@
+ ## Other notes
+ 
+ * Fixed the behavior of the reactive elements after uploading the `GeneTonicList` object at runtime. 
++* Fixed the label namings for the `gs_heatmap` function
+ 
+ # GeneTonic 2.0.0
+ 
+diff --git a/R/gs_heatmap.R b/R/gs_heatmap.R
+index 04219ad4..6ca8b7f1 100644
+--- a/R/gs_heatmap.R
++++ b/R/gs_heatmap.R
+@@ -213,7 +213,7 @@ gs_heatmap <- function(se,
+       rect_gp = gpar(col = "white", lwd = 0.5),
+       cluster_rows = cluster_rows,
+       cluster_columns = cluster_columns,
+-      row_labels = annotation_obj[rownames(mydata_sig), ]$gene_name,
++      row_labels = annotation_obj$gene_name[match(rownames(mydata_sig), annotation_obj$gene_id)],
+       ...
+     )
+   } else {
+@@ -269,7 +269,7 @@ gs_heatmap <- function(se,
+       rect_gp = gpar(col = "white", lwd = 0.5),
+       cluster_rows = cluster_rows,
+       cluster_columns = cluster_columns,
+-      row_labels = annotation_obj[rownames(mydata_sig), ]$gene_name,
++      row_labels = annotation_obj$gene_name[match(rownames(mydata_sig), annotation_obj$gene_id)],
+       top_annotation = deco_ha,
+       ...
+     )

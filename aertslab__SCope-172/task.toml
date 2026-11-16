@@ -1,0 +1,64 @@
+version = "1.0"
+
+[task]
+name = "default/aertslab__SCope-172"
+description = "Fix bug \"Error: ENOENT: no such file or directory, scandir 'SCope/ass…"
+
+[metadata]
+difficulty = "small"
+category = "bugfix"
+keywords = [
+    "SCope",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aertslab/SCope"
+ref = "3bca076b0f52497f1ca869de5e388d24a2a85b47"
+reference = "https://github.com/aertslab/SCope/pull/172"
+source_access = "auto"
+built_at = "2026-11-15T19:40:03.759178+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:63db55d0c1cd94dfdda0f2de72f147b31bf55d1d43ccaac011c98ed49f2aaea9"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2018-09-27T09:31:29Z"
+diff_format = "unified"
+context_files = [
+    "bin/configure.js",
+    "bin/install.js",
+    "package.json",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 10
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

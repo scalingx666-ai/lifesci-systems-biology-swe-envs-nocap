@@ -1,0 +1,1266 @@
+diff --git a/bot/core.py b/bot/core.py
+index d1780e3f..510ad0a4 100644
+--- a/bot/core.py
++++ b/bot/core.py
+@@ -189,7 +189,10 @@ def get_role_guardrails() -> str:
+    contains precise numerical data that must not be altered. You may add a brief
+    intro line but never replace or condense the tool output.
+ 6. For uploaded data or visual evidence, suggest appropriate OmicsClaw analysis skills.
+-7. For quick demos: say "run preprocess demo", "run ms-qc demo", etc.
++7. PDF UPLOAD SUPPORT: When user uploads a PDF file (scientific paper), automatically
++   call parse_literature tool to extract GEO accessions and metadata. The system
++   will detect uploaded PDFs automatically.
++8. For quick demos: say "run preprocess demo", "run ms-qc demo", etc.
+    Use mode='demo' to run with built-in synthetic data.
+ 8. FILE PATH MODE (IMPORTANT): Omics data files are often too large to upload
+    via messaging. When the user mentions a file path or filename, use mode='path'
+@@ -331,6 +334,185 @@ def get_tools() -> list[dict]:
+                 },
+             },
+         },
++        {
++            "type": "function",
++            "function": {
++                "name": "parse_literature",
++                "description": "Parse scientific literature (PDF, URL, DOI, PubMed ID) to extract GEO accessions and metadata, then download datasets. Use when user mentions a paper, sends a PDF, or provides a literature reference.",
++                "parameters": {
++                    "type": "object",
++                    "properties": {
++                        "input_type": {
++                            "type": "string",
++                            "enum": ["auto", "url", "doi", "pubmed", "file", "text"],
++                            "description": "Type of input (default: auto-detect)"
++                        },
++                        "input_value": {
++                            "type": "string",
++                            "description": "URL, DOI, PubMed ID, file path, or text content"
++                        },
++                        "auto_download": {
++                            "type": "boolean",
++                            "description": "Automatically download datasets (default: true)"
++                        }
++                    },
++                    "required": ["input_value"],
++                },
++            },
++        },
++        {
++            "type": "function",
++            "function": {
++                "name": "fetch_geo_metadata",
++                "description": "Fetch metadata for a specific GEO accession (GSE, GSM, or GPL). Use when user asks to fetch, query, or get information about a specific GEO ID.",
++                "parameters": {
++                    "type": "object",
++                    "properties": {
++                        "accession": {
++                            "type": "string",
++                            "description": "GEO accession ID (e.g., GSE204716, GSM123456)"
++                        },
++                        "download": {
++                            "type": "boolean",
++                            "description": "Download the dataset after fetching metadata (default: false)"
++                        }
++                    },
++                    "required": ["accession"],
++                },
++            },
++        },
++        {
++            "type": "function",
++            "function": {
++                "name": "list_directory",
++                "description": "List contents of a directory. Use when user wants to see files in a folder.",
++                "parameters": {
++                    "type": "object",
++                    "properties": {
++                        "path": {"type": "string", "description": "Directory path (default: current data directory)"}
++                    },
++                },
++            },
++        },
++        {
++            "type": "function",
++            "function": {
++                "name": "inspect_file",
++                "description": "Display contents of a CSV, JSON, or TXT file. Use when user wants to view file contents.",
++                "parameters": {
++                    "type": "object",
++                    "properties": {
++                        "file_path": {"type": "string", "description": "Path to file"},
++                        "lines": {"type": "integer", "description": "Number of lines to show (default: 20)"}
++                    },
++                    "required": ["file_path"],
++                },
++            },
++        },
++        {
++            "type": "function",
++            "function": {
++                "name": "download_file",
++                "description": "Download a file from a URL. Use when user provides a direct file URL.",
++                "parameters": {
++                    "type": "object",
++                    "properties": {
++                        "url": {"type": "string", "description": "File URL"},
++                        "destination": {"type": "string", "description": "Destination path (optional)"}
++                    },
++                    "required": ["url"],
++                },
++            },
++        },
++        {
++            "type": "function",
++            "function": {
++                "name": "create_json_file",
++                "description": "Create a JSON file from structured data. Use when user wants to save data as JSON.",
++                "parameters": {
++                    "type": "object",
++                    "properties": {
++                        "data": {"type": "object", "description": "Data to save as JSON"},
++                        "filename": {"type": "string", "description": "Filename (without extension)"},
++                        "destination": {"type": "string", "description": "Destination folder (optional)"}
++                    },
++                    "required": ["data", "filename"],
++                },
++            },
++        },
++        {
++            "type": "function",
++            "function": {
++                "name": "create_csv_file",
++                "description": "Create a CSV file from tabular data. Use when user wants to save data as CSV.",
++                "parameters": {
++                    "type": "object",
++                    "properties": {
++                        "data": {"type": "array", "description": "Array of row objects"},
++                        "filename": {"type": "string", "description": "Filename (without extension)"},
++                        "destination": {"type": "string", "description": "Destination folder (optional)"}
++                    },
++                    "required": ["data", "filename"],
++                },
++            },
++        },
++        {
++            "type": "function",
++            "function": {
++                "name": "make_directory",
++                "description": "Create a new directory. Use when user wants to create a folder.",
++                "parameters": {
++                    "type": "object",
++                    "properties": {
++                        "path": {"type": "string", "description": "Directory path to create"}
++                    },
++                    "required": ["path"],
++                },
++            },
++        },
++        {
++            "type": "function",
++            "function": {
++                "name": "move_file",
++                "description": "Move or rename a file. Use when user wants to move or rename files.",
++                "parameters": {
++                    "type": "object",
++                    "properties": {
++                        "source": {"type": "string", "description": "Source file path"},
++                        "destination": {"type": "string", "description": "Destination path"}
++                    },
++                    "required": ["source", "destination"],
++                },
++            },
++        },
++        {
++            "type": "function",
++            "function": {
++                "name": "remove_file",
++                "description": "Delete a file or directory. Use when user wants to remove files/folders.",
++                "parameters": {
++                    "type": "object",
++                    "properties": {
++                        "path": {"type": "string", "description": "File or directory path to remove"}
++                    },
++                    "required": ["path"],
++                },
++            },
++        },
++        {
++            "type": "function",
++            "function": {
++                "name": "get_file_size",
++                "description": "Get file size in MB. Use when user asks about file size.",
++                "parameters": {
++                    "type": "object",
++                    "properties": {
++                        "file_path": {"type": "string", "description": "File path"}
++                    },
++                    "required": ["file_path"],
++                },
++            },
++        },
+     ]
+ 
+ TOOLS = get_tools()
+@@ -784,6 +966,404 @@ async def execute_generate_audio(args: dict) -> str:
+         return "edge-tts not found. Install with: pip install edge-tts"
+ 
+ 
++# ---------------------------------------------------------------------------
++# execute_parse_literature
++# ---------------------------------------------------------------------------
++
++
++async def execute_parse_literature(args: dict) -> str:
++    """Execute literature parsing skill."""
++    input_value = args.get("input_value", "")
++    input_type = args.get("input_type", "auto")
++    auto_download = args.get("auto_download", True)
++
++    # Check for uploaded PDF files
++    if not input_value:
++        for _cid, info in received_files.items():
++            file_path = info.get("path", "")
++            if file_path and Path(file_path).suffix.lower() == ".pdf":
++                input_value = file_path
++                input_type = "file"
++                logger.info(f"Detected uploaded PDF: {file_path}")
++                break
++
++    if not input_value:
++        return "Error: input_value is required."
++
++    # Output directory
++    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
++    out_dir = OUTPUT_DIR / f"literature-parse_{ts}"
++
++    # Build command
++    lit_script = OMICSCLAW_DIR / "skills" / "literature" / "literature_parse.py"
++    if not lit_script.exists():
++        return "Error: literature parsing skill not found."
++
++    cmd = [PYTHON, str(lit_script)]
++    cmd.extend(["--input", input_value])
++    cmd.extend(["--input-type", input_type])
++    cmd.extend(["--output", str(out_dir)])
++    cmd.extend(["--data-dir", str(DATA_DIR)])
++
++    if not auto_download:
++        cmd.append("--no-download")
++
++    try:
++        proc = await asyncio.create_subprocess_exec(
++            *cmd,
++            stdout=asyncio.subprocess.PIPE,
++            stderr=asyncio.subprocess.PIPE,
++        )
++        stdout_bytes, stderr_bytes = await asyncio.wait_for(
++            proc.communicate(), timeout=180,
++        )
++        stdout_str = stdout_bytes.decode(errors="replace")
++        stderr_str = stderr_bytes.decode(errors="replace")
++    except asyncio.TimeoutError:
++        return "Literature parsing timed out after 180 seconds."
++    except Exception as e:
++        import traceback as _tb
++        return f"Literature parsing crashed:\n{_tb.format_exc()[-1500:]}"
++
++    if proc.returncode != 0:
++        err = stderr_str[-1500:] if stderr_str else stdout_str[-1500:] if stdout_str else "unknown error"
++        return f"Literature parsing failed (exit {proc.returncode}):\n{err}"
++
++    # Read report
++    report_file = out_dir / "report.md"
++    if report_file.exists():
++        return report_file.read_text(encoding="utf-8")
++    else:
++        return stdout_str if stdout_str else "Literature parsing completed but no report generated."
++
++
++# ---------------------------------------------------------------------------
++# execute_fetch_geo_metadata
++# ---------------------------------------------------------------------------
++
++
++async def execute_fetch_geo_metadata(args: dict) -> str:
++    """Fetch GEO metadata for a specific accession."""
++    accession = args.get("accession", "").strip().upper()
++    download = args.get("download", False)
++
++    if not accession:
++        return "Error: accession is required."
++
++    # Import downloader functions
++    sys.path.insert(0, str(OMICSCLAW_DIR / "skills" / "literature"))
++    try:
++        from core.downloader import fetch_geo_metadata, download_geo_dataset
++    except ImportError as e:
++        return f"Error importing GEO tools: {e}"
++
++    # Fetch metadata
++    try:
++        metadata = fetch_geo_metadata(accession)
++        if not metadata:
++            return f"Failed to fetch metadata for {accession}. Please check the accession ID."
++
++        # Format response
++        lines = [
++            f"# GEO Metadata: {accession}",
++            f"\n**Title**: {metadata.get('title', 'N/A')}",
++            f"\n**Organism**: {metadata.get('organism', 'N/A')}",
++            f"\n**Platform**: {metadata.get('platform', 'N/A')}",
++        ]
++
++        summary = metadata.get('summary', '')
++        if summary:
++            lines.append(f"\n**Summary**: {summary[:300]}{'...' if len(summary) > 300 else ''}")
++
++        samples = metadata.get('samples', [])
++        if samples:
++            lines.append(f"\n**Samples**: {len(samples)} samples")
++            lines.append(f"- {', '.join(samples[:5])}")
++            if len(samples) > 5:
++                lines.append(f"- ... and {len(samples) - 5} more")
++
++        # Download if requested
++        if download and accession.startswith('GSE'):
++            lines.append(f"\n## Downloading {accession}...")
++            result = download_geo_dataset(accession, DATA_DIR)
++            if result['status'] == 'success':
++                lines.append(f"\n✓ Downloaded {len(result['files'])} files to data/{accession}/")
++            else:
++                lines.append(f"\n✗ Download failed: {', '.join(result.get('errors', ['Unknown error']))}")
++
++        return '\n'.join(lines)
++
++    except Exception as e:
++        return f"Error fetching GEO metadata: {e}"
++
++
++# ---------------------------------------------------------------------------
++# execute_list_directory
++# ---------------------------------------------------------------------------
++
++
++async def execute_list_directory(args: dict) -> str:
++    """List directory contents."""
++    path_arg = args.get("path", "")
++    target_path = Path(path_arg) if path_arg else DATA_DIR
++
++    if not target_path.is_absolute():
++        target_path = DATA_DIR / target_path
++
++    if not target_path.exists():
++        return f"Directory not found: {target_path}"
++
++    if not target_path.is_dir():
++        return f"Not a directory: {target_path}"
++
++    try:
++        items = []
++        for item in sorted(target_path.iterdir()):
++            if item.is_dir():
++                items.append(f"📁 {item.name}/")
++            else:
++                size = item.stat().st_size / (1024 * 1024)
++                items.append(f"📄 {item.name} ({size:.2f} MB)")
++
++        if not items:
++            return f"Empty directory: {target_path}"
++
++        return f"Contents of {target_path}:\n" + "\n".join(items[:50])
++    except Exception as e:
++        return f"Error listing directory: {e}"
++
++
++# ---------------------------------------------------------------------------
++# execute_inspect_file
++# ---------------------------------------------------------------------------
++
++
++async def execute_inspect_file(args: dict) -> str:
++    """Inspect file contents."""
++    file_path_arg = args.get("file_path", "")
++    lines_limit = args.get("lines", 20)
++
++    if not file_path_arg:
++        return "Error: file_path is required."
++
++    file_path = validate_input_path(file_path_arg)
++    if not file_path:
++        return f"File not found or not accessible: {file_path_arg}"
++
++    try:
++        suffix = file_path.suffix.lower()
++        content = file_path.read_text(encoding="utf-8")
++        lines = content.split("\n")
++
++        preview = "\n".join(lines[:lines_limit])
++        total = len(lines)
++
++        return f"File: {file_path.name}\nShowing {min(lines_limit, total)} of {total} lines:\n\n{preview}"
++    except Exception as e:
++        return f"Error reading file: {e}"
++
++
++# ---------------------------------------------------------------------------
++# execute_download_file
++# ---------------------------------------------------------------------------
++
++
++async def execute_download_file(args: dict) -> str:
++    """Download file from URL."""
++    url = args.get("url", "")
++    dest_arg = args.get("destination", "")
++
++    if not url:
++        return "Error: url is required."
++
++    try:
++        filename = url.split("/")[-1] or "downloaded_file"
++        filename = sanitize_filename(filename)
++
++        dest_dir = resolve_dest(dest_arg) if dest_arg else DATA_DIR
++        dest_path = dest_dir / filename
++
++        response = requests.get(url, timeout=120, stream=True)
++        response.raise_for_status()
++
++        with open(dest_path, "wb") as f:
++            for chunk in response.iter_content(chunk_size=8192):
++                f.write(chunk)
++
++        size_mb = dest_path.stat().st_size / (1024 * 1024)
++        return f"Downloaded: {dest_path} ({size_mb:.2f} MB)"
++    except Exception as e:
++        return f"Download failed: {e}"
++
++
++# ---------------------------------------------------------------------------
++# execute_create_json_file
++# ---------------------------------------------------------------------------
++
++
++async def execute_create_json_file(args: dict) -> str:
++    """Create JSON file from data."""
++    data = args.get("data", {})
++    filename = args.get("filename", "")
++    dest_arg = args.get("destination", "")
++
++    if not filename:
++        return "Error: filename is required."
++
++    filename = sanitize_filename(filename)
++    if not filename.endswith(".json"):
++        filename += ".json"
++
++    dest_dir = resolve_dest(dest_arg) if dest_arg else DATA_DIR
++    filepath = dest_dir / filename
++
++    try:
++        filepath.write_text(json.dumps(data, indent=2), encoding="utf-8")
++        return f"JSON file created: {filepath}"
++    except Exception as e:
++        return f"Error creating JSON file: {e}"
++
++
++# ---------------------------------------------------------------------------
++# execute_create_csv_file
++# ---------------------------------------------------------------------------
++
++
++async def execute_create_csv_file(args: dict) -> str:
++    """Create CSV file from tabular data."""
++    data = args.get("data", [])
++    filename = args.get("filename", "")
++    dest_arg = args.get("destination", "")
++
++    if not filename:
++        return "Error: filename is required."
++    if not data:
++        return "Error: data is required."
++
++    filename = sanitize_filename(filename)
++    if not filename.endswith(".csv"):
++        filename += ".csv"
++
++    dest_dir = resolve_dest(dest_arg) if dest_arg else DATA_DIR
++    filepath = dest_dir / filename
++
++    try:
++        import csv
++        with open(filepath, "w", newline="", encoding="utf-8") as f:
++            if isinstance(data[0], dict):
++                writer = csv.DictWriter(f, fieldnames=data[0].keys())
++                writer.writeheader()
++                writer.writerows(data)
++            else:
++                writer = csv.writer(f)
++                writer.writerows(data)
++        return f"CSV file created: {filepath}"
++    except Exception as e:
++        return f"Error creating CSV file: {e}"
++
++
++# ---------------------------------------------------------------------------
++# execute_make_directory
++# ---------------------------------------------------------------------------
++
++
++async def execute_make_directory(args: dict) -> str:
++    """Create a new directory."""
++    path_arg = args.get("path", "")
++
++    if not path_arg:
++        return "Error: path is required."
++
++    target_path = Path(path_arg)
++    if not target_path.is_absolute():
++        target_path = DATA_DIR / target_path
++
++    try:
++        target_path.mkdir(parents=True, exist_ok=True)
++        return f"Directory created: {target_path}"
++    except Exception as e:
++        return f"Error creating directory: {e}"
++
++
++# ---------------------------------------------------------------------------
++# execute_move_file
++# ---------------------------------------------------------------------------
++
++
++async def execute_move_file(args: dict) -> str:
++    """Move or rename a file."""
++    source_arg = args.get("source", "")
++    dest_arg = args.get("destination", "")
++
++    if not source_arg or not dest_arg:
++        return "Error: source and destination are required."
++
++    source_path = validate_input_path(source_arg)
++    if not source_path:
++        return f"Source file not found: {source_arg}"
++
++    dest_path = Path(dest_arg)
++    if not dest_path.is_absolute():
++        dest_path = DATA_DIR / dest_path
++
++    try:
++        shutil.move(str(source_path), str(dest_path))
++        return f"Moved: {source_path} → {dest_path}"
++    except Exception as e:
++        return f"Error moving file: {e}"
++
++
++# ---------------------------------------------------------------------------
++# execute_remove_file
++# ---------------------------------------------------------------------------
++
++
++async def execute_remove_file(args: dict) -> str:
++    """Remove a file or directory."""
++    path_arg = args.get("path", "")
++
++    if not path_arg:
++        return "Error: path is required."
++
++    target_path = validate_input_path(path_arg)
++    if not target_path:
++        return f"Path not found: {path_arg}"
++
++    try:
++        if target_path.is_dir():
++            shutil.rmtree(target_path)
++            return f"Removed directory: {target_path}"
++        else:
++            target_path.unlink()
++            return f"Removed file: {target_path}"
++    except Exception as e:
++        return f"Error removing: {e}"
++
++
++# ---------------------------------------------------------------------------
++# execute_get_file_size
++# ---------------------------------------------------------------------------
++
++
++async def execute_get_file_size(args: dict) -> str:
++    """Get file size."""
++    file_path_arg = args.get("file_path", "")
++
++    if not file_path_arg:
++        return "Error: file_path is required."
++
++    file_path = validate_input_path(file_path_arg)
++    if not file_path:
++        return f"File not found: {file_path_arg}"
++
++    try:
++        size_bytes = file_path.stat().st_size
++        size_mb = size_bytes / (1024 * 1024)
++        return f"File: {file_path.name}\nSize: {size_mb:.2f} MB ({size_bytes:,} bytes)"
++    except Exception as e:
++        return f"Error getting file size: {e}"
++
++
+ # ---------------------------------------------------------------------------
+ # Tool executor registry
+ # ---------------------------------------------------------------------------
+@@ -793,6 +1373,17 @@ async def execute_generate_audio(args: dict) -> str:
+     "save_file": execute_save_file,
+     "write_file": execute_write_file,
+     "generate_audio": execute_generate_audio,
++    "parse_literature": execute_parse_literature,
++    "fetch_geo_metadata": execute_fetch_geo_metadata,
++    "list_directory": execute_list_directory,
++    "inspect_file": execute_inspect_file,
++    "download_file": execute_download_file,
++    "create_json_file": execute_create_json_file,
++    "create_csv_file": execute_create_csv_file,
++    "make_directory": execute_make_directory,
++    "move_file": execute_move_file,
++    "remove_file": execute_remove_file,
++    "get_file_size": execute_get_file_size,
+ }
+ 
+ MAX_TOOL_ITERATIONS = 10
+diff --git a/skills/literature/SKILL.md b/skills/literature/SKILL.md
+new file mode 100644
+index 00000000..ba462835
+--- /dev/null
++++ b/skills/literature/SKILL.md
+@@ -0,0 +1,80 @@
++# Literature Parsing Skill
++
++## Purpose
++
++Parse scientific literature (PDFs, URLs, DOIs) to extract GEO accessions and metadata, then download datasets for downstream omics analysis.
++
++## Methodology
++
++### 1. Input Processing
++
++Accepts multiple input types:
++- **URL**: PubMed, bioRxiv, journal article links
++- **DOI**: Digital Object Identifier (e.g., 10.1038/s41586-021-03569-1)
++- **PubMed ID**: PMID (e.g., 33234567)
++- **PDF**: Uploaded scientific paper
++- **Text**: Raw text containing GEO references
++
++### 2. Metadata Extraction
++
++Extracts structured information:
++- **GEO Accessions**: GSE (study-level), GSM (sample-level)
++- **Organism**: Species (e.g., Homo sapiens, Mus musculus)
++- **Tissue**: Tissue type or organ
++- **Cell Type**: Cell type if specified
++- **Technology**: Sequencing platform (10x, Visium, etc.)
++
++### 3. Data Download
++
++Downloads datasets from GEO:
++- Resolves GSE to find all associated GSM samples
++- Downloads expression matrices (.h5ad, .mtx, .csv)
++- Organizes files by accession: `data/GSE123456/`
++- Generates metadata.json with extracted information
++
++### 4. Error Handling
++
++- **Retry with fallbacks**: PDF parsing → text extraction → manual patterns
++- **Partial results**: Returns successfully extracted data even if some downloads fail
++- **Logging**: Detailed logs for debugging
++
++## Output
++
++- **data/GSE*/**: Downloaded datasets organized by accession
++- **output/literature-parse_*/report.md**: Extraction report
++- **output/literature-parse_*/metadata.json**: Structured metadata
++
++## Usage
++
++```bash
++# Parse from URL
++python skills/literature/literature_parse.py \
++  --input "https://pubmed.ncbi.nlm.nih.gov/12345" \
++  --output output/literature_results
++
++# Parse from DOI
++python skills/literature/literature_parse.py \
++  --input "10.1038/s41586-021-03569-1" \
++  --input-type doi \
++  --output output/literature_results
++
++# Parse PDF
++python skills/literature/literature_parse.py \
++  --input paper.pdf \
++  --input-type file \
++  --output output/literature_results
++```
++
++## Integration
++
++After extraction, the bot automatically suggests appropriate analysis skills based on:
++- Data type (spatial, single-cell, bulk)
++- Organism and tissue
++- Available files
++
++## Dependencies
++
++- pypdf: PDF text extraction
++- requests: HTTP requests
++- beautifulsoup4: HTML parsing
++- GEOparse: GEO data access (optional, fallback to direct API)
+diff --git a/skills/literature/core/__init__.py b/skills/literature/core/__init__.py
+new file mode 100644
+index 00000000..cb463965
+--- /dev/null
++++ b/skills/literature/core/__init__.py
+@@ -0,0 +1 @@
++"""Literature parsing core modules."""
+diff --git a/skills/literature/core/downloader.py b/skills/literature/core/downloader.py
+new file mode 100644
+index 00000000..a93d2295
+--- /dev/null
++++ b/skills/literature/core/downloader.py
+@@ -0,0 +1,141 @@
++"""Download datasets from GEO."""
++
++import json
++import re
++import time
++from pathlib import Path
++from typing import Dict, List
++import requests
++
++
++def download_geo_dataset(gse_id: str, output_dir: Path, max_retries: int = 3) -> Dict:
++    """Download GEO dataset by GSE ID.
++
++    Args:
++        gse_id: GEO Series accession (e.g., GSE123456)
++        output_dir: Directory to save files
++        max_retries: Number of retry attempts
++
++    Returns:
++        Dict with download status and file paths
++    """
++    gse_id = gse_id.upper().strip()
++    gse_dir = output_dir / gse_id
++    gse_dir.mkdir(parents=True, exist_ok=True)
++
++    result = {
++        'gse_id': gse_id,
++        'status': 'pending',
++        'files': [],
++        'errors': [],
++    }
++
++    try:
++        # Get GSE metadata
++        metadata = fetch_geo_metadata(gse_id)
++        if not metadata:
++            result['status'] = 'failed'
++            result['errors'].append(f"Could not fetch metadata for {gse_id}")
++            return result
++
++        # Save metadata
++        metadata_file = gse_dir / 'metadata.json'
++        metadata_file.write_text(json.dumps(metadata, indent=2))
++        result['files'].append(str(metadata_file))
++
++        # Try to download supplementary files
++        supp_files = download_supplementary_files(gse_id, gse_dir, max_retries)
++        result['files'].extend(supp_files)
++
++        result['status'] = 'success' if result['files'] else 'partial'
++
++    except Exception as e:
++        result['status'] = 'failed'
++        result['errors'].append(str(e))
++
++    return result
++
++
++def fetch_geo_metadata(gse_id: str) -> Dict:
++    """Fetch GEO metadata via NCBI E-utilities."""
++    try:
++        # Use GEO API
++        url = f"https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc={gse_id}&targ=self&form=text&view=quick"
++        response = requests.get(url, timeout=30)
++        response.raise_for_status()
++
++        text = response.text
++        metadata = {
++            'gse_id': gse_id,
++            'title': extract_field(text, r'\!Series_title\s*=\s*(.+)'),
++            'summary': extract_field(text, r'\!Series_summary\s*=\s*(.+)'),
++            'organism': extract_field(text, r'\!Series_sample_organism\s*=\s*(.+)'),
++            'platform': extract_field(text, r'\!Series_platform_id\s*=\s*(.+)'),
++            'samples': extract_samples(text),
++        }
++
++        return metadata
++
++    except Exception as e:
++        print(f"Error fetching metadata for {gse_id}: {e}")
++        return {}
++
++
++def extract_field(text: str, pattern: str) -> str:
++    """Extract field from GEO text format."""
++    match = re.search(pattern, text, re.MULTILINE)
++    return match.group(1).strip() if match else ''
++
++
++def extract_samples(text: str) -> List[str]:
++    """Extract GSM sample IDs from GEO metadata."""
++    pattern = r'\!Series_sample_id\s*=\s*(GSM\d+)'
++    return re.findall(pattern, text)
++
++
++def download_supplementary_files(gse_id: str, output_dir: Path, max_retries: int = 3) -> List[str]:
++    """Download supplementary files from GEO FTP."""
++    downloaded = []
++
++    try:
++        # GEO FTP structure: ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSEnnn/GSE123456/suppl/
++        gse_prefix = gse_id[:-3] + 'nnn'  # GSE123456 -> GSE123nnn
++        ftp_base = f"https://ftp.ncbi.nlm.nih.gov/geo/series/{gse_prefix}/{gse_id}/suppl/"
++
++        # Try to list files
++        response = requests.get(ftp_base, timeout=30)
++        if response.status_code != 200:
++            return downloaded
++
++        # Parse HTML directory listing
++        file_links = re.findall(r'href="([^"]+\.(h5ad|mtx|csv|tsv|txt|gz|tar))"', response.text, re.IGNORECASE)
++
++        for filename in file_links[:10]:  # Limit to 10 files
++            file_url = ftp_base + filename
++            output_file = output_dir / filename
++
++            # Download with retry
++            for attempt in range(max_retries):
++                try:
++                    print(f"Downloading {filename} (attempt {attempt + 1}/{max_retries})...")
++                    file_response = requests.get(file_url, timeout=120, stream=True)
++                    file_response.raise_for_status()
++
++                    with open(output_file, 'wb') as f:
++                        for chunk in file_response.iter_content(chunk_size=8192):
++                            f.write(chunk)
++
++                    downloaded.append(str(output_file))
++                    print(f"Downloaded: {output_file}")
++                    break
++
++                except Exception as e:
++                    if attempt == max_retries - 1:
++                        print(f"Failed to download {filename}: {e}")
++                    else:
++                        time.sleep(2 ** attempt)  # Exponential backoff
++
++    except Exception as e:
++        print(f"Error downloading supplementary files: {e}")
++
++    return downloaded
+diff --git a/skills/literature/core/extractor.py b/skills/literature/core/extractor.py
+new file mode 100644
+index 00000000..ee992708
+--- /dev/null
++++ b/skills/literature/core/extractor.py
+@@ -0,0 +1,100 @@
++"""Extract GEO accessions and metadata from text."""
++
++import re
++from typing import Dict, List, Set
++
++
++def extract_geo_accessions(text: str) -> Dict[str, List[str]]:
++    """Extract GEO accessions (GSE, GSM, GPL) from text.
++
++    Returns:
++        Dict with keys 'gse', 'gsm', 'gpl' containing lists of accessions
++    """
++    # GEO accession patterns
++    gse_pattern = r'\b(GSE\d{3,})\b'
++    gsm_pattern = r'\b(GSM\d{3,})\b'
++    gpl_pattern = r'\b(GPL\d{3,})\b'
++
++    gse_ids = list(set(re.findall(gse_pattern, text, re.IGNORECASE)))
++    gsm_ids = list(set(re.findall(gsm_pattern, text, re.IGNORECASE)))
++    gpl_ids = list(set(re.findall(gpl_pattern, text, re.IGNORECASE)))
++
++    # Normalize to uppercase
++    return {
++        'gse': [x.upper() for x in gse_ids],
++        'gsm': [x.upper() for x in gsm_ids],
++        'gpl': [x.upper() for x in gpl_ids],
++    }
++
++
++def extract_organism(text: str) -> str:
++    """Extract organism/species from text."""
++    organisms = {
++        'homo sapiens': ['human', 'homo sapiens', 'h. sapiens'],
++        'mus musculus': ['mouse', 'mus musculus', 'm. musculus', 'mice'],
++        'rattus norvegicus': ['rat', 'rattus norvegicus', 'r. norvegicus'],
++        'danio rerio': ['zebrafish', 'danio rerio', 'd. rerio'],
++        'drosophila melanogaster': ['fly', 'drosophila', 'd. melanogaster'],
++    }
++
++    text_lower = text.lower()
++    for canonical, aliases in organisms.items():
++        for alias in aliases:
++            if alias in text_lower:
++                return canonical
++
++    return 'unknown'
++
++
++def extract_tissue(text: str) -> str:
++    """Extract tissue type from text."""
++    tissues = [
++        'brain', 'heart', 'liver', 'kidney', 'lung', 'spleen',
++        'muscle', 'skin', 'blood', 'bone', 'pancreas', 'intestine',
++        'stomach', 'colon', 'breast', 'prostate', 'ovary', 'testis',
++        'thyroid', 'adrenal', 'pituitary', 'retina', 'cornea',
++        'tumor', 'cancer', 'carcinoma', 'lymphoma', 'leukemia',
++    ]
++
++    text_lower = text.lower()
++    for tissue in tissues:
++        if tissue in text_lower:
++            return tissue
++
++    return 'unknown'
++
++
++def extract_technology(text: str) -> str:
++    """Extract sequencing technology from text."""
++    technologies = {
++        '10x Genomics': ['10x', '10x genomics', 'chromium'],
++        'Visium': ['visium', 'spatial transcriptomics'],
++        'Smart-seq': ['smart-seq', 'smartseq'],
++        'Drop-seq': ['drop-seq', 'dropseq'],
++        'MERFISH': ['merfish'],
++        'seqFISH': ['seqfish'],
++        'Slide-seq': ['slide-seq', 'slideseq'],
++        'Xenium': ['xenium'],
++    }
++
++    text_lower = text.lower()
++    for tech, aliases in technologies.items():
++        for alias in aliases:
++            if alias in text_lower:
++                return tech
++
++    return 'unknown'
++
++
++def extract_metadata(text: str) -> Dict[str, any]:
++    """Extract all metadata from text.
++
++    Returns:
++        Dict containing geo_accessions, organism, tissue, technology
++    """
++    return {
++        'geo_accessions': extract_geo_accessions(text),
++        'organism': extract_organism(text),
++        'tissue': extract_tissue(text),
++        'technology': extract_technology(text),
++    }
+diff --git a/skills/literature/core/parser.py b/skills/literature/core/parser.py
+new file mode 100644
+index 00000000..1e586e55
+--- /dev/null
++++ b/skills/literature/core/parser.py
+@@ -0,0 +1,131 @@
++"""Parse different input types (URL, PDF, DOI) to extract text."""
++
++import re
++import tempfile
++from pathlib import Path
++from typing import Tuple
++import requests
++
++
++def parse_input(input_value: str, input_type: str = "auto") -> Tuple[str, str]:
++    """Parse input and return (text_content, detected_type).
++
++    Args:
++        input_value: URL, DOI, file path, or text
++        input_type: "auto", "url", "doi", "pubmed", "file", "text"
++
++    Returns:
++        Tuple of (extracted_text, actual_input_type)
++    """
++    if input_type == "auto":
++        input_type = detect_input_type(input_value)
++
++    if input_type == "url":
++        return parse_url(input_value), "url"
++    elif input_type == "doi":
++        return parse_doi(input_value), "doi"
++    elif input_type == "pubmed":
++        return parse_pubmed(input_value), "pubmed"
++    elif input_type == "file":
++        return parse_file(input_value), "file"
++    else:
++        return input_value, "text"
++
++
++def detect_input_type(value: str) -> str:
++    """Auto-detect input type."""
++    value = value.strip()
++
++    # DOI pattern
++    if re.match(r'^10\.\d{4,}/\S+', value):
++        return "doi"
++
++    # PubMed ID
++    if re.match(r'^\d{7,8}$', value):
++        return "pubmed"
++
++    # URL
++    if value.startswith(('http://', 'https://')):
++        return "url"
++
++    # File path
++    if Path(value).exists() and Path(value).suffix == '.pdf':
++        return "file"
++
++    return "text"
++
++
++def parse_url(url: str) -> str:
++    """Fetch and extract text from URL."""
++    try:
++        # Handle PubMed URLs
++        if 'pubmed.ncbi.nlm.nih.gov' in url:
++            pmid = re.search(r'/(\d+)', url)
++            if pmid:
++                return parse_pubmed(pmid.group(1))
++
++        # Fetch HTML
++        headers = {'User-Agent': 'Mozilla/5.0 (OmicsClaw Literature Parser)'}
++        response = requests.get(url, headers=headers, timeout=30)
++        response.raise_for_status()
++
++        # Simple text extraction (remove HTML tags)
++        text = re.sub(r'<[^>]+>', ' ', response.text)
++        text = re.sub(r'\s+', ' ', text)
++        return text
++
++    except Exception as e:
++        return f"Error fetching URL: {e}"
++
++
++def parse_doi(doi: str) -> str:
++    """Fetch article via DOI."""
++    # Normalize DOI
++    doi = doi.strip()
++    if not doi.startswith('10.'):
++        doi = '10.' + doi.lstrip('10.')
++
++    # Try dx.doi.org redirect
++    url = f"https://doi.org/{doi}"
++    return parse_url(url)
++
++
++def parse_pubmed(pmid: str) -> str:
++    """Fetch article from PubMed."""
++    pmid = pmid.strip()
++
++    # Use PubMed E-utilities API
++    base_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
++
++    try:
++        # Fetch abstract
++        fetch_url = f"{base_url}/efetch.fcgi?db=pubmed&id={pmid}&retmode=xml"
++        response = requests.get(fetch_url, timeout=30)
++        response.raise_for_status()
++
++        # Extract text from XML (simple approach)
++        text = re.sub(r'<[^>]+>', ' ', response.text)
++        text = re.sub(r'\s+', ' ', text)
++        return text
++
++    except Exception as e:
++        return f"Error fetching PubMed {pmid}: {e}"
++
++
++def parse_file(filepath: str) -> str:
++    """Extract text from PDF file."""
++    try:
++        from pypdf import PdfReader
++
++        reader = PdfReader(filepath)
++        text_parts = []
++
++        for page in reader.pages:
++            text_parts.append(page.extract_text())
++
++        return ' '.join(text_parts)
++
++    except ImportError:
++        return "Error: pypdf not installed. Run: pip install pypdf"
++    except Exception as e:
++        return f"Error parsing PDF: {e}"
+diff --git a/skills/literature/literature_parse.py b/skills/literature/literature_parse.py
+new file mode 100755
+index 00000000..5cc84a14
+--- /dev/null
++++ b/skills/literature/literature_parse.py
+@@ -0,0 +1,143 @@
++#!/usr/bin/env python3
++"""Literature parsing CLI - extract GEO data from scientific papers."""
++
++import argparse
++import json
++import sys
++from datetime import datetime
++from pathlib import Path
++
++# Add parent directory to path
++sys.path.insert(0, str(Path(__file__).parent.parent.parent))
++
++from skills.literature.core.parser import parse_input
++from skills.literature.core.extractor import extract_metadata
++from skills.literature.core.downloader import download_geo_dataset
++
++
++def main():
++    parser = argparse.ArgumentParser(description='Parse literature and extract GEO datasets')
++    parser.add_argument('--input', required=True, help='URL, DOI, PubMed ID, PDF path, or text')
++    parser.add_argument('--input-type', default='auto',
++                       choices=['auto', 'url', 'doi', 'pubmed', 'file', 'text'],
++                       help='Input type (default: auto-detect)')
++    parser.add_argument('--output', required=True, help='Output directory')
++    parser.add_argument('--no-download', action='store_true',
++                       help='Extract metadata only, skip download')
++    parser.add_argument('--data-dir', help='Data directory for downloads (default: data/)')
++
++    args = parser.parse_args()
++
++    output_dir = Path(args.output)
++    output_dir.mkdir(parents=True, exist_ok=True)
++
++    # Determine data directory
++    if args.data_dir:
++        data_dir = Path(args.data_dir)
++    else:
++        # Use project root data/ directory
++        project_root = Path(__file__).parent.parent.parent
++        data_dir = project_root / 'data'
++    data_dir.mkdir(parents=True, exist_ok=True)
++
++    print(f"Parsing input: {args.input}")
++
++    # Parse input
++    text, detected_type = parse_input(args.input, args.input_type)
++    print(f"Detected input type: {detected_type}")
++
++    if not text or text.startswith('Error'):
++        print(f"Failed to parse input: {text}")
++        sys.exit(1)
++
++    # Extract metadata
++    print("Extracting metadata...")
++    metadata = extract_metadata(text)
++
++    geo_acc = metadata['geo_accessions']
++    gse_ids = geo_acc.get('gse', [])
++
++    print(f"Found {len(gse_ids)} GEO datasets: {', '.join(gse_ids)}")
++    print(f"Organism: {metadata['organism']}")
++    print(f"Tissue: {metadata['tissue']}")
++    print(f"Technology: {metadata['technology']}")
++
++    # Save metadata
++    metadata_file = output_dir / 'extracted_metadata.json'
++    metadata_file.write_text(json.dumps(metadata, indent=2))
++
++    # Download datasets
++    download_results = []
++    if not args.no_download and gse_ids:
++        print(f"\nDownloading datasets to {data_dir}...")
++        for gse_id in gse_ids:
++            print(f"\nProcessing {gse_id}...")
++            result = download_geo_dataset(gse_id, data_dir)
++            download_results.append(result)
++
++            if result['status'] == 'success':
++                print(f"✓ {gse_id}: Downloaded {len(result['files'])} files")
++            elif result['status'] == 'partial':
++                print(f"⚠ {gse_id}: Partial download ({len(result['files'])} files)")
++            else:
++                print(f"✗ {gse_id}: Failed - {', '.join(result['errors'])}")
++
++    # Generate report
++    generate_report(output_dir, metadata, download_results, args.no_download)
++
++    print(f"\n✓ Results saved to {output_dir}")
++    print(f"  - Report: {output_dir / 'report.md'}")
++    print(f"  - Metadata: {metadata_file}")
++
++    if download_results:
++        print(f"  - Downloaded data: {data_dir}")
++
++
++def generate_report(output_dir: Path, metadata: dict, download_results: list, no_download: bool):
++    """Generate markdown report."""
++    report_lines = [
++        "# Literature Parsing Report",
++        f"\n**Generated**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
++        "\n## Extracted Metadata",
++        f"\n- **Organism**: {metadata['organism']}",
++        f"- **Tissue**: {metadata['tissue']}",
++        f"- **Technology**: {metadata['technology']}",
++    ]
++
++    geo_acc = metadata['geo_accessions']
++    if geo_acc['gse']:
++        report_lines.append(f"\n## GEO Datasets\n")
++        for gse_id in geo_acc['gse']:
++            report_lines.append(f"- **{gse_id}**")
++
++    if download_results:
++        report_lines.append("\n## Download Results\n")
++        for result in download_results:
++            gse_id = result['gse_id']
++            status = result['status']
++            files = result['files']
++
++            if status == 'success':
++                report_lines.append(f"### {gse_id} ✓")
++                report_lines.append(f"\nDownloaded {len(files)} files:")
++                for f in files[:5]:  # Show first 5
++                    report_lines.append(f"- `{Path(f).name}`")
++                if len(files) > 5:
++                    report_lines.append(f"- ... and {len(files) - 5} more")
++            else:
++                report_lines.append(f"### {gse_id} ✗")
++                report_lines.append(f"\nStatus: {status}")
++                if result['errors']:
++                    report_lines.append(f"\nErrors: {', '.join(result['errors'])}")
++
++    report_lines.append("\n## Next Steps")
++    report_lines.append("\nYou can now analyze the downloaded data using OmicsClaw skills:")
++    report_lines.append("- For spatial data: `spatial-preprocessing`")
++    report_lines.append("- For single-cell data: `sc-preprocessing`")
++
++    report_file = output_dir / 'report.md'
++    report_file.write_text('\n'.join(report_lines))
++
++
++if __name__ == '__main__':
++    main()
+diff --git a/skills/literature/requirements.txt b/skills/literature/requirements.txt
+new file mode 100644
+index 00000000..afa8940b
+--- /dev/null
++++ b/skills/literature/requirements.txt
+@@ -0,0 +1,3 @@
++pypdf>=3.0.0
++requests>=2.28.0
++beautifulsoup4>=4.11.0

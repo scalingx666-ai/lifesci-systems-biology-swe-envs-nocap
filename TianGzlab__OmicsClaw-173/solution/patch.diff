@@ -1,0 +1,793 @@
+diff --git a/omicsclaw/memory/api/maintenance.py b/omicsclaw/memory/api/maintenance.py
+index f2a5f6bb..e2322578 100644
+--- a/omicsclaw/memory/api/maintenance.py
++++ b/omicsclaw/memory/api/maintenance.py
+@@ -1,10 +1,12 @@
+ """
+ Maintenance API — Endpoints for cleaning up deprecated/orphan memories.
+ 
+-Ported from nocturne_memory with OmicsClaw adaptations.
++Routes desktop ``/api/maintenance/*`` traffic through ``ReviewLog``. The
++legacy dict shape produced by ``GraphService`` is preserved so the
++existing OmicsClaw-App frontend keeps working unchanged.
+ """
+ 
+-from fastapi import APIRouter, HTTPException, Query
++from fastapi import APIRouter, HTTPException
+ 
+ router = APIRouter(prefix="/api/maintenance", tags=["maintenance"])
+ 
+@@ -12,35 +14,37 @@
+ @router.get("/orphans")
+ async def list_orphan_memories():
+     """List all orphan and deprecated memories."""
+-    from .. import get_graph_service
+-    graph = get_graph_service()
++    from .. import get_review_log
+ 
+-    orphans = await graph.get_all_orphan_memories()
+-    return orphans
++    review = get_review_log()
++    return await review.list_orphans_with_chain()
+ 
+ 
+ @router.get("/orphan/{memory_id}")
+ async def get_orphan_detail(memory_id: int):
+     """Get full detail of an orphan memory (for content viewing and diff)."""
+-    from .. import get_graph_service
+-    graph = get_graph_service()
++    from .. import get_review_log
+ 
+-    detail = await graph.get_orphan_detail(memory_id)
++    review = get_review_log()
++    detail = await review.get_orphan_detail(memory_id)
+     if detail is None:
+-        raise HTTPException(status_code=404, detail=f"Memory {memory_id} not found")
++        raise HTTPException(
++            status_code=404, detail=f"Memory {memory_id} not found"
++        )
+     return detail
+ 
+ 
+ @router.delete("/orphan/{memory_id}")
+ async def delete_orphan(memory_id: int):
+     """Permanently delete an orphan/deprecated memory."""
+-    from .. import get_graph_service
+-    graph = get_graph_service()
++    from .. import get_review_log
+     from ..snapshot import get_changeset_store
++
++    review = get_review_log()
+     store = get_changeset_store()
+ 
+     try:
+-        result = await graph.permanently_delete_memory(memory_id)
++        result = await review.permanently_delete_orphan(memory_id)
+     except ValueError as e:
+         raise HTTPException(status_code=404, detail=str(e))
+     except PermissionError as e:
+@@ -58,6 +62,7 @@ async def delete_orphan(memory_id: int):
+ async def rebuild_search_index():
+     """Fully rebuild the search index from live graph state."""
+     from .. import get_search_indexer
++
+     search = get_search_indexer()
+ 
+     await search.rebuild_all_search_documents()
+diff --git a/omicsclaw/memory/review_log.py b/omicsclaw/memory/review_log.py
+index 99156086..f2b55aa1 100644
+--- a/omicsclaw/memory/review_log.py
++++ b/omicsclaw/memory/review_log.py
+@@ -29,9 +29,13 @@
+ from .engine import MemoryEngine, MemoryRef
+ from .models import (
+     Edge,
++    GlossaryKeyword,
+     Memory,
++    Node,
+     Path,
+     SHARED_NAMESPACE,
++    serialize_memory_ref,
++    serialize_row,
+ )
+ from .namespace_policy import should_version
+ from .uri import MemoryURI
+@@ -410,6 +414,325 @@ async def discard_pending_changes(self) -> int:
+         """Drop every pending row without integrating. Returns count dropped."""
+         return self._store().discard_all()
+ 
++    # ------------------------------------------------------------------
++    # Desktop maintenance pane: dict-shaped orphan operations.
++    #
++    # These mirror the legacy GraphService contract used by
++    # ``/api/maintenance/*``. The shape is preserved so the existing
++    # frontend keeps working without changes; Phase 2a routed the API
++    # off GraphService onto these methods. Phase 3 will delete the
++    # GraphService copy once review.py and browse.py also migrate.
++    # ------------------------------------------------------------------
++
++    _SNIPPET_LIMIT: int = 200
++
++    async def list_orphans_with_chain(self) -> list[dict]:
++        """Return every deprecated memory with migration-target context.
++
++        Each entry carries ``id, content_snippet, created_at, deprecated,
++        migrated_to, category, migration_target``. ``category`` is
++        ``"deprecated"`` when ``migrated_to`` is set, else ``"orphaned"``.
++        ``migration_target`` contains the chain head's id/paths/snippet
++        when the chain still resolves, otherwise ``None``.
++        """
++        orphans: list[dict] = []
++        async with self._db.session() as s:
++            rows = (
++                await s.execute(
++                    sa.select(Memory)
++                    .where(Memory.deprecated == True)  # noqa: E712
++                    .order_by(Memory.created_at.desc())
++                )
++            ).scalars().all()
++
++            for memory in rows:
++                category = (
++                    "deprecated" if memory.migrated_to else "orphaned"
++                )
++                snippet = self._snippet(memory.content)
++                item: dict = {
++                    "id": memory.id,
++                    "content_snippet": snippet,
++                    "created_at": (
++                        memory.created_at.isoformat()
++                        if memory.created_at
++                        else None
++                    ),
++                    "deprecated": True,
++                    "migrated_to": memory.migrated_to,
++                    "category": category,
++                    "migration_target": None,
++                }
++                if memory.migrated_to:
++                    target = await self._resolve_migration_chain(
++                        s, memory.migrated_to
++                    )
++                    if target is not None:
++                        item["migration_target"] = {
++                            "id": target["id"],
++                            "paths": target["paths"],
++                            "content_snippet": target["content_snippet"],
++                        }
++                orphans.append(item)
++        return orphans
++
++    async def get_orphan_detail(self, memory_id: int) -> Optional[dict]:
++        """Return the full body + chain context for one memory id.
++
++        Returns ``None`` if the id doesn't exist. Used by the desktop
++        "view orphan" dialog. ``category`` is one of ``"active"``,
++        ``"deprecated"``, ``"orphaned"`` so the dialog can pick the
++        right banner.
++        """
++        async with self._db.session() as s:
++            memory = (
++                await s.execute(
++                    sa.select(Memory).where(Memory.id == memory_id)
++                )
++            ).scalar_one_or_none()
++            if memory is None:
++                return None
++
++            if not memory.deprecated:
++                category = "active"
++            elif memory.migrated_to:
++                category = "deprecated"
++            else:
++                category = "orphaned"
++
++            detail: dict = {
++                "id": memory.id,
++                "content": memory.content,
++                "created_at": (
++                    memory.created_at.isoformat()
++                    if memory.created_at
++                    else None
++                ),
++                "deprecated": memory.deprecated,
++                "migrated_to": memory.migrated_to,
++                "category": category,
++                "migration_target": None,
++            }
++            if memory.migrated_to:
++                target = await self._resolve_migration_chain(
++                    s, memory.migrated_to
++                )
++                if target is not None:
++                    detail["migration_target"] = {
++                        "id": target["id"],
++                        "content": target["content"],
++                        "paths": target["paths"],
++                        "created_at": target["created_at"],
++                    }
++            return detail
++
++    async def permanently_delete_orphan(self, memory_id: int) -> dict:
++        """Hard-delete a deprecated memory row with chain repair + node GC.
++
++        Repairs the chain: any predecessor that pointed at this row now
++        points at this row's successor (``migrated_to``). After the row
++        is gone, if the node has no remaining ``Memory`` rows, the node
++        and all of its edges / paths / glossary keywords are cleaned up.
++
++        Raises ``ValueError`` if the id doesn't exist, ``PermissionError``
++        if the row is still active (deletion is gated on deprecated=True).
++        Returns the legacy audit dict shape:
++        ``{deleted_memory_id, chain_repaired_to, rows_before, rows_after}``.
++        """
++        async with self._db.session() as s:
++            target = (
++                await s.execute(
++                    sa.select(Memory).where(Memory.id == memory_id)
++                )
++            ).scalar_one_or_none()
++            if target is None:
++                raise ValueError(f"Memory ID {memory_id} not found")
++            if not target.deprecated:
++                raise PermissionError(
++                    f"Memory {memory_id} is active (deprecated=False). "
++                    f"Deletion aborted."
++                )
++
++            successor_id = target.migrated_to
++            node_uuid = target.node_uuid
++            deleted_before = serialize_memory_ref(target)
++
++            # Chain repair: anyone pointing at us now points at our successor.
++            await s.execute(
++                sa.update(Memory)
++                .where(Memory.migrated_to == memory_id)
++                .values(migrated_to=successor_id)
++            )
++
++            await s.execute(
++                sa.delete(Memory).where(Memory.id == memory_id)
++            )
++            # The count query below relies on the autoflush default to
++            # see the DELETE we just issued. Explicit flush here so
++            # future session-factory changes can't silently break the GC.
++            await s.flush()
++
++            rows_before: dict[str, list] = {
++                "nodes": [],
++                "memories": [deleted_before],
++                "edges": [],
++                "paths": [],
++                "glossary_keywords": [],
++            }
++
++            # GC the node if it now has zero memories. We keep this scoped:
++            # a memoryless node by definition has no remaining version chain,
++            # so we only clear its own structural rows (no recursive
++            # descent into children — the desktop maintenance API never
++            # exposes orphan branches with active descendants).
++            remaining = (
++                await s.execute(
++                    sa.select(sa.func.count())
++                    .select_from(Memory)
++                    .where(Memory.node_uuid == node_uuid)
++                )
++            ).scalar_one()
++            if remaining == 0:
++                await self._collect_and_clear_memoryless_node(
++                    s, node_uuid, rows_before
++                )
++
++            return {
++                "deleted_memory_id": memory_id,
++                "chain_repaired_to": successor_id,
++                "rows_before": rows_before,
++                "rows_after": {},
++            }
++
++    # ------------------------------------------------------------------
++    # private helpers
++    # ------------------------------------------------------------------
++
++    @classmethod
++    def _snippet(cls, content: str) -> str:
++        if len(content) <= cls._SNIPPET_LIMIT:
++            return content
++        return content[: cls._SNIPPET_LIMIT] + "..."
++
++    async def _resolve_migration_chain(
++        self,
++        s: sa.ext.asyncio.AsyncSession,  # type: ignore[name-defined]
++        start_id: int,
++        *,
++        max_hops: int = 50,
++    ) -> Optional[dict]:
++        """Walk the ``migrated_to`` chain until a head (or dead end).
++
++        TODO(Phase 3): delete the duplicate ``GraphService._resolve_migration_chain``
++        at ``omicsclaw/memory/graph.py:1660`` when ``graph.py`` is removed.
++        """
++        current_id = start_id
++        for _ in range(max_hops):
++            memory = (
++                await s.execute(
++                    sa.select(Memory).where(Memory.id == current_id)
++                )
++            ).scalar_one_or_none()
++            if memory is None:
++                return None
++            if memory.migrated_to is None:
++                paths: list[str] = []
++                if memory.node_uuid:
++                    rows = (
++                        await s.execute(
++                            sa.select(Path.domain, Path.path)
++                            .select_from(Path)
++                            .join(Edge, Path.edge_id == Edge.id)
++                            .where(Edge.child_uuid == memory.node_uuid)
++                        )
++                    ).all()
++                    paths = [f"{d}://{p}" for d, p in rows]
++                return {
++                    "id": memory.id,
++                    "content": memory.content,
++                    "content_snippet": self._snippet(memory.content),
++                    "created_at": (
++                        memory.created_at.isoformat()
++                        if memory.created_at
++                        else None
++                    ),
++                    "deprecated": memory.deprecated,
++                    "paths": paths,
++                }
++            current_id = memory.migrated_to
++        return None
++
++    async def _collect_and_clear_memoryless_node(
++        self,
++        s,
++        node_uuid: str,
++        rows_before: dict[str, list],
++    ) -> None:
++        """Snapshot + delete edges/paths/glossary + node for a memoryless node.
++
++        Conservative scope: pathless aliases (``Path`` rows whose edge no
++        longer points at this node) are deliberately preserved, as are
++        any descendant subtrees reachable via outgoing edges. The legacy
++        ``GraphService.cascade_delete_node`` swept them all; the
++        ``permanently_delete_orphan`` contract intentionally avoids that
++        so an admin-button click cannot delete still-live descendants.
++        See ``test_permanently_delete_orphan_only_removes_direct_edges``.
++        """
++        edge_rows = (
++            await s.execute(
++                sa.select(Edge).where(
++                    sa.or_(
++                        Edge.parent_uuid == node_uuid,
++                        Edge.child_uuid == node_uuid,
++                    )
++                )
++            )
++        ).scalars().all()
++        edge_ids = [e.id for e in edge_rows]
++        for e in edge_rows:
++            rows_before["edges"].append(serialize_row(e))
++
++        if edge_ids:
++            path_rows = (
++                await s.execute(
++                    sa.select(Path).where(Path.edge_id.in_(edge_ids))
++                )
++            ).scalars().all()
++            for p in path_rows:
++                rows_before["paths"].append(serialize_row(p))
++            await s.execute(
++                sa.delete(Path).where(Path.edge_id.in_(edge_ids))
++            )
++
++        if edge_ids:
++            await s.execute(
++                sa.delete(Edge).where(Edge.id.in_(edge_ids))
++            )
++
++        gk_rows = (
++            await s.execute(
++                sa.select(GlossaryKeyword).where(
++                    GlossaryKeyword.node_uuid == node_uuid
++                )
++            )
++        ).scalars().all()
++        for gk in gk_rows:
++            rows_before["glossary_keywords"].append(serialize_row(gk))
++        await s.execute(
++            sa.delete(GlossaryKeyword).where(
++                GlossaryKeyword.node_uuid == node_uuid
++            )
++        )
++
++        node = (
++            await s.execute(
++                sa.select(Node).where(Node.uuid == node_uuid)
++            )
++        ).scalar_one_or_none()
++        if node is not None:
++            rows_before["nodes"].append(serialize_row(node))
++            await s.execute(sa.delete(Node).where(Node.uuid == node_uuid))
++
+     # ------------------------------------------------------------------
+     # internal helper
+     # ------------------------------------------------------------------
+diff --git a/tests/memory/test_review_log_orphan_chain.py b/tests/memory/test_review_log_orphan_chain.py
+new file mode 100644
+index 00000000..a73c57a6
+--- /dev/null
++++ b/tests/memory/test_review_log_orphan_chain.py
+@@ -0,0 +1,367 @@
++"""Tests for ReviewLog orphan-management API used by the desktop pane.
++
++Three methods power ``/api/maintenance/*`` after Phase 2a:
++  - ``list_orphans_with_chain()`` — orphan inventory with migration target
++  - ``get_orphan_detail(memory_id)`` — full content + chain info
++  - ``permanently_delete_orphan(memory_id)`` — hard-delete with chain repair
++    and GC of the now-memoryless node.
++
++These mirror the legacy GraphService dict-shaped contract so the existing
++desktop frontend keeps working without changes.
++"""
++
++from __future__ import annotations
++
++import pytest
++import pytest_asyncio
++import sqlalchemy as sa
++
++from omicsclaw.memory.database import DatabaseManager
++from omicsclaw.memory.engine import MemoryEngine
++from omicsclaw.memory.models import (
++    Edge,
++    GlossaryKeyword,
++    Memory,
++    Node,
++    Path,
++    SHARED_NAMESPACE,
++)
++from omicsclaw.memory.review_log import ReviewLog
++from omicsclaw.memory.search import SearchIndexer
++from omicsclaw.memory.snapshot import ChangesetStore
++
++
++@pytest_asyncio.fixture
++async def env(tmp_path):
++    db = DatabaseManager(f"sqlite+aiosqlite:///{tmp_path}/t.db")
++    await db.init_db()
++    search = SearchIndexer(db)
++    engine = MemoryEngine(db, search)
++    changeset_store = ChangesetStore(snapshot_dir=str(tmp_path / "changesets"))
++    review = ReviewLog(db, engine, changeset_store=changeset_store)
++    yield engine, review, db
++    await db.close()
++
++
++# ----------------------------------------------------------------------
++# list_orphans_with_chain
++# ----------------------------------------------------------------------
++
++
++@pytest.mark.asyncio
++async def test_list_orphans_with_chain_returns_dict_shape(env):
++    engine, review, _ = env
++    # Two versions of core://agent → v1 becomes deprecated.
++    await engine.upsert_versioned(
++        "core://agent", "old voice", namespace=SHARED_NAMESPACE
++    )
++    await engine.upsert_versioned(
++        "core://agent", "new voice", namespace=SHARED_NAMESPACE
++    )
++
++    orphans = await review.list_orphans_with_chain()
++
++    assert isinstance(orphans, list)
++    assert len(orphans) == 1
++    item = orphans[0]
++    # Desktop contract: every entry must carry these fields.
++    for key in (
++        "id",
++        "content_snippet",
++        "created_at",
++        "deprecated",
++        "migrated_to",
++        "category",
++        "migration_target",
++    ):
++        assert key in item
++    assert item["deprecated"] is True
++    assert item["category"] == "deprecated"  # has migrated_to
++    assert item["migration_target"] is not None
++    assert "id" in item["migration_target"]
++    assert "paths" in item["migration_target"]
++    assert "content_snippet" in item["migration_target"]
++
++
++@pytest.mark.asyncio
++async def test_list_orphans_with_chain_truncates_long_content(env):
++    engine, review, _ = env
++    long_body = "x" * 500
++    await engine.upsert_versioned(
++        "core://agent", long_body, namespace=SHARED_NAMESPACE
++    )
++    await engine.upsert_versioned(
++        "core://agent", "short v2", namespace=SHARED_NAMESPACE
++    )
++
++    orphans = await review.list_orphans_with_chain()
++
++    assert len(orphans) == 1
++    snippet = orphans[0]["content_snippet"]
++    # GraphService legacy contract: 200 chars + "..." trailer.
++    assert snippet.endswith("...")
++    assert len(snippet) == 203
++
++
++@pytest.mark.asyncio
++async def test_list_orphans_with_chain_classifies_orphaned_vs_deprecated(env):
++    """A memory with migrated_to=NULL is 'orphaned'; with target is 'deprecated'."""
++    engine, review, db = env
++    await engine.upsert_versioned(
++        "core://agent", "v1", namespace=SHARED_NAMESPACE
++    )
++    await engine.upsert_versioned(
++        "core://agent", "v2", namespace=SHARED_NAMESPACE
++    )
++
++    # Manually null out migrated_to on v1 to simulate the successor having
++    # been hard-deleted (this is how "orphaned" arises in practice).
++    async with db.session() as s:
++        await s.execute(
++            sa.update(Memory)
++            .where(Memory.deprecated == True)  # noqa: E712
++            .values(migrated_to=None)
++        )
++
++    orphans = await review.list_orphans_with_chain()
++
++    assert len(orphans) == 1
++    assert orphans[0]["category"] == "orphaned"
++    assert orphans[0]["migrated_to"] is None
++    assert orphans[0]["migration_target"] is None
++
++
++# ----------------------------------------------------------------------
++# get_orphan_detail
++# ----------------------------------------------------------------------
++
++
++@pytest.mark.asyncio
++async def test_get_orphan_detail_returns_full_content(env):
++    engine, review, db = env
++    await engine.upsert_versioned(
++        "core://agent", "deprecated body", namespace=SHARED_NAMESPACE
++    )
++    await engine.upsert_versioned(
++        "core://agent", "active body", namespace=SHARED_NAMESPACE
++    )
++
++    async with db.session() as s:
++        old_id = (
++            await s.execute(
++                sa.select(Memory.id).where(Memory.deprecated == True)  # noqa: E712
++            )
++        ).scalar_one()
++
++    detail = await review.get_orphan_detail(old_id)
++
++    assert detail is not None
++    assert detail["id"] == old_id
++    assert detail["content"] == "deprecated body"  # full body, not snippet
++    assert detail["deprecated"] is True
++    assert detail["category"] == "deprecated"
++    assert detail["migration_target"]["content"] == "active body"
++    assert "paths" in detail["migration_target"]
++
++
++@pytest.mark.asyncio
++async def test_get_orphan_detail_returns_none_for_missing(env):
++    _, review, _ = env
++    assert await review.get_orphan_detail(999_999) is None
++
++
++@pytest.mark.asyncio
++async def test_get_orphan_detail_marks_active_memory_as_active(env):
++    engine, review, db = env
++    await engine.upsert("dataset://foo.h5ad", "alive", namespace="tg/userA")
++    async with db.session() as s:
++        active_id = (
++            await s.execute(sa.select(Memory.id))
++        ).scalar_one()
++
++    detail = await review.get_orphan_detail(active_id)
++    assert detail is not None
++    assert detail["category"] == "active"
++    assert detail["deprecated"] is False
++
++
++# ----------------------------------------------------------------------
++# permanently_delete_orphan
++# ----------------------------------------------------------------------
++
++
++@pytest.mark.asyncio
++async def test_permanently_delete_orphan_removes_deprecated_memory(env):
++    engine, review, db = env
++    await engine.upsert_versioned("core://agent", "v1", namespace=SHARED_NAMESPACE)
++    await engine.upsert_versioned("core://agent", "v2", namespace=SHARED_NAMESPACE)
++
++    async with db.session() as s:
++        old_id = (
++            await s.execute(
++                sa.select(Memory.id).where(Memory.deprecated == True)  # noqa: E712
++            )
++        ).scalar_one()
++
++    result = await review.permanently_delete_orphan(old_id)
++
++    assert result["deleted_memory_id"] == old_id
++    assert "rows_before" in result and "rows_after" in result
++
++    async with db.session() as s:
++        gone = (
++            await s.execute(sa.select(Memory).where(Memory.id == old_id))
++        ).scalar_one_or_none()
++        assert gone is None
++        # Active row survives.
++        survivors = (
++            await s.execute(
++                sa.select(Memory).where(Memory.deprecated == False)  # noqa: E712
++            )
++        ).scalars().all()
++        assert len(survivors) == 1
++        assert survivors[0].content == "v2"
++
++
++@pytest.mark.asyncio
++async def test_permanently_delete_orphan_refuses_active_memory(env):
++    engine, review, db = env
++    await engine.upsert("dataset://x.h5ad", "active", namespace="tg/userA")
++    async with db.session() as s:
++        active_id = (
++            await s.execute(sa.select(Memory.id))
++        ).scalar_one()
++
++    with pytest.raises(PermissionError, match="active"):
++        await review.permanently_delete_orphan(active_id)
++
++
++@pytest.mark.asyncio
++async def test_permanently_delete_orphan_raises_on_missing(env):
++    _, review, _ = env
++    with pytest.raises(ValueError, match="not found"):
++        await review.permanently_delete_orphan(999_999)
++
++
++@pytest.mark.asyncio
++async def test_permanently_delete_orphan_repairs_chain(env):
++    """Deleting a middle link rewrites the surviving link's migrated_to."""
++    engine, review, db = env
++    await engine.upsert_versioned("core://agent", "v1", namespace=SHARED_NAMESPACE)
++    await engine.upsert_versioned("core://agent", "v2", namespace=SHARED_NAMESPACE)
++    await engine.upsert_versioned("core://agent", "v3", namespace=SHARED_NAMESPACE)
++
++    async with db.session() as s:
++        v1_id, v2_id, v3_id = [
++            mid
++            for (mid,) in (
++                await s.execute(sa.select(Memory.id).order_by(Memory.id))
++            ).all()
++        ]
++
++    await review.permanently_delete_orphan(v2_id)
++
++    async with db.session() as s:
++        v1 = await s.get(Memory, v1_id)
++        v3 = await s.get(Memory, v3_id)
++        assert v1 is not None and v3 is not None
++        # v1's migrated_to was v2; after deletion it must point to v3.
++        assert v1.migrated_to == v3_id
++
++
++@pytest.mark.asyncio
++async def test_permanently_delete_orphan_only_removes_direct_edges(env):
++    """When the orphan node has active descendants, the GC only cleans
++    up that node's own edges/paths — it does NOT recursively descend
++    into children. The legacy ``cascade_delete_node`` was more
++    aggressive; the conservative ReviewLog behaviour avoids ever
++    deleting still-live data through a maintenance operation.
++
++    The desktop pane is admin-only, so the operator can clean up any
++    descendant orphans afterwards. This test pins that contract.
++    """
++    engine, review, db = env
++
++    # Build a parent → child relationship in __shared__, then turn the
++    # parent's only memory into an orphan.
++    await engine.upsert_versioned(
++        "core://agent", "parent body", namespace=SHARED_NAMESPACE
++    )
++    await engine.upsert(
++        "core://agent/child", "child body", namespace=SHARED_NAMESPACE
++    )
++
++    async with db.session() as s:
++        parent_path_row = (
++            await s.execute(
++                sa.select(Path).where(
++                    Path.namespace == SHARED_NAMESPACE,
++                    Path.path == "agent",
++                )
++            )
++        ).scalar_one()
++        parent_edge = await s.get(Edge, parent_path_row.edge_id)
++        parent_node_uuid = parent_edge.child_uuid
++        parent_mem_id = (
++            await s.execute(
++                sa.select(Memory.id).where(
++                    Memory.node_uuid == parent_node_uuid
++                )
++            )
++        ).scalar_one()
++        await s.execute(
++            sa.update(Memory)
++            .where(Memory.id == parent_mem_id)
++            .values(deprecated=True, migrated_to=None)
++        )
++
++    await review.permanently_delete_orphan(parent_mem_id)
++
++    async with db.session() as s:
++        # Child memory survives — never touched.
++        child_mem = (
++            await s.execute(
++                sa.select(Memory).where(Memory.content == "child body")
++            )
++        ).scalar_one_or_none()
++        assert child_mem is not None
++
++
++@pytest.mark.asyncio
++async def test_permanently_delete_orphan_gcs_memoryless_node(env):
++    """When the last memory on a node is deleted, the node + its edges +
++    paths + glossary keywords must be cleared."""
++    engine, review, db = env
++    # Single-version chain whose only memory we'll deprecate then delete.
++    await engine.upsert_versioned(
++        "core://agent", "lonely", namespace=SHARED_NAMESPACE
++    )
++    async with db.session() as s:
++        await s.execute(
++            sa.update(Memory).values(deprecated=True, migrated_to=None)
++        )
++        mem_id = (await s.execute(sa.select(Memory.id))).scalar_one()
++        node_uuid = (
++            await s.execute(sa.select(Memory.node_uuid))
++        ).scalar_one()
++
++    await review.permanently_delete_orphan(mem_id)
++
++    async with db.session() as s:
++        # Node gone.
++        node = await s.get(Node, node_uuid)
++        assert node is None
++        # No edges referencing this node.
++        leftover_edges = (
++            await s.execute(
++                sa.select(Edge).where(Edge.child_uuid == node_uuid)
++            )
++        ).scalars().all()
++        assert leftover_edges == []
++        # No paths referencing those edges.
++        leftover_paths = (
++            await s.execute(
++                sa.select(Path).where(Path.path == "agent")
++            )
++        ).scalars().all()
++        assert leftover_paths == []

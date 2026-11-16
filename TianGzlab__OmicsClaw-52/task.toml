@@ -1,0 +1,66 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-52"
+description = "Refine scRNA preprocessing runtime and method validation"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "4a88801671483cd643535b5793cac9426db2b1c0"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/52"
+source_access = "auto"
+built_at = "2026-11-15T18:18:29.698973+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:168ad87b62d9a1f88ac526a2a3bb814cb0a560050c4372e156435900c2a79575"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-04-05T13:30:21Z"
+diff_format = "unified"
+context_files = [
+    "omicsclaw/core/dependency_manager.py",
+    "omicsclaw/core/r_script_runner.py",
+    "omicsclaw/r_scripts/sc_seurat_preprocess.R",
+    "skills/singlecell/_lib/preprocessing.py",
+    "skills/singlecell/scrna/sc-preprocessing/sc_preprocess.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 132
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

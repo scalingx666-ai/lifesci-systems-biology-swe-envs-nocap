@@ -1,0 +1,63 @@
+version = "1.0"
+
+[task]
+name = "default/aertslab__SCope-329"
+description = "Fix wrong data type and uninitialised variable"
+
+[metadata]
+difficulty = "easy"
+category = "bugfix"
+keywords = [
+    "SCope",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aertslab/SCope"
+ref = "036dc07a83529f9d5dddcc036379eb23dd6fcea4"
+reference = "https://github.com/aertslab/SCope/pull/329"
+source_access = "auto"
+built_at = "2026-11-15T19:38:46.814479+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:c413ae0220c293d11f5b0aa98ba3af659775ef2a6d53a2c6162c27411e4c82c1"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2020-05-15T14:10:33Z"
+diff_format = "unified"
+context_files = [
+    "opt/scopeserver/dataserver/utils/cell_color_by_features.py",
+    "src/components/common/Viewer.jsx",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 3
+difficulty = "trivial"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

@@ -1,0 +1,709 @@
+diff --git a/omicsclaw/memory/api/review.py b/omicsclaw/memory/api/review.py
+index 17ea9b81..3d197d62 100644
+--- a/omicsclaw/memory/api/review.py
++++ b/omicsclaw/memory/api/review.py
+@@ -1,15 +1,17 @@
+ """
+ Review API — Endpoints for reviewing AI changes and performing rollbacks.
+ 
+-Ported from nocturne_memory with OmicsClaw adaptations.
++Routes the desktop ``/api/review/*`` traffic through ``ReviewLog`` and
++``MemoryEngine``. The legacy JSON contract is preserved so the
++OmicsClaw-App frontend keeps working unchanged.
+ """
+ 
+-from typing import Optional, Dict, Any, List
++from typing import Any, Dict, List
+ 
+ from fastapi import APIRouter, HTTPException, Query
+ from pydantic import BaseModel
+ 
+-from ..snapshot import get_changeset_store, _rows_equal
++from ..snapshot import _rows_equal, get_changeset_store
+ 
+ router = APIRouter(prefix="/api/review", tags=["review"])
+ 
+@@ -34,9 +36,7 @@ async def get_changes():
+     """Get all pending AI changes grouped by affected node."""
+     store = get_changeset_store()
+ 
+-    # Use get_all_rows_dict to get key→entry mapping
+     all_rows = store.get_all_rows_dict()
+-    # Filter to only net-changed rows
+     changed_keys = set()
+     for key, entry in all_rows.items():
+         table = entry.get("table", "")
+@@ -47,7 +47,6 @@ async def get_changes():
+ 
+     change_count = len(changed_keys)
+ 
+-    # Group by node_uuid, including key in each entry
+     groups: Dict[str, List[Dict[str, Any]]] = {}
+     for key in changed_keys:
+         entry = all_rows[key]
+@@ -56,7 +55,6 @@ async def get_changes():
+         after = entry.get("after")
+         ref = after or before
+ 
+-        # Determine node_uuid from the row
+         node_uuid = None
+         if ref:
+             if table == "nodes":
+@@ -66,7 +64,6 @@ async def get_changes():
+             elif table == "edges":
+                 node_uuid = ref.get("child_uuid")
+             elif table == "paths":
+-                # For paths, we need to find node_uuid via the edge
+                 node_uuid = ref.get("node_uuid")
+                 if not node_uuid:
+                     edge_id = ref.get("edge_id")
+@@ -86,7 +83,6 @@ async def get_changes():
+         if node_uuid not in groups:
+             groups[node_uuid] = []
+ 
+-        # Include the key so the frontend can reference individual changes
+         entry_with_key = {**entry, "key": key}
+         groups[node_uuid].append(entry_with_key)
+ 
+@@ -117,18 +113,19 @@ async def get_diff(key: str = Query(..., description="Change key to diff")):
+     before = entry.get("before")
+     after = entry.get("after")
+ 
+-    # For memory rows, resolve content from DB
++    # For memory rows the snapshot only carries the ref; resolve full
++    # content from the live DB via ReviewLog so the UI can render diffs.
+     if table == "memories":
+-        from .. import get_graph_service
+-        graph = get_graph_service()
++        from .. import get_review_log
++        review = get_review_log()
+ 
+         if before and "id" in before:
+-            mem = await graph.get_memory_by_id(before["id"])
++            mem = await review.get_memory_by_id(before["id"])
+             if mem:
+                 before = {**before, "content": mem.get("content", "")}
+ 
+         if after and "id" in after:
+-            mem = await graph.get_memory_by_id(after["id"])
++            mem = await review.get_memory_by_id(after["id"])
+             if mem:
+                 after = {**after, "content": mem.get("content", "")}
+ 
+@@ -146,11 +143,13 @@ async def rollback_changes(req: RollbackRequest):
+     store = get_changeset_store()
+     all_rows = store.get_all_rows_dict()
+ 
+-    from .. import get_graph_service
+-    graph = get_graph_service()
++    from .. import get_memory_engine, get_review_log
+ 
+-    errors = []
+-    rolled_back = []
++    engine = get_memory_engine()
++    review = get_review_log()
++
++    errors: List[Dict[str, Any]] = []
++    rolled_back: List[str] = []
+ 
+     for key in req.keys:
+         entry = all_rows.get(key)
+@@ -164,65 +163,80 @@ async def rollback_changes(req: RollbackRequest):
+ 
+         try:
+             if table == "memories" and before and after:
+-                # Content was updated: rollback to the old memory version
++                # Content was updated: rollback to the old memory version.
+                 old_id = before.get("id")
+                 if old_id:
+-                    await graph.rollback_to_memory(old_id)
++                    # ReviewLog.rollback_to declares ``namespace`` as
++                    # a required kwarg for signature symmetry with the
++                    # rest of ReviewLog, but the chain rewrite itself
++                    # never consults the value (it acts on memory_id
++                    # → node_uuid, which is namespace-independent).
++                    # Pass __shared__ as the canonical placeholder.
++                    await review.rollback_to(old_id, namespace="__shared__")
+                     rolled_back.append(key)
+                 else:
+                     errors.append({"key": key, "error": "No old memory ID"})
+ 
+             elif table == "memories" and before is None and after:
+-                # Memory was created: we cannot easily undo this
+-                errors.append({"key": key, "error": "Cannot rollback memory creation"})
++                errors.append(
++                    {"key": key, "error": "Cannot rollback memory creation"}
++                )
+ 
+             elif table == "paths" and before is None and after:
+-                # Path was created: remove it
++                # Path was created by the AI: remove it via the engine.
+                 domain = after.get("domain", "core")
+                 path = after.get("path", "")
++                namespace = after.get("namespace", "__shared__")
+                 if path:
+                     try:
+-                        await graph.remove_path(path=path, domain=domain)
++                        await engine.delete(
++                            f"{domain}://{path}", namespace=namespace
++                        )
+                         rolled_back.append(key)
+-                    except ValueError as e:
++                    except (ValueError, RuntimeError) as e:
+                         errors.append({"key": key, "error": str(e)})
+ 
+             elif table == "paths" and before and after is None:
+-                # Path was deleted: restore it
++                # Path was deleted by the AI: restore it.
+                 domain = before.get("domain", "core")
+                 path = before.get("path", "")
++                namespace = before.get("namespace", "__shared__")
+                 edge_id = before.get("edge_id")
+                 if path and edge_id:
+-                    # Find the node_uuid from the edge
++                    # The original edge may have been GC'd along with the
++                    # path; look it up to recover the original node_uuid
++                    # before delegating to ReviewLog.restore_path.
+                     from ..models import Edge
+                     from sqlalchemy import select
+                     from .. import get_db_manager
++
+                     db = get_db_manager()
+                     async with db.session() as session:
+                         edge_result = await session.execute(
+                             select(Edge).where(Edge.id == edge_id)
+                         )
+                         edge = edge_result.scalar_one_or_none()
+-                        if edge:
+-                            await graph.restore_path(
+-                                path=path,
+-                                domain=domain,
+-                                node_uuid=edge.child_uuid,
+-                                session=session,
+-                            )
+-                            rolled_back.append(key)
+-                        else:
+-                            errors.append({"key": key, "error": "Edge not found"})
++                    if edge:
++                        await review.restore_path(
++                            path=path,
++                            domain=domain,
++                            namespace=namespace,
++                            node_uuid=edge.child_uuid,
++                        )
++                        rolled_back.append(key)
++                    else:
++                        errors.append({"key": key, "error": "Edge not found"})
+                 else:
+                     errors.append({"key": key, "error": "Missing path or edge_id"})
+ 
+             else:
+-                errors.append({"key": key, "error": f"Unsupported rollback for table '{table}'"})
++                errors.append(
++                    {"key": key, "error": f"Unsupported rollback for table '{table}'"}
++                )
+ 
+         except Exception as e:
+             errors.append({"key": key, "error": str(e)})
+ 
+-    # Remove successfully rolled-back keys from the store
+     if rolled_back:
+         store.remove_keys(rolled_back)
+ 
+@@ -239,8 +253,8 @@ async def integrate_changes(req: IntegrateRequest):
+     store = get_changeset_store()
+     all_rows = store.get_all_rows_dict()
+ 
+-    errors = []
+-    accepted = []
++    errors: List[Dict[str, Any]] = []
++    accepted: List[str] = []
+ 
+     for key in req.keys:
+         entry = all_rows.get(key)
+diff --git a/omicsclaw/memory/review_log.py b/omicsclaw/memory/review_log.py
+index f2b55aa1..612fdb56 100644
+--- a/omicsclaw/memory/review_log.py
++++ b/omicsclaw/memory/review_log.py
+@@ -33,6 +33,7 @@
+     Memory,
+     Node,
+     Path,
++    ROOT_NODE_UUID,
+     SHARED_NAMESPACE,
+     serialize_memory_ref,
+     serialize_row,
+@@ -604,6 +605,213 @@ async def permanently_delete_orphan(self, memory_id: int) -> dict:
+                 "rows_after": {},
+             }
+ 
++    # ------------------------------------------------------------------
++    # Desktop review pane: diff fetch + path restoration.
++    #
++    # ``get_memory_by_id`` powers the ``/api/review/diff`` content
++    # lookup; ``restore_path`` is the rollback target for changeset
++    # entries that record a path deletion (``after is None``). Both
++    # mirror the legacy GraphService contract returned to the frontend.
++    # ``restore_path`` intentionally tightens one guard: see its
++    # docstring for the namespace-scope divergence vs legacy.
++    # ------------------------------------------------------------------
++
++    async def get_memory_by_id(self, memory_id: int) -> Optional[dict]:
++        """Return one memory row (active or deprecated) with incident paths.
++
++        Returns ``None`` if the id doesn't exist. Used by the diff view
++        to render before/after content for a memories row in the
++        changeset.
++        """
++        async with self._db.session() as s:
++            memory = (
++                await s.execute(
++                    sa.select(Memory).where(Memory.id == memory_id)
++                )
++            ).scalar_one_or_none()
++            if memory is None:
++                return None
++
++            paths: list[str] = []
++            if memory.node_uuid:
++                rows = (
++                    await s.execute(
++                        sa.select(Path.domain, Path.path)
++                        .select_from(Path)
++                        .join(Edge, Path.edge_id == Edge.id)
++                        .where(Edge.child_uuid == memory.node_uuid)
++                    )
++                ).all()
++                paths = [f"{d}://{p}" for d, p in rows]
++
++            return {
++                "memory_id": memory.id,
++                "node_uuid": memory.node_uuid,
++                "content": memory.content,
++                "created_at": (
++                    memory.created_at.isoformat()
++                    if memory.created_at
++                    else None
++                ),
++                "deprecated": memory.deprecated,
++                "migrated_to": memory.migrated_to,
++                "paths": paths,
++            }
++
++    async def restore_path(
++        self,
++        *,
++        path: str,
++        domain: str,
++        namespace: str,
++        node_uuid: str,
++        parent_uuid: Optional[str] = None,
++        priority: int = 0,
++        disclosure: Optional[str] = None,
++    ) -> dict:
++        """Re-attach ``(domain, path)`` to ``node_uuid`` in ``namespace``.
++
++        Used by the desktop review pane to undo a path deletion. The
++        caller supplies the original ``node_uuid`` from the changeset
++        snapshot; the method:
++
++        1. verifies the node still exists,
++        2. re-activates the latest memory if the chain head was
++           deprecated (so the restored path resolves to a live row),
++        3. resolves or defaults the parent edge,
++        4. recreates the edge (or reuses an existing one) and the path,
++        5. refreshes the search index.
++
++        Raises ``ValueError`` on root path, missing node, or
++        already-existing path. Returns ``{"uri": ..., "node_uuid": ...}``.
++
++        **Deliberate divergence from legacy:** the "already exists"
++        check is scoped to ``(namespace, domain, path)`` rather than
++        the legacy ``(domain, path)`` only. The legacy check would
++        falsely reject a rollback whenever a *different* namespace
++        held the same ``(domain, path)``; the namespace-scoped check
++        matches the actual ``Path`` unique index and is the correct
++        invariant. The legacy GraphService method had this latent bug.
++
++        TODO(Phase 3): delete the duplicate ``GraphService.restore_path``
++        at ``omicsclaw/memory/graph.py:1464`` when ``graph.py`` is removed.
++        """
++        if path == "":
++            raise ValueError("Cannot restore the root path.")
++
++        async with self._db.session() as s:
++            node = (
++                await s.execute(
++                    sa.select(Node).where(Node.uuid == node_uuid)
++                )
++            ).scalar_one_or_none()
++            if node is None:
++                raise ValueError(f"Node '{node_uuid}' not found")
++
++            # If no active memory remains on the node, re-activate the
++            # most-recent deprecated one so the restored path resolves.
++            active = (
++                await s.execute(
++                    sa.select(Memory).where(
++                        Memory.node_uuid == node_uuid,
++                        Memory.deprecated == False,  # noqa: E712
++                    )
++                )
++            ).scalar_one_or_none()
++            if active is None:
++                latest = (
++                    await s.execute(
++                        sa.select(Memory)
++                        .where(Memory.node_uuid == node_uuid)
++                        .order_by(Memory.created_at.desc())
++                        .limit(1)
++                    )
++                ).scalar_one_or_none()
++                if latest is None:
++                    raise ValueError(
++                        f"Node '{node_uuid}' has no memory versions"
++                    )
++                await s.execute(
++                    sa.update(Memory)
++                    .where(Memory.id == latest.id)
++                    .values(deprecated=False, migrated_to=None)
++                )
++
++            existing = (
++                await s.execute(
++                    sa.select(Path).where(
++                        Path.namespace == namespace,
++                        Path.domain == domain,
++                        Path.path == path,
++                    )
++                )
++            ).scalar_one_or_none()
++            if existing is not None:
++                raise ValueError(
++                    f"Path '{domain}://{path}' already exists"
++                )
++
++            if parent_uuid is None:
++                if "/" in path:
++                    parent_path_str = path.rsplit("/", 1)[0]
++                    parent_row = (
++                        await s.execute(
++                            sa.select(Path).where(
++                                Path.namespace == namespace,
++                                Path.domain == domain,
++                                Path.path == parent_path_str,
++                            )
++                        )
++                    ).scalar_one_or_none()
++                    if parent_row is not None:
++                        parent_edge = await s.get(Edge, parent_row.edge_id)
++                        parent_uuid = (
++                            parent_edge.child_uuid
++                            if parent_edge is not None
++                            else ROOT_NODE_UUID
++                        )
++                    else:
++                        parent_uuid = ROOT_NODE_UUID
++                else:
++                    parent_uuid = ROOT_NODE_UUID
++
++            edge_name = path.rsplit("/", 1)[-1] if "/" in path else path
++            edge = (
++                await s.execute(
++                    sa.select(Edge).where(
++                        Edge.parent_uuid == parent_uuid,
++                        Edge.child_uuid == node_uuid,
++                        Edge.name == edge_name,
++                    )
++                )
++            ).scalar_one_or_none()
++            if edge is None:
++                edge = Edge(
++                    parent_uuid=parent_uuid,
++                    child_uuid=node_uuid,
++                    name=edge_name,
++                    priority=priority,
++                    disclosure=disclosure,
++                )
++                s.add(edge)
++                await s.flush()
++
++            s.add(
++                Path(
++                    namespace=namespace,
++                    domain=domain,
++                    path=path,
++                    edge_id=edge.id,
++                )
++            )
++            await s.flush()
++
++            await self._engine.search_indexer.refresh_search_documents_for_node(
++                node_uuid, session=s
++            )
++
++            return {"uri": f"{domain}://{path}", "node_uuid": node_uuid}
++
+     # ------------------------------------------------------------------
+     # private helpers
+     # ------------------------------------------------------------------
+diff --git a/tests/memory/test_review_log_rollback_api.py b/tests/memory/test_review_log_rollback_api.py
+new file mode 100644
+index 00000000..43030d59
+--- /dev/null
++++ b/tests/memory/test_review_log_rollback_api.py
+@@ -0,0 +1,254 @@
++"""Tests for ReviewLog methods that back the desktop ``/api/review/*`` pane.
++
++Phase 2b additions:
++  - ``get_memory_by_id`` — fetch any memory row (active or deprecated)
++    with its incident paths; used by the diff view.
++  - ``rollback_to`` (already exists) — restore a deprecated memory as
++    the active head; this file exercises it via the legacy contract.
++  - ``restore_path`` — re-attach a previously-deleted path to an
++    existing node; rollback target for path-deletion changeset entries.
++
++Path-removal rollback (the "AI created this path — undo it") routes
++straight to ``MemoryEngine.delete``, no new ReviewLog method needed.
++"""
++
++from __future__ import annotations
++
++import pytest
++import pytest_asyncio
++import sqlalchemy as sa
++
++from omicsclaw.memory.database import DatabaseManager
++from omicsclaw.memory.engine import MemoryEngine
++from omicsclaw.memory.models import (
++    Edge,
++    Memory,
++    Node,
++    Path,
++    ROOT_NODE_UUID,
++    SHARED_NAMESPACE,
++)
++from omicsclaw.memory.review_log import ReviewLog
++from omicsclaw.memory.search import SearchIndexer
++from omicsclaw.memory.snapshot import ChangesetStore
++
++
++@pytest_asyncio.fixture
++async def env(tmp_path):
++    db = DatabaseManager(f"sqlite+aiosqlite:///{tmp_path}/t.db")
++    await db.init_db()
++    search = SearchIndexer(db)
++    engine = MemoryEngine(db, search)
++    changeset_store = ChangesetStore(snapshot_dir=str(tmp_path / "changesets"))
++    review = ReviewLog(db, engine, changeset_store=changeset_store)
++    yield engine, review, db
++    await db.close()
++
++
++# ----------------------------------------------------------------------
++# get_memory_by_id
++# ----------------------------------------------------------------------
++
++
++@pytest.mark.asyncio
++async def test_get_memory_by_id_returns_active_memory_with_paths(env):
++    engine, review, db = env
++    ref = await engine.upsert(
++        "dataset://pbmc.h5ad", "scRNA dataset", namespace="tg/userA"
++    )
++
++    result = await review.get_memory_by_id(ref.memory_id)
++
++    assert result is not None
++    assert result["memory_id"] == ref.memory_id
++    assert result["node_uuid"] == ref.node_uuid
++    assert result["content"] == "scRNA dataset"
++    assert result["deprecated"] is False
++    assert result["migrated_to"] is None
++    assert "dataset://pbmc.h5ad" in result["paths"]
++
++
++@pytest.mark.asyncio
++async def test_get_memory_by_id_returns_deprecated_with_chain_target(env):
++    engine, review, db = env
++    await engine.upsert_versioned(
++        "core://agent", "v1", namespace=SHARED_NAMESPACE
++    )
++    await engine.upsert_versioned(
++        "core://agent", "v2", namespace=SHARED_NAMESPACE
++    )
++
++    async with db.session() as s:
++        old_id, new_id = [
++            mid
++            for (mid,) in (
++                await s.execute(sa.select(Memory.id).order_by(Memory.id))
++            ).all()
++        ]
++
++    result = await review.get_memory_by_id(old_id)
++
++    assert result is not None
++    assert result["deprecated"] is True
++    assert result["migrated_to"] == new_id
++    assert result["content"] == "v1"
++
++
++@pytest.mark.asyncio
++async def test_get_memory_by_id_returns_none_for_missing(env):
++    _, review, _ = env
++    assert await review.get_memory_by_id(999_999) is None
++
++
++# ----------------------------------------------------------------------
++# restore_path
++# ----------------------------------------------------------------------
++
++
++@pytest.mark.asyncio
++async def test_restore_path_recreates_deleted_path(env):
++    engine, review, db = env
++    # Create a memory, snapshot its node_uuid, then delete the path.
++    ref = await engine.upsert(
++        "dataset://x.h5ad", "body", namespace="tg/userA"
++    )
++    node_uuid = ref.node_uuid
++    await engine.delete("dataset://x.h5ad", namespace="tg/userA")
++
++    async with db.session() as s:
++        gone = (
++            await s.execute(
++                sa.select(Path).where(Path.path == "x.h5ad")
++            )
++        ).scalars().all()
++        assert gone == []
++
++    # Memory may have been soft-deprecated, but the node still exists
++    # because delete() is namespace-scoped and the node has no other
++    # memories. Force-reactivate it for restoration.
++    async with db.session() as s:
++        await s.execute(
++            sa.update(Memory)
++            .where(Memory.node_uuid == node_uuid)
++            .values(deprecated=False, migrated_to=None)
++        )
++
++    result = await review.restore_path(
++        path="x.h5ad",
++        domain="dataset",
++        namespace="tg/userA",
++        node_uuid=node_uuid,
++    )
++
++    assert result["uri"] == "dataset://x.h5ad"
++    assert result["node_uuid"] == node_uuid
++
++    async with db.session() as s:
++        restored = (
++            await s.execute(
++                sa.select(Path).where(
++                    Path.namespace == "tg/userA",
++                    Path.path == "x.h5ad",
++                )
++            )
++        ).scalar_one()
++        assert restored.edge_id is not None
++
++
++@pytest.mark.asyncio
++async def test_restore_path_refuses_empty_path(env):
++    _, review, _ = env
++    with pytest.raises(ValueError, match="root path"):
++        await review.restore_path(
++            path="",
++            domain="dataset",
++            namespace="tg/userA",
++            node_uuid="some-uuid",
++        )
++
++
++@pytest.mark.asyncio
++async def test_restore_path_refuses_missing_node(env):
++    _, review, _ = env
++    with pytest.raises(ValueError, match="not found"):
++        await review.restore_path(
++            path="x.h5ad",
++            domain="dataset",
++            namespace="tg/userA",
++            node_uuid="00000000-0000-0000-0000-deadbeefdead",
++        )
++
++
++@pytest.mark.asyncio
++async def test_restore_path_falls_back_to_root_for_nested_path_with_no_parent(env):
++    """When restoring a nested path whose parent doesn't exist in the
++    target namespace, the new edge attaches to ROOT_NODE_UUID rather
++    than failing. This matches the legacy fallback and ensures admin
++    rollbacks never block on a missing-parent technicality."""
++    engine, review, db = env
++
++    # Create + delete a nested path so we can rollback. Use a parent
++    # path that has its own memory to seed the namespace, then drop the
++    # parent before rolling back the child so the rollback hits the
++    # "parent not found → fall back to root" branch.
++    parent_ref = await engine.upsert(
++        "dataset://nested_parent", "parent body", namespace="tg/userA"
++    )
++    child_ref = await engine.upsert(
++        "dataset://nested_parent/leaf", "leaf body", namespace="tg/userA"
++    )
++
++    # Drop both paths so the restore is from scratch.
++    await engine.delete(
++        "dataset://nested_parent/leaf", namespace="tg/userA"
++    )
++    await engine.delete(
++        "dataset://nested_parent", namespace="tg/userA"
++    )
++
++    # Reactivate the deprecated child memory so restore_path doesn't
++    # need to flip a deprecated row (we've already covered that branch).
++    async with db.session() as s:
++        await s.execute(
++            sa.update(Memory)
++            .where(Memory.node_uuid == child_ref.node_uuid)
++            .values(deprecated=False, migrated_to=None)
++        )
++
++    result = await review.restore_path(
++        path="nested_parent/leaf",
++        domain="dataset",
++        namespace="tg/userA",
++        node_uuid=child_ref.node_uuid,
++    )
++
++    assert result["uri"] == "dataset://nested_parent/leaf"
++
++    async with db.session() as s:
++        restored = (
++            await s.execute(
++                sa.select(Path).where(
++                    Path.namespace == "tg/userA",
++                    Path.path == "nested_parent/leaf",
++                )
++            )
++        ).scalar_one()
++        edge = await s.get(Edge, restored.edge_id)
++        # Parent did not exist → fell back to ROOT.
++        assert edge.parent_uuid == ROOT_NODE_UUID
++
++
++@pytest.mark.asyncio
++async def test_restore_path_refuses_when_path_exists(env):
++    engine, review, db = env
++    ref = await engine.upsert(
++        "dataset://x.h5ad", "body", namespace="tg/userA"
++    )
++
++    with pytest.raises(ValueError, match="already exists"):
++        await review.restore_path(
++            path="x.h5ad",
++            domain="dataset",
++            namespace="tg/userA",
++            node_uuid=ref.node_uuid,
++        )

@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-12"
+description = "fix: Add requests to bot-core-test CI dependencies"
+
+[metadata]
+difficulty = "easy"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "cdb75349fa5c92474cb402c6b905079fe526a9b7"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/12"
+source_access = "auto"
+built_at = "2026-11-15T18:18:42.083259+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:6534ce29bff8c5278773f91bf9da3c05f14b52e1bd2248dbf7794c5321937b58"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-03-15T14:53:39Z"
+diff_format = "unified"
+context_files = [
+    ".github/workflows/pr-ci.yml",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 2
+difficulty = "trivial"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

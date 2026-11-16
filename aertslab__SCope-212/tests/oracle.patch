@@ -1,0 +1,452 @@
+diff --git a/README.md b/README.md
+index 59aac808..34859fb9 100644
+--- a/README.md
++++ b/README.md
+@@ -6,6 +6,21 @@ Currently the data format supported by SCope is `.loom`. This file format for ve
+ 
+ ## Version History
+ 
++August 1, 2019
++* Version 1.4.0
++	* Enabled searching of regulons via their targetted genes
++	* Enabled searching of clusters by their marker genes
++		* Loom files containing many clusters will now search slower as a result
++	* General search space and search improvements
++		* Only build search space once per file on load
++			* Initial load times of a session may increase as a result, however time for searcing is halved as a result
++		* Reordering of search results
++		* Increased number of results returned when searching and enabled scroll bar
++	* EXPERIMENTAL: Enabled searching genes linked to regions for scATAC-seq data
++		* To enable this, a row attribute must be added called `linkedGene` containing a string of the gene linked to the region
++	* Allow display of Aertslab v9 motifs
++
++
+ July 18, 2019
+ * Version 1.3.7
+ 	* Enabled read only sessions on the backend for permanent sessions
+@@ -14,6 +29,7 @@ July 18, 2019
+ 	* Converted logs from print statements to logging package.
+ 	* Various small fixes and dependancy issues.
+ 	* General code cleanup and PEP8 compliance changes
++	
+ 
+ June 26, 2019
+ * Version 1.3.6
+diff --git a/VERSION b/VERSION
+index 8ed486ab..e21e727f 100644
+--- a/VERSION
++++ b/VERSION
+@@ -1 +1 @@
+-1.3.7
+\ No newline at end of file
++1.4.0
+\ No newline at end of file
+diff --git a/opt/scopeserver/dataserver/modules/gserver/GServer.py b/opt/scopeserver/dataserver/modules/gserver/GServer.py
+index ae532875..25da3e68 100644
+--- a/opt/scopeserver/dataserver/modules/gserver/GServer.py
++++ b/opt/scopeserver/dataserver/modules/gserver/GServer.py
+@@ -16,7 +16,7 @@
+ import threading
+ import pickle
+ import uuid
+-from collections import OrderedDict, defaultdict
++from collections import OrderedDict, defaultdict, deque
+ from functools import lru_cache
+ from itertools import compress
+ from pathlib import Path
+@@ -65,19 +65,18 @@ def update_global_data(self):
+     def get_features(self, loom, query):
+         logger.debug('Searching for {0}'.format(query))
+         start_time = time.time()
++
+         if query.startswith('hsap\\'):
+-            search_space = ss.SearchSpace(loom=loom, cross_species='hsap').build()
++            search_space = loom.hsap_ss
+             cross_species = 'hsap'
+             query = query[5:]
+         elif query.startswith('mmus\\'):
+-            search_space = ss.SearchSpace(loom=loom, cross_species='mmus').build()
++            search_space = loom.mmus_ss
+             cross_species = 'mmus'
+             query = query[5:]
+         else:
+-            search_space = ss.SearchSpace(loom=loom).build()
++            search_space = loom.ss
+             cross_species = ''
+-        logger.debug("{0:.5f} seconds elapsed making search space ---".format(time.time() - start_time))
+-        logger.debug("Found {0}".format(query))
+ 
+         # Filter the genes by the query
+ 
+@@ -88,30 +87,34 @@ def get_features(self, loom, query):
+         queryCF = query.casefold()
+         res = [x for x in search_space.keys() if queryCF in x[0]]
+ 
++        order = deque()
++
++        perfect_match = []
++        good_match = []
++        bad_match = []
++        no_match = []
++
+         for n, r in enumerate(res):
++            if r[1] == query or r[0] == queryCF:
++                perfect_match.append(r)
++                continue
++            if r[1].startswith(query) or r[1].endswith(query) or r[0].startswith(queryCF) or r[0].endswith(queryCF):
++                good_match.append(r)
++                continue
+             if query in r[0]:
+-                r = res.pop(n)
+-                res = [r] + res
+-        for n, r in enumerate(res):
+-            if r[0].startswith(queryCF):
+-                r = res.pop(n)
+-                res = [r] + res
+-        for n, r in enumerate(res):
+-            if r[0] == queryCF:
+-                r = res.pop(n)
+-                res = [r] + res
+-        for n, r in enumerate(res):
+-            if r[1] == query:
+-                r = res.pop(n)
+-                res = [r] + res
+-
+-        # These structures are a bit messy, but still fast
+-        # r = (elementCF, element, elementName)
+-        # dg = (drosElement, %match)
+-        # searchSpace[r] = translastedElement
++                bad_match.append(r)
++                continue
++            if n not in order:
++                no_match.append(r)
++                continue
++
++        res = sorted(perfect_match) + sorted(good_match) + sorted(bad_match) + sorted(no_match)
++
+         collapsedResults = OrderedDict()
+         if cross_species == '':
+             for r in res:
++                if type(search_space[r]) == list:
++                    search_space[r] = tuple(search_space[r])
+                 if (search_space[r], r[2]) not in collapsedResults.keys():
+                     collapsedResults[(search_space[r], r[2])] = [r[1]]
+                 else:
+@@ -127,32 +130,73 @@ def get_features(self, loom, query):
+                     if (dg[0], r[2]) not in collapsedResults.keys():
+                         collapsedResults[(dg[0], r[2])] = (r[1], dg[1])
+ 
+-        descriptions = []
+-        if cross_species == '':
+-            logger.debug(f'Performing cross species search: {query}')
+-            for r in collapsedResults.keys():
++        descriptions = {x: '' for x in collapsedResults.keys() if x[1] not in ['region_gene_link', 'regulon_target', 'marker_gene']}
++
++        for r in list(collapsedResults.keys()):
++            if cross_species == '':
++                description = ''
+                 synonyms = sorted([x for x in collapsedResults[r]])
+                 try:
+                     synonyms.remove(r[0])
+                 except ValueError:
+                     pass
+-                if len(synonyms) > 0:
+-                    descriptions.append('Synonym of: {0}'.format(', '.join(synonyms)))
+-                else:
+-                    descriptions.append('')
+-        elif cross_species == 'hsap':
+-            for r in collapsedResults.keys():
+-                descriptions.append('Orthologue of {0}, {1:.2f}% identity (Human -> Drosophila)'.format(collapsedResults[r][0], collapsedResults[r][1]))
+-        elif cross_species == 'mmus':
+-            for r in collapsedResults.keys():
+-                descriptions.append('Orthologue of {0}, {1:.2f}% identity (Mouse -> Drosophila)'.format(collapsedResults[r][0], collapsedResults[r][1]))
+-        # if mapping[result] != result: change title and description to indicate synonym
++                if r[1] == 'regulon_target':
++                    for regulon in r[0]:
++                        description = f'{collapsedResults[r][0]} is a target of {regulon}'
++                        if (regulon, 'regulon') not in collapsedResults.keys():
++                            collapsedResults[(regulon, 'regulon')] = collapsedResults[r][0]
++                            descriptions[(regulon, 'regulon')] = ''
++                        if descriptions[(regulon, 'regulon')] != '':
++                            descriptions[(regulon, 'regulon')] += ', '
++                        descriptions[(regulon, 'regulon')] += description
++                    del(collapsedResults[r])
++
++                elif r[1] == 'marker_gene':
++                    for cluster in r[0]:
++                        clustering = int(cluster.split('_')[0])
++                        cluster = int(cluster.split('_')[1])
++                        clustering_name = loom.get_meta_data_clustering_by_id(clustering)["name"]
++                        cluster_name = loom.get_meta_data_clustering_by_id(clustering)['clusters'][cluster]["description"]
++                        description = f'{collapsedResults[r][0]} is a marker of {cluster_name}'
++                        if (cluster_name, f'Clustering: {clustering_name}') not in collapsedResults.keys():
++                            collapsedResults[(cluster_name, f'Clustering: {clustering_name}')] = collapsedResults[r][0]
++                            descriptions[(cluster_name, f'Clustering: {clustering_name}')] = ''
++                        if descriptions[(cluster_name, f'Clustering: {clustering_name}')] != '':
++                            descriptions[(cluster_name, f'Clustering: {clustering_name}')] += ', '
++                        descriptions[(cluster_name, f'Clustering: {clustering_name}')] += description
++                    del(collapsedResults[r])
++                elif r[1] == 'region_gene_link':
++                    for region in r[0]:
++                        description = f'{region} is linked to {collapsedResults[r][0]}'
++                        if (region, 'gene') not in collapsedResults.keys():
++                            collapsedResults[(region, 'gene')] = collapsedResults[r][0]
++                            descriptions[(region, 'gene')] = ''
++                        if descriptions[(region, 'gene')] != '':
++                            descriptions[(region, 'gene')] += ', '
++                        descriptions[(region, 'gene')] += description
++                    del(collapsedResults[r])
++                elif len(synonyms) > 0:
++                    if description != '':
++                        description += ', '
++                    description += 'Synonym of: {0}'.format(', '.join(synonyms))
++                    descriptions[r] = description
++
++            elif cross_species == 'hsap':
++                logger.debug(f'Performing hsap cross species search: {query}')
++                description = 'Orthologue of {0}, {1:.2f}% identity (Human -> Drosophila)'.format(collapsedResults[r][0], collapsedResults[r][1])
++                descriptions[r] = description
++            elif cross_species == 'mmus':
++                logger.debug(f'Performing mmus cross species search: {query}')
++                description = 'Orthologue of {0}, {1:.2f}% identity (Mouse -> Drosophila)'.format(collapsedResults[r][0], collapsedResults[r][1])
++                descriptions[r] = description
++
++            # if mapping[result] != result: change title and description to indicate synonym
+ 
+         logger.debug("{0} genes matching '{1}'".format(len(res), query))
+         logger.debug("{0:.5f} seconds elapsed ---".format(time.time() - start_time))
+         res = {'feature': [r[0] for r in collapsedResults.keys()],
+                'featureType': [r[1] for r in collapsedResults.keys()],
+-               'featureDescription': descriptions}
++               'featureDescription': [descriptions[r] for r in collapsedResults.keys()]}
+         return res
+ 
+     def compressHexColor(self, a):
+diff --git a/opt/scopeserver/dataserver/utils/loom.py b/opt/scopeserver/dataserver/utils/loom.py
+index d138362f..9a264a20 100644
+--- a/opt/scopeserver/dataserver/utils/loom.py
++++ b/opt/scopeserver/dataserver/utils/loom.py
+@@ -8,6 +8,8 @@
+ import loompy as lp
+ 
+ from scopeserver.dataserver.utils import data_file_handler as dfh
++from scopeserver.dataserver.utils import search_space as ss
++
+ import logging
+ 
+ logger = logging.getLogger(__name__)
+@@ -23,6 +25,18 @@ def __init__(self, partial_md5_hash, file_path, abs_file_path, loom_connection):
+         logger.info(f"New Loom object created for {file_path}")
+         # Metrics
+         self.nUMI = None
++        self.species, self.gene_mappings = self.infer_species()
++
++        logger.debug(f'Building Search Spaces for {file_path}')
++        if self.species == 'dmel':
++        logger.debug(f'Building hsap Search Spaces for {file_path}')
++        self.hsap_ss = ss.SearchSpace(loom=self, cross_species='hsap').build()
++        logger.debug(f'Building mmus Search Spaces for {file_path}')
++
++        self.mmus_ss = ss.SearchSpace(loom=self, cross_species='mmus').build()
++        logger.debug(f'Building self Search Spaces for {file_path}')
++
++        self.ss = ss.SearchSpace(loom=self).build()
+ 
+     def get_connection(self):
+         return self.loom_connection
+@@ -222,6 +236,7 @@ def get_meta_data(self):
+     def get_nb_cells(self):
+         return self.loom_connection.shape[1]
+ 
++    @lru_cache(maxsize=1)
+     def get_genes(self):
+         return self.loom_connection.ra.Gene.astype(str)
+ 
+@@ -317,7 +332,10 @@ def get_gene_expression(self, gene_symbol, log_transform=True, cpm_normalise=Fal
+     ############
+ 
+     def get_regulon_genes(self, regulon):
+-        return self.get_genes()[self.loom_connection.ra.Regulons[regulon] == 1]
++        try:
++            return self.get_genes()[self.loom_connection.ra.Regulons[regulon] == 1]
++        except:
++            return []
+ 
+     def has_regulons_AUC(self):
+         return "RegulonsAUC" in self.loom_connection.ca.keys()
+@@ -402,6 +420,9 @@ def get_ca_attr_by_name(self, name):
+             return self.loom_connection.ca[name]
+         raise ValueError("The given annotation {0} does not exists in the .loom.".format(name))
+ 
++    def has_region_gene_links(self):
++        return 'linkedGene' in self.loom_connection.ra.keys()
++
+     ##########
+     # Metric #
+     ##########
+@@ -439,7 +460,10 @@ def has_cluster_markers(self, clustering_id):
+         return "ClusterMarkers_{0}".format(clustering_id) in self.loom_connection.ra.keys()
+ 
+     def get_cluster_marker_genes(self, clustering_id, cluster_id):
+-        return self.get_genes()[self.loom_connection.ra["ClusterMarkers_{0}".format(clustering_id)][str(cluster_id)] == 1]
++        try:
++            return self.get_genes()[self.loom_connection.ra["ClusterMarkers_{0}".format(clustering_id)][str(cluster_id)] == 1]
++        except:
++            return []
+ 
+     def get_cluster_marker_metrics(self, clustering_id, cluster_id, metric_accessor):
+         cluster_marker_metric = self.loom_connection.row_attrs["ClusterMarkers_{0}_{1}".format(clustering_id, metric_accessor)][str(cluster_id)]
+diff --git a/opt/scopeserver/dataserver/utils/search_space.py b/opt/scopeserver/dataserver/utils/search_space.py
+index 5bd8d691..8a06eb6c 100644
+--- a/opt/scopeserver/dataserver/utils/search_space.py
++++ b/opt/scopeserver/dataserver/utils/search_space.py
+@@ -1,7 +1,11 @@
+ import functools
+ from functools import lru_cache
++import re
+ 
+ from scopeserver.dataserver.utils import data_file_handler as dfh
++import logging
++
++logger = logging.getLogger(__name__)
+ 
+ 
+ class SearchSpace(dict):
+@@ -22,6 +26,8 @@ def __init__(self, loom, cross_species=''):
+         self.loom = loom
+         self.cross_species = cross_species
+         self.species, self.gene_mappings = loom.infer_species()
++        if self.species != 'dmel':
++            self.cross_species = ''
+ 
+     def add_element(self, element, element_type):
+         if element_type == 'gene' and self.cross_species == '' and len(self.gene_mappings) > 0:
+@@ -56,6 +62,8 @@ def build(self):
+             # Add metrics to the search space if present in .loom
+             if self.loom.has_md_metrics():
+                 self.add_metrics()
++            if self.loom.has_region_gene_links():
++                self.add_markers(element_type='region_gene_link')
+         return self
+ 
+     def add_cross_species_genes(self):
+@@ -79,9 +87,42 @@ def add_clusterings(self):
+             for cluster in clustering['clusters']:
+                 all_clusters.append(cluster['description'])
+             self.add_elements(elements=all_clusters, element_type='Clustering: {0}'.format(clustering['name']))
++        self.add_markers(element_type='marker_gene')
+ 
+     def add_regulons(self):
+         self.add_elements(elements=self.loom.get_regulons_AUC().dtype.names, element_type='regulon')
++        self.add_markers(element_type='regulon_target')
++
++    def add_markers(self, element_type='regulon_target'):
++        loom = self.loom.loom_connection
++        if element_type == 'regulon_target':
++            regulons = list(loom.ca.RegulonsAUC.dtype.names)
++            for regulon in regulons:
++                genes = self.loom.get_regulon_genes(regulon=regulon)
++                for gene in genes:
++                    if (gene.casefold(), gene, element_type) in self.keys():
++                        self[(gene.casefold(), gene, element_type)].append(regulon)
++                    else:
++                        self[(gene.casefold(), gene, element_type)] = [regulon]
++        if element_type == 'marker_gene':
++            searchable_clustering_ids = [x.split('_')[-1] for x in loom.ra.keys() if bool(re.search("ClusterMarkers_[0-9]+$", x))]
++            for clustering in searchable_clustering_ids:
++                clustering = int(clustering)
++                for cluster in range(len(self.meta_data['clusterings'][clustering]['clusters'])):
++                    genes = self.loom.get_cluster_marker_genes(clustering, cluster)
++                    for gene in genes:
++                        if (gene.casefold(), gene, element_type) in self.keys():
++                            self[(gene.casefold(), gene, element_type)].append(f'{clustering}_{cluster}')
++                        else:
++                            self[(gene.casefold(), gene, element_type)] = [f'{clustering}_{cluster}']
++        if element_type == 'region_gene_link':
++            for n, region in enumerate(self.loom.get_genes()):
++                gene = self.loom.loom_connection.ra.linkedGene[n]
++                if gene != '':
++                    if (gene.casefold(), gene, element_type) in self.keys():
++                        self[(gene.casefold(), gene, element_type)].append(region)
++                    else:
++                        self[(gene.casefold(), gene, element_type)] = [region]
+ 
+     def add_annotations(self):
+         annotations = []
+diff --git a/opt/setup.py b/opt/setup.py
+index 3169881f..c98028d5 100644
+--- a/opt/setup.py
++++ b/opt/setup.py
+@@ -18,7 +18,7 @@ def get_bindserver_files():
+                                                          'scopeserver/dataserver/data/gene_mappings/hsap_to_dmel_mappings.pickle',
+                                                          'scopeserver/dataserver/data/gene_mappings/mmus_to_dmel_mappings.pickle'])
+       ] + get_bindserver_files(),
+-      version='1.3.7',
++      version='1.4.0',
+       description='SCope Data Server: a server to load and serve the data to the SCope Client',
+       url='',
+       author='Maxime De Waegeneer',
+diff --git a/package.json b/package.json
+index d067adc3..e06eae82 100644
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "SCope",
+-  "version": "1.3.7",
++  "version": "1.4.0",
+   "description": "Visualization tool for large-scale and high dimensional single-cell data",
+   "main": "index.js",
+   "scripts": {
+diff --git a/src/components/common/FeatureSearchBox.jsx b/src/components/common/FeatureSearchBox.jsx
+index b5347574..cdf3db10 100644
+--- a/src/components/common/FeatureSearchBox.jsx
++++ b/src/components/common/FeatureSearchBox.jsx
+@@ -144,7 +144,7 @@ export default class FeatureSearch extends React.Component {
+ 						// Clustering
+ 						} else if (ft.indexOf('Clustering:') == 0) {
+ 							if (!clusters[ft]) clusters[ft] = [];
+-							clusters[ft].push({ "title": f, "type": ft, "description": d });
++						clusters[ft].push({ "title": f, "type": ft, "description": d });
+ 						} else if (ft.indexOf('cluster#') == 0) {
+ 							let cid = ft.split('#')[1], name = '';
+ 							activeMetadata.cellMetaData.clusterings.map((c, i) => {
+@@ -158,10 +158,10 @@ export default class FeatureSearch extends React.Component {
+ 					};
+ 
+ 					// Limit to maximum 10 results
+-					genes = {"name": "gene", "results": genes.slice(0, 10)}
+-					regulons = {"name": "regulon", "results": regulons.slice(0, 10)}
+-					annotations = {"name": "annotation", "results": annotations.slice(0, 10)}
+-					metrics = {"name": "metric", "results": metrics.slice(0, 10)}
++					genes = {"name": "gene", "results": genes}
++					regulons = {"name": "regulon", "results": regulons}
++					annotations = {"name": "annotation", "results": annotations}
++					metrics = {"name": "metric", "results": metrics}
+ 
+ 					// Only show results for the selected result type (gene | regulon | cluster | annotation)
+ 					if (genes['results'].length && (type == 'all' || type == 'gene')) {
+diff --git a/src/components/common/ViewerSidebar.jsx b/src/components/common/ViewerSidebar.jsx
+index 1488bb4e..f2466abc 100644
+--- a/src/components/common/ViewerSidebar.jsx
++++ b/src/components/common/ViewerSidebar.jsx
+@@ -324,7 +324,7 @@ class ViewerSidebar extends Component {
+ 				metadata = (
+ 					<Grid.Row columns="1" centered className='viewerRow'>
+ 						<Grid.Column stretched className='viewerCell'>
+-							{md.description}<br />
++							{md.featureType} {md.feature}<br />
+ 							{image}
+ 							{markerTable}
+ 							{legendTable}
+diff --git a/src/css/features.css b/src/css/features.css
+index 8c13bc8b..18798e77 100644
+--- a/src/css/features.css
++++ b/src/css/features.css
+@@ -1,4 +1,6 @@
+ .ui.category.search>.results {
++	overflow-y: auto;
++	max-height: 550px;
+ 	width: auto;
+ 	float: none;
+ }

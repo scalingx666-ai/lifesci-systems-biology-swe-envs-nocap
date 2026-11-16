@@ -1,0 +1,67 @@
+diff --git a/.github/workflows/pythonpackage.yml b/.github/workflows/pythonpackage.yml
+index bf7659dc..c055ef4a 100644
+--- a/.github/workflows/pythonpackage.yml
++++ b/.github/workflows/pythonpackage.yml
+@@ -2,9 +2,9 @@ name: Python package
+ 
+ on:
+   push:
+-    branches: [master]
++    branches: [main]
+   pull_request:
+-    branches: [master]
++    branches: [main]
+   schedule:
+     - cron: "0 5 1,15 * *"
+ 
+@@ -15,7 +15,7 @@ jobs:
+     strategy:
+       fail-fast: false
+       matrix:
+-        python-version: ["3.10", 3.11, 3.12]
++        python-version: ["3.10", "3.12"]
+ 
+     steps:
+     - uses: actions/checkout@v4
+diff --git a/muon/_atac/preproc.py b/muon/_atac/preproc.py
+index fee70cc4..1756a38c 100644
+--- a/muon/_atac/preproc.py
++++ b/muon/_atac/preproc.py
+@@ -116,7 +116,7 @@ def tfidf(
+     if log_tfidf:
+         tf_idf = np.log1p(tf_idf)
+ 
+-    res = np.nan_to_num(tf_idf, 0)
++    res = np.nan_to_num(tf_idf, nan=0.0)
+     if not inplace:
+         return res
+ 
+diff --git a/pyproject.toml b/pyproject.toml
+index cbc8d634..d322dd70 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -16,7 +16,7 @@ classifiers = [
+     "Topic :: Scientific/Engineering :: Bio-Informatics",
+     "Intended Audience :: Science/Research"
+ ]
+-requires-python = ">= 3.8"
++requires-python = ">= 3.10"
+ requires = [
+     "numpy",
+     "pandas",
+diff --git a/tests/test_muon_tools.py b/tests/test_muon_tools.py
+index 60bf927e..e08346f2 100644
+--- a/tests/test_muon_tools.py
++++ b/tests/test_muon_tools.py
+@@ -142,9 +142,9 @@ def test_multi_group(self, filepath_hdf5):
+ 
+         assert all(mdata.obs.group.values == mdata.obs.true_group.values)
+ 
+-        for sample, value in (("sample9_groupA", 1.719391), ("sample17_groupB", -2.057848)):
++        for sample, value in (("sample9_groupA", -1.719391), ("sample17_groupB", 2.057848)):
+             si = np.where(mdata.obs.index == sample)[0]
+-            assert mdata.obsm["X_mofa"][si, 0] == pytest.approx(value)
++            assert mdata.obsm["X_mofa"][si, 0].item() == pytest.approx(value)
+ 
+ 
+ if __name__ == "__main__":

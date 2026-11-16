@@ -1,0 +1,388 @@
+diff --git a/scripts/arboreto_with_multiprocessing.py b/scripts/arboreto_with_multiprocessing.py
+index 9e004de..d471c97 100755
+--- a/scripts/arboreto_with_multiprocessing.py
++++ b/scripts/arboreto_with_multiprocessing.py
+@@ -22,17 +22,17 @@
+ parser_grn = argparse.ArgumentParser(description='Run Arboreto using a multiprocessing pool')
+ 
+ parser_grn.add_argument('expression_mtx_fname',
+-        type=argparse.FileType('r'),
++        type=str,
+         help='The name of the file that contains the expression matrix for the single cell experiment.'
+         ' Two file formats are supported: csv (rows=cells x columns=genes) or loom (rows=genes x columns=cells).')
+ parser_grn.add_argument('tfs_fname',
+-        type=argparse.FileType('r'),
++        type=str,
+         help='The name of the file that contains the list of transcription factors (TXT; one TF per line).')
+ parser_grn.add_argument('-m', '--method', choices=['genie3', 'grnboost2'],
+         default='grnboost2',
+         help='The algorithm for gene regulatory network reconstruction (default: grnboost2).')
+ parser_grn.add_argument('-o', '--output',
+-        type=argparse.FileType('w'), default=sys.stdout,
++        type=str, default=sys.stdout,
+         help='Output file/stream, i.e. a table of TF-target genes (TSV).')
+ parser_grn.add_argument('--num_workers',
+         type=int, default=cpu_count(),
+@@ -90,7 +90,7 @@ def run_infer_partial_network(target_gene_index):
+ if __name__ == '__main__':
+ 
+     start_time = time.time()
+-    ex_matrix = load_exp_matrix(args.expression_mtx_fname.name,
++    ex_matrix = load_exp_matrix(args.expression_mtx_fname,
+                              (args.transpose == 'yes'),
+                              args.sparse,
+                              args.cell_id_attribute,
+@@ -105,7 +105,7 @@ def run_infer_partial_network(target_gene_index):
+     end_time = time.time()
+     print(f'Loaded expression matrix of {ex_matrix.shape[0]} cells and {ex_matrix.shape[1]} genes in {end_time - start_time} seconds...', file=sys.stdout)
+ 
+-    tf_names = load_tf_names(args.tfs_fname.name)
++    tf_names = load_tf_names(args.tfs_fname)
+     print(f'Loaded {len(tf_names)} TFs...', file=sys.stdout)
+ 
+     ex_matrix, gene_names, tf_names = _prepare_input(ex_matrix, gene_names, tf_names)
+@@ -126,5 +126,5 @@ def run_infer_partial_network(target_gene_index):
+     end_time = time.time()
+     print(f'Done in {end_time - start_time} seconds.', file=sys.stdout)
+ 
+-    adj.to_csv(args.output, index=False, sep="\t")
++    adj.to_csv(args.output, index=False, sep='\t')
+ 
+diff --git a/src/pyscenic/cli/pyscenic.py b/src/pyscenic/cli/pyscenic.py
+index 10c3900..536d8f0 100644
+--- a/src/pyscenic/cli/pyscenic.py
++++ b/src/pyscenic/cli/pyscenic.py
+@@ -24,6 +24,8 @@
+ import sys
+ from typing import Type, Sequence
+ from .utils import load_exp_matrix, load_signatures, save_matrix, save_enriched_motifs, load_adjacencies, load_modules, append_auc_mtx, ATTRIBUTE_NAME_CELL_IDENTIFIER, ATTRIBUTE_NAME_GENE
++from .utils import is_valid_suffix, suffixes_to_separator
++from pathlib import Path, PurePath
+ 
+ try:
+     from pyscenic._version import get_versions
+@@ -75,9 +77,8 @@ def find_adjacencies_command(args):
+ 
+     LOGGER.info("Writing results to file.")
+ 
+-    extension = os.path.splitext(args.output.name)[1].lower()
+-    separator = '\t' if extension == '.tsv' else ','
+-    network.to_csv(args.output, index=False, sep=separator)
++    extension = PurePath(fname).suffixes
++    network.to_csv(args.output, index=False, sep=suffixes_to_separator(extension))
+ 
+ 
+ def adjacencies2modules(args):
+@@ -130,8 +131,8 @@ def prune_targets_command(args):
+     # Potential improvements are switching to JSON or to use a CLoader:
+     # https://stackoverflow.com/questions/27743711/can-i-speedup-yaml
+     # The alternative for which was opted in the end is binary pickling.
+-    extension = os.path.splitext(args.module_fname.name)[1].lower()
+-    if extension in {'.csv', '.tsv'}:
++    extension = PurePath(args.module_fname.name).suffixes
++    if is_valid_suffix(extension, 'ctx'):
+         if args.expression_mtx_fname is None:
+             LOGGER.error("No expression matrix is supplied.")
+             sys.exit(0)
+@@ -201,8 +202,8 @@ def aucell_command(args):
+                          num_workers=args.num_workers)
+ 
+     LOGGER.info("Writing results to file.")
+-    extension = os.path.splitext(args.output.name)[1].lower()
+-    if extension == '.loom':
++    extension = PurePath(args.output.name).suffixes
++    if '.loom' in extension:
+         try:
+             copyfile(args.expression_mtx_fname.name, args.output.name)
+             append_auc_mtx(args.output.name, auc_mtx, signatures, args.seed, args.num_workers)
+diff --git a/src/pyscenic/cli/utils.py b/src/pyscenic/cli/utils.py
+index 2f04037..4928776 100644
+--- a/src/pyscenic/cli/utils.py
++++ b/src/pyscenic/cli/utils.py
+@@ -10,10 +10,11 @@
+ import loompy as lp
+ from operator import attrgetter
+ from typing import Type, Sequence
+-from pyscenic.genesig import GeneSignature
++from pyscenic.genesig import GeneSignature, openfile
+ from pyscenic.transform import df2regulons
+ from pyscenic.utils import load_motifs, load_from_yaml, save_to_yaml
+ from pyscenic.binarization import binarize
++from pathlib import Path, PurePath
+ 
+ 
+ __all__ = ['save_matrix', 'load_exp_matrix', 'load_signatures', 'save_enriched_motifs', 'load_adjacencies',
+@@ -74,10 +75,25 @@ def load_exp_matrix_as_loom(fname,
+                                 columns=ds.ca[attribute_name_cell_id]).T
+ 
+ 
+-FILE_EXTENSION2SEPARATOR = {
+-    '.tsv': '\t',
+-    '.csv': ','
+-}
++def suffixes_to_separator(extension):
++    if '.csv' in extension:
++        return ','
++    if '.tsv' in extension:
++        return '\t'
++
++
++def is_valid_suffix(extension, method):
++    assert(isinstance(extension,list)), 'extension should be of type "list"'
++    if method in ['grn', 'aucell']:
++        valid_extensions = ['.csv', '.tsv', '.loom']
++    elif method == 'ctx':
++        valid_extensions = ['.csv', '.tsv']
++    elif method == 'ctx_yaml':
++        valid_extensions = ['.yaml', '.yml']
++    if len(set(extension).intersection(valid_extensions)) > 0:
++        return True
++    else:
++        return False
+ 
+ 
+ def load_exp_matrix(fname: str, transpose: bool = False,
+@@ -94,12 +110,13 @@ def load_exp_matrix(fname: str, transpose: bool = False,
+     :param return_sparse: Returns a sparse matrix when loading from loom
+     :return: A 2-dimensional dataframe (rows = cells x columns = genes).
+     """
+-    extension = os.path.splitext(fname)[1].lower()
+-    if extension in FILE_EXTENSION2SEPARATOR.keys():
+-        df = pd.read_csv(fname, sep=FILE_EXTENSION2SEPARATOR[extension], header=0, index_col=0)
+-        return df.T if transpose else df
+-    elif extension == '.loom':
+-        return load_exp_matrix_as_loom(fname, return_sparse, attribute_name_cell_id, attribute_name_gene)
++    extension = PurePath(fname).suffixes
++    if is_valid_suffix(extension, 'grn'):
++        if '.loom' in extension:
++            return load_exp_matrix_as_loom(fname, return_sparse, attribute_name_cell_id, attribute_name_gene)
++        else:
++            df = pd.read_csv(fname, sep=suffixes_to_separator(extension), header=0, index_col=0)
++            return df.T if transpose else df
+     else:
+         raise ValueError("Unknown file format \"{}\".".format(fname))
+ 
+@@ -114,19 +131,25 @@ def save_matrix(df: pd.DataFrame, fname: str, transpose: bool = False) -> None:
+     :param fname: The name of the file to be written.
+     :param transpose: Should the expression matrix be stored as (rows = genes x columns = cells)?
+     """
+-    extension = os.path.splitext(fname)[1].lower()
+-    if extension in FILE_EXTENSION2SEPARATOR.keys():
+-        (df.T if transpose else df).to_csv(fname, sep=FILE_EXTENSION2SEPARATOR[extension])
+-    elif extension == '.loom':
+-        return save_df_as_loom(df, fname)
++    extension = PurePath(fname).suffixes
++    if is_valid_suffix(extension, 'aucell'):
++        if '.loom' in extension:
++            return save_df_as_loom(df, fname)
++        else:
++            (df.T if transpose else df).to_csv(fname, sep=suffixes_to_separator(extension))
+     else:
+         raise ValueError("Unknown file format \"{}\".".format(fname))
+ 
+ 
+ def guess_separator(fname: str) -> str:
+-    with open(fname, 'r') as f:
++    with openfile(fname, 'r') as f:
+         lines = f.readlines()
+ 
++    # decode if gzipped file:
++    for i,x in enumerate(lines):
++        if isinstance(x, (bytes, bytearray)):
++            lines[i] = x.decode()
++
+     def count_columns(sep):
+         return [len(line.split(sep)) for line in lines if not line.strip().startswith('#') and line.strip()]
+ 
+@@ -146,18 +169,19 @@ def load_signatures(fname: str) -> Sequence[Type[GeneSignature]]:
+     :param fname: The name of the file that contains the signatures.
+     :return: A list of gene signatures.
+     """
+-    extension = os.path.splitext(fname)[1].lower()
+-    if extension in FILE_EXTENSION2SEPARATOR.keys():
+-        return df2regulons(load_motifs(fname, sep=FILE_EXTENSION2SEPARATOR[extension]))
+-    elif extension in {'.yaml', '.yml'}:
++    extension = PurePath(fname).suffixes
++    if is_valid_suffix(extension, 'ctx'):
++        # csv/tsv
++        return df2regulons(load_motifs(fname, sep=suffixes_to_separator(extension)))
++    elif is_valid_suffix(extension, 'ctx_yaml'):
+         return load_from_yaml(fname)
+-    elif extension.endswith('.gmt'):
++    elif '.gmt' in extension:
+         sep = guess_separator(fname)
+         return GeneSignature.from_gmt(fname,
+                                   field_separator=sep,
+                                   gene_separator=sep)
+     elif extension == '.dat':
+-        with open(fname, 'rb') as f:
++        with openfile(fname, 'rb') as f:
+             return pickle.load(f)
+     else:
+         raise ValueError("Unknown file format \"{}\".".format(fname))
+@@ -173,29 +197,29 @@ def save_enriched_motifs(df, fname:str) -> None:
+     :param fname:
+     :return:
+     """
+-    extension = os.path.splitext(fname)[1].lower()
+-    if extension in FILE_EXTENSION2SEPARATOR.keys():
+-        df.to_csv(fname, sep=FILE_EXTENSION2SEPARATOR[extension])
++    extension = PurePath(fname).suffixes
++    if is_valid_suffix(extension, 'ctx'):
++        df.to_csv(fname, sep=suffixes_to_separator(extension))
+     else:
+         regulons = df2regulons(df)
+-        if extension == '.json':
++        if '.json' in extension:
+             name2targets = {r.name: list(r.gene2weight.keys()) for r in regulons}
+-            with open(fname, 'w') as f:
++            with openfile(fname, 'w') as f:
+                 f.write(json.dumps(name2targets))
+-        elif extension == '.dat':
+-            with open(fname, 'wb') as f:
++        elif '.dat' in extension:
++            with openfile(fname, 'wb') as f:
+                 pickle.dump(regulons, f)
+-        elif extension == '.gmt':
++        elif '.gmt' in extension:
+             GeneSignature.to_gmt(fname, regulons)
+-        elif extension in {'.yaml', '.yml'}:
++        elif is_valid_suffix(extension, 'ctx_yaml'):
+             save_to_yaml(regulons, fname)
+         else:
+             raise ValueError("Unknown file format \"{}\".".format(fname))
+ 
+ 
+ def load_adjacencies(fname: str) -> pd.DataFrame:
+-    extension = os.path.splitext(fname)[1].lower().lower()
+-    return pd.read_csv(fname, sep=FILE_EXTENSION2SEPARATOR[extension], dtype={0:str,1:str,2:np.float64}, keep_default_na=False )
++    extension = PurePath(fname).suffixes
++    return pd.read_csv(fname, sep=suffixes_to_separator(extension), dtype={0:str,1:str,2:np.float64}, keep_default_na=False )
+ 
+ 
+ def load_modules(fname: str) -> Sequence[Type[GeneSignature]]:
+@@ -203,12 +227,13 @@ def load_modules(fname: str) -> Sequence[Type[GeneSignature]]:
+     # Potential improvements are switching to JSON or to use a CLoader:
+     # https://stackoverflow.com/questions/27743711/can-i-speedup-yaml
+     # The alternative for which was opted in the end is binary pickling.
+-    if fname.endswith('.yaml') or fname.endswith('.yml'):
++    extension = PurePath(fname).suffixes
++    if is_valid_suffix(extension, 'ctx_yaml'):
+         return load_from_yaml(fname)
+-    elif fname.endswith('.dat'):
+-        with open(fname, 'rb') as f:
++    elif '.dat' in extension:
++        with openfile(fname, 'rb') as f:
+             return pickle.load(f)
+-    elif fname.endswith('.gmt'):
++    elif '.gmt' in extension:
+         sep = guess_separator(fname)
+         return GeneSignature.from_gmt(fname,
+                                       field_separator=sep,
+diff --git a/src/pyscenic/genesig.py b/src/pyscenic/genesig.py
+index 0548176..815660d 100644
+--- a/src/pyscenic/genesig.py
++++ b/src/pyscenic/genesig.py
+@@ -11,10 +11,11 @@
+ from cytoolz import merge_with, dissoc, keyfilter, first, second
+ from frozendict import frozendict
+ from itertools import chain
+-
++import gzip
+ from cytoolz import memoize, merge
+ 
+ 
++
+ def convert(genes):
+     # Genes supplied as dictionary.
+     if isinstance(genes, Mapping):
+@@ -27,6 +28,13 @@ def convert(genes):
+         return frozendict(zip(genes, repeat(1.0)))
+ 
+ 
++def openfile(filename, mode='r'):
++    if filename.endswith('.gz'):
++        return gzip.open(filename, mode)
++    else:
++        return open(filename, mode)
++
++
+ @attr.s(frozen=True)
+ class GeneSignature(yaml.YAMLObject):
+     """
+@@ -66,8 +74,10 @@ def from_gmt(cls, fname: str, field_separator: str = ',', gene_separator: str =
+         assert os.path.exists(fname), "{} does not exist.".format(fname)
+ 
+         def signatures():
+-            with open(fname, "r") as file:
++            with openfile(fname, "r") as file:
+                 for line in file:
++                    if isinstance(line, (bytes, bytearray)):
++                        line = line.decode()
+                     if line.startswith("#") or not line.strip():
+                         continue
+                     columns = re.split(field_separator, line.rstrip())
+@@ -87,7 +97,7 @@ def to_gmt(cls, fname: str, signatures: List[Type['GeneSignature']], field_separ
+         :param gene_separator: The separator that separates the genes.
+         """
+         #assert not os.path.exists(fname), "{} already exists.".format(fname)
+-        with open(fname, "wt") as file:
++        with openfile(fname, "wt") as file:
+             for signature in signatures:
+                 genes = gene_separator.join(signature.genes)
+                 file.write("{}{}{}{}{}\n".format(signature.name, field_separator,
+@@ -106,7 +116,7 @@ def from_grp(cls, fname, name: str) -> 'GeneSignature':
+         """
+         # https://software.broadinstitute.org/cancer/software/gsea/wiki/index.php/Data_formats
+         assert os.path.exists(fname), "{} does not exist.".format(fname)
+-        with open(fname, "r") as file:
++        with openfile(fname, "r") as file:
+             return GeneSignature(name=name,
+                              gene2weight=[line.rstrip() for line in file if not line.startswith("#") and line.strip()])
+ 
+@@ -124,7 +134,7 @@ def from_rnk(cls, fname: str, name: str, field_separator=",") -> 'GeneSignature'
+         assert os.path.exists(fname), "{} does not exist.".format(fname)
+ 
+         def columns():
+-            with open(fname, "r") as file:
++            with openfile(fname, "r") as file:
+                 for line in file:
+                     if line.startswith("#") or not line.strip():
+                         continue
+diff --git a/src/pyscenic/utils.py b/src/pyscenic/utils.py
+index a66854c..79d0d1a 100644
+--- a/src/pyscenic/utils.py
++++ b/src/pyscenic/utils.py
+@@ -2,7 +2,7 @@
+ 
+ import pandas as pd
+ from urllib.parse import urljoin
+-from .genesig import Regulon, GeneSignature
++from .genesig import Regulon, GeneSignature, openfile
+ from .math import masked_rho4pairs
+ from itertools import chain
+ import numpy as np
+@@ -292,7 +292,7 @@ def save_to_yaml(signatures: Sequence[Type[GeneSignature]], fname: str):
+     :param signatures:
+     :return:
+     """
+-    with open(fname, 'w') as f:
++    with openfile(fname, 'w') as f:
+         f.write(dump(signatures, default_flow_style=False, Dumper=Dumper))
+ 
+ 
+@@ -302,7 +302,7 @@ def load_from_yaml(fname: str) -> Sequence[Type[GeneSignature]]:
+     :param fname:
+     :return:
+     """
+-    with open(fname, 'r') as f:
++    with openfile(fname, 'r') as f:
+         return load(f.read(), Loader=Loader)
+ 
+ 
+@@ -335,5 +335,3 @@ def load_motifs(fname: str, sep: str = ',') -> pd.DataFrame:
+     return df
+ 
+ 
+-
+-

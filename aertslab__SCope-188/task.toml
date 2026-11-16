@@ -1,0 +1,72 @@
+version = "1.0"
+
+[task]
+name = "default/aertslab__SCope-188"
+description = "Allow SCope to be deployed on secure protocol (HTTPS)"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "SCope",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aertslab/SCope"
+ref = "4efb5228aee0c8b6b04eb24318e75459c52ae9af"
+reference = "https://github.com/aertslab/SCope/pull/188"
+source_access = "auto"
+built_at = "2026-11-15T19:39:50.167036+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:4575dd0b8fcc1f0acaf2c15de29021e6ca696910e7d532323f23daf8656423b8"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2018-12-14T14:11:29Z"
+diff_format = "unified"
+context_files = [
+    "README.md",
+    "VERSION",
+    "apache/apache.conf.js",
+    "apache/config.json",
+    "apache/template.conf",
+    "index.html",
+    "opt/setup.py",
+    "package.json",
+    "tutorials/aws-deployment-quick/README.md",
+    "tutorials/aws-deployment-source/README.md",
+    "webpack.config.js",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 81
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

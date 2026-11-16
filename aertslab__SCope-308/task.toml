@@ -1,0 +1,74 @@
+version = "1.0"
+
+[task]
+name = "default/aertslab__SCope-308"
+description = "Reorganise and abstract SCope server config"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "SCope",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aertslab/SCope"
+ref = "cda1ed8617483e3ba88c4539499653929c137424"
+reference = "https://github.com/aertslab/SCope/pull/308"
+source_access = "auto"
+built_at = "2026-11-15T19:38:53.919939+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:4dc72b0bfffd1d7d9eac456ef94a51b1c9b2d9978b9409656ccbdf45666e6069"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2020-05-14T07:03:27Z"
+diff_format = "unified"
+context_files = [
+    ".github/workflows/continuous-integration-client.yml",
+    ".github/workflows/continuous-integration-server.yml",
+    "README.md",
+    "config.json",
+    "opt/data/motd.txt",
+    "opt/poetry.lock",
+    "opt/pyproject.toml",
+    "opt/scopeserver/__init__.py",
+    "opt/scopeserver/config.py",
+    "opt/scopeserver/dataserver/utils/data_file_handler.py",
+    "opt/test/data/config.json",
+    "opt/test/data/malformed_config.json",
+    "opt/test/test_config.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 733
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

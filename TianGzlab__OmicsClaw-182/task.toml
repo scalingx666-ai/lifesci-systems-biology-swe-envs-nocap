@@ -1,0 +1,75 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-182"
+description = "refactor(skill-runner): carve run_skill into runtime subpackage + drop LocalExecutor (OMI-12 P1.4+P1.5)"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "d5cbd41414f4ff5fa7638c889f120349d5379c68"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/182"
+source_access = "auto"
+built_at = "2026-11-15T18:17:05.597930+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:550e1699b1871a5c9394bbd93742c402aae174a6caef28f53e7c8b8c59cdc0e6"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-05-12T11:53:04Z"
+diff_format = "unified"
+context_files = [
+    "omicsclaw/core/runtime/__init__.py",
+    "omicsclaw/core/runtime/argv_builder.py",
+    "omicsclaw/core/runtime/output_finalize.py",
+    "omicsclaw/core/runtime/pipeline_runner.py",
+    "omicsclaw/core/runtime/subprocess_driver.py",
+    "omicsclaw/core/skill_runner.py",
+    "omicsclaw/execution/executors/__init__.py",
+    "omicsclaw/execution/executors/local.py",
+    "omicsclaw/execution/executors/subprocess.py",
+    "omicsclaw/remote/routers/jobs.py",
+    "tests/test_execution_executors.py",
+    "tests/test_remote_routes_contract.py",
+    "tests/test_remote_write_text_atomic.py",
+    "tests/test_runtime_argv_builder.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 1409
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

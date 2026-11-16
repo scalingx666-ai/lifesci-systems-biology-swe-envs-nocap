@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__muon-28"
+description = "Feat / seurat flavored clr"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "muon",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/muon"
+ref = "dae9e94d77a9d8318380e81f022c48d981eb2d99"
+reference = "https://github.com/scverse/muon/pull/28"
+source_access = "auto"
+built_at = "2026-11-15T17:00:34.265113+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:b76ce676ca6704e7bbfd983388e4429db67ac4edbeb58679de8524dfd6d72c83"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2021-06-21T14:32:59Z"
+diff_format = "unified"
+context_files = [
+    "muon/_prot/preproc.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 41
+difficulty = "medium"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

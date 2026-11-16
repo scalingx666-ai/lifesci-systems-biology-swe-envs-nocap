@@ -1,0 +1,69 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-126"
+description = "feat(memory): migrations framework + 001_namespace schema migration (PR #2)"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "13c7564af9f048e375d2efa0f1a5bf72a698bdb8"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/126"
+source_access = "auto"
+built_at = "2026-11-15T18:17:47.110929+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:edb595c573c73ec31b73156dc8364eec4d2f3f421ad77a8165817dff6dc6c22e"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-05-10T05:54:26Z"
+diff_format = "unified"
+context_files = [
+    "omicsclaw/memory/database.py",
+    "omicsclaw/memory/migrations/001_namespace.py",
+    "omicsclaw/memory/migrations/__init__.py",
+    "omicsclaw/memory/migrations/runner.py",
+    "scripts/migrate_dry_run.py",
+    "tests/memory/test_init_db_runs_migrations.py",
+    "tests/memory/test_migration_001_namespace.py",
+    "tests/memory/test_migration_runner.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 1047
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

@@ -1,0 +1,70 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__muon-26"
+description = "Switch build system over to flit"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "muon",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/muon"
+ref = "3744448fde5023d47508f7d79fca8feefcab7d1f"
+reference = "https://github.com/scverse/muon/pull/26"
+source_access = "auto"
+built_at = "2026-11-15T17:00:35.770313+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:c5dddf44768a87675c2d33095b95c2f491391dd269e62fd793f387ec501d752d"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2021-05-26T09:15:27Z"
+diff_format = "unified"
+context_files = [
+    ".github/workflows/pythonpackage.yml",
+    ".gitignore",
+    ".readthedocs.yaml",
+    "docs/requirements.txt",
+    "docs/source/install.rst",
+    "muon/__init__.py",
+    "pyproject.toml",
+    "requirements.txt",
+    "setup.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 146
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

@@ -1,0 +1,70 @@
+version = "1.0"
+
+[task]
+name = "default/aertslab__SCope-160"
+description = "157-display-trajectory"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "SCope",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aertslab/SCope"
+ref = "be122b72eacf30f5dab2dbe768b10773b4b7abb9"
+reference = "https://github.com/aertslab/SCope/pull/160"
+source_access = "auto"
+built_at = "2026-11-15T19:40:08.542684+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:bce8eb5ae8339d29fe2a7b0178b02b29d73aeb2840e37c56ffc6ba72dd7fd77e"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2018-07-06T01:28:12Z"
+diff_format = "unified"
+context_files = [
+    "README.md",
+    "VERSION",
+    "opt/scopeserver/dataserver/modules/gserver/s_pb2.py",
+    "opt/setup.py",
+    "package.json",
+    "src/components/AppSidebar.jsx",
+    "src/components/common/API.jsx",
+    "src/components/common/Viewer.jsx",
+    "src/proto/s.proto",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 531
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

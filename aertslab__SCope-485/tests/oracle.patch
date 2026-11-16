@@ -1,0 +1,25 @@
+diff --git a/.github/workflows/continuous-integration-server.yml b/.github/workflows/continuous-integration-server.yml
+index ca40bed5..1cc85245 100644
+--- a/.github/workflows/continuous-integration-server.yml
++++ b/.github/workflows/continuous-integration-server.yml
+@@ -44,7 +44,7 @@ jobs:
+ 
+             - name: Run pylint
+               run: |
+-                  ${HOME}/.poetry/bin/poetry run pylint-fail-under --fail_under "7.5" --rcfile pyproject.toml scopeserver main.py
++                  ${HOME}/.poetry/bin/poetry run pylint-fail-under --fail_under "7.74" --rcfile pyproject.toml scopeserver main.py
+               working-directory: ${{ env.working-directory }}
+ 
+             - name: Run black
+diff --git a/server/pyproject.toml b/server/pyproject.toml
+index a53bc336..c5da0a5c 100644
+--- a/server/pyproject.toml
++++ b/server/pyproject.toml
+@@ -68,6 +68,7 @@ dev-script = 'scopeserver:run'
+ 
+ [tool.pylint.'MESSAGES CONTROL']
+ max-line-length = '120'
++disable = 'W1203'
+ 
+ [tool.black]
+ line-length = 120

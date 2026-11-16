@@ -1,0 +1,1298 @@
+diff --git a/bot/core.py b/bot/core.py
+index 0193b556..a0b3e6f0 100644
+--- a/bot/core.py
++++ b/bot/core.py
+@@ -17,11 +17,13 @@
+ import logging
+ import os
+ import re
+-import requests
+ import shutil
+ import sys
+ import tempfile
++import threading
+ import time
++
++import requests
+ from dataclasses import dataclass
+ from datetime import datetime, timezone
+ from pathlib import Path
+@@ -2071,6 +2073,7 @@ async def _run_skill_via_shared_runner(
+     out_dir: Path,
+ ) -> dict:
+     from omicsclaw.core import skill_runner
++    from omicsclaw.core.skill_result import coerce_skill_run_result
+ 
+     runner_skill = "spatial-pipeline" if skill_key == "pipeline" else skill_key
+     skill_info = _lookup_skill_info(runner_skill)
+@@ -2090,6 +2093,14 @@ async def _run_skill_via_shared_runner(
+             forwarded_args.extend(["--n-epochs", str(int(n_epochs))])
+     forwarded_args.extend(_normalize_extra_args(extra_args))
+ 
++    def _emit_stdout(line: str) -> None:
++        logger.info("[%s:stdout] %s", canonical_skill, line)
++
++    def _emit_stderr(line: str) -> None:
++        logger.info("[%s:stderr] %s", canonical_skill, line)
++
++    cancel_event = threading.Event()
++
+     def _run() -> dict:
+         return skill_runner.run_skill(
+             runner_skill,
+@@ -2098,21 +2109,30 @@ def _run() -> dict:
+             demo=mode == "demo",
+             session_path=session_path,
+             extra_args=forwarded_args or None,
++            stdout_callback=_emit_stdout,
++            stderr_callback=_emit_stderr,
++            cancel_event=cancel_event,
+         )
+ 
+-    result = await asyncio.to_thread(_run)
+-    stdout_str = str(result.get("stdout") or "")
+-    stderr_str = str(result.get("stderr") or "")
++    try:
++        result = await asyncio.to_thread(_run)
++    except asyncio.CancelledError:
++        # Forward bot-task cancellation to the runner so the worker thread
++        # and its subprocess actually shut down (SIGTERM/SIGKILL path) instead
++        # of leaking after the user disconnects.
++        cancel_event.set()
++        raise
++    run_result = coerce_skill_run_result(result)
++    stdout_str = run_result.stdout
++    stderr_str = run_result.stderr
+     guidance_block = render_guidance_block(extract_user_guidance_lines(stderr_str))
+     clean_stderr = strip_user_guidance_lines(stderr_str)
+     clean_stdout = strip_user_guidance_lines(stdout_str)
+     error_text = clean_stderr[-1500:] if clean_stderr else clean_stdout[-1500:] if clean_stdout else "unknown error"
+-    returncode = int(result.get("exit_code") or 0)
+-    if not result.get("success", False) and returncode == 0:
+-        returncode = 1
+-    output_dir = Path(result.get("output_dir") or out_dir)
++    returncode = run_result.adapter_exit_code
++    output_dir = run_result.output_path or out_dir
+     return {
+-        "success": bool(result.get("success", False)),
++        "success": run_result.success,
+         "returncode": returncode,
+         "out_dir": output_dir,
+         "output_dir": str(output_dir),
+diff --git a/omicsclaw/core/registry.py b/omicsclaw/core/registry.py
+index 99248acd..2fe72a09 100644
+--- a/omicsclaw/core/registry.py
++++ b/omicsclaw/core/registry.py
+@@ -5,6 +5,7 @@
+ 
+ from __future__ import annotations
+ 
++import copy
+ import json
+ import logging
+ import os
+@@ -144,8 +145,13 @@ def _register_skill_entry(
+         *,
+         skill_dir_name: str,
+     ) -> None:
+-        """Register a primary skill entry plus all supported lookup aliases."""
+-        self.skills[canonical_alias] = info
++        """Register a primary skill entry plus all supported lookup aliases.
++
++        Each alias key gets its own deep-copied snapshot of ``info`` so that a
++        future caller mutating one alias view (e.g. ``info["allowed_extra_flags"]
++        .add(...)``) does not silently corrupt the canonical or sibling views.
++        """
++        self.skills[canonical_alias] = copy.deepcopy(info)
+ 
+         lookup_keys: list[str] = list(info.get("legacy_aliases", []))
+         if skill_dir_name == canonical_alias or skill_dir_name not in _HARDCODED_SKILLS:
+@@ -155,7 +161,7 @@ def _register_skill_entry(
+             if key == canonical_alias:
+                 continue
+             if key not in self.skills:
+-                self.skills[key] = info
++                self.skills[key] = copy.deepcopy(info)
+ 
+     def load_all(self, skills_dir: Path | None = None) -> None:
+         """Dynamically load and merge skills from the filesystem.
+@@ -284,17 +290,17 @@ def load_all(self, skills_dir: Path | None = None) -> None:
+                     and hardcoded_alias != canonical_alias
+                     and hardcoded_alias not in self.skills
+                 ):
+-                    self.skills[hardcoded_alias] = md_info
++                    self.skills[hardcoded_alias] = copy.deepcopy(md_info)
+ 
+ 
+         # Fallback: register any hardcoded skills not discovered on filesystem
+         for alias, info in _HARDCODED_SKILLS.items():
+             if alias not in self.skills:
+-                self.skills[alias] = info
++                self.skills[alias] = copy.deepcopy(info)
+                 # Also register legacy aliases from hardcoded
+                 for la in info.get("legacy_aliases", []):
+                     if la not in self.skills:
+-                        self.skills[la] = info
++                        self.skills[la] = copy.deepcopy(info)
+ 
+         self._refresh_domain_skill_counts()
+         self._loaded = True
+diff --git a/omicsclaw/core/skill_result.py b/omicsclaw/core/skill_result.py
+new file mode 100644
+index 00000000..3c613bd7
+--- /dev/null
++++ b/omicsclaw/core/skill_result.py
+@@ -0,0 +1,153 @@
++"""Shared result model for skill runner adapters."""
++
++from __future__ import annotations
++
++import json
++from dataclasses import dataclass, field
++from pathlib import Path
++from typing import Any, Iterable, Mapping
++
++
++@dataclass(frozen=True, slots=True)
++class SkillRunResult:
++    """Normalized view over the public ``run_skill()`` result dictionary."""
++
++    skill: str
++    success: bool
++    exit_code: int
++    output_dir: str | None = None
++    files: tuple[str, ...] = ()
++    stdout: str = ""
++    stderr: str = ""
++    duration_seconds: float = 0.0
++    method: str | None = None
++    readme_path: str = ""
++    notebook_path: str = ""
++    raw: Mapping[str, Any] = field(default_factory=dict)
++
++    @property
++    def adapter_exit_code(self) -> int:
++        """Exit code adapters should expose to job/bot callers."""
++        if self.success:
++            return self.exit_code
++        return self.exit_code if self.exit_code != 0 else 1
++
++    @property
++    def combined_output(self) -> str:
++        if self.stdout and self.stderr:
++            return self.stdout + "\n" + self.stderr
++        return self.stdout or self.stderr
++
++    @property
++    def output_path(self) -> Path | None:
++        return Path(self.output_dir) if self.output_dir else None
++
++    def error_text(self, *, default: str = "unknown error", tail_chars: int | None = None) -> str:
++        text = self.stderr or self.stdout or default
++        if tail_chars is not None and tail_chars > 0:
++            return text[-tail_chars:]
++        return text
++
++    def to_legacy_dict(self) -> dict[str, Any]:
++        """Return the public dict shape expected by existing ``run_skill`` callers."""
++        return {
++            "skill": self.skill,
++            "success": self.success,
++            "exit_code": self.exit_code,
++            "output_dir": self.output_dir,
++            "files": list(self.files),
++            "stdout": self.stdout,
++            "stderr": self.stderr,
++            "duration_seconds": self.duration_seconds,
++            "method": self.method,
++            "readme_path": self.readme_path,
++            "notebook_path": self.notebook_path,
++        }
++
++
++def _int_or_default(value: Any, default: int = 0) -> int:
++    try:
++        return int(value)
++    except (TypeError, ValueError):
++        return default
++
++
++def _float_or_default(value: Any, default: float = 0.0) -> float:
++    try:
++        return float(value)
++    except (TypeError, ValueError):
++        return default
++
++
++def _normalize_files(files: Any) -> tuple[str, ...]:
++    if not files:
++        return ()
++    if isinstance(files, (str, bytes, Path)):
++        return (str(files),)
++    return tuple(str(item) for item in files)
++
++
++def coerce_skill_run_result(result: Mapping[str, Any]) -> SkillRunResult:
++    """Coerce a runner result mapping into a normalized result model."""
++    skill = str(result.get("skill") or "")
++    success = bool(result.get("success", False))
++    exit_code = _int_or_default(result.get("exit_code"), 0)
++    output_dir_value = result.get("output_dir")
++    method_value = result.get("method")
++    return SkillRunResult(
++        skill=skill,
++        success=success,
++        exit_code=exit_code,
++        output_dir=str(output_dir_value) if output_dir_value else None,
++        files=_normalize_files(result.get("files")),
++        stdout=str(result.get("stdout") or ""),
++        stderr=str(result.get("stderr") or ""),
++        duration_seconds=_float_or_default(result.get("duration_seconds"), 0.0),
++        method=str(method_value) if method_value else None,
++        readme_path=str(result.get("readme_path") or ""),
++        notebook_path=str(result.get("notebook_path") or ""),
++        raw=dict(result),
++    )
++
++
++def build_skill_run_result(
++    *,
++    skill: str,
++    success: bool,
++    exit_code: int,
++    output_dir: str | Path | None,
++    files: Iterable[str | Path] = (),
++    stdout: str = "",
++    stderr: str = "",
++    duration_seconds: float = 0.0,
++    method: str | None = None,
++    readme_path: str | Path | None = "",
++    notebook_path: str | Path | None = "",
++) -> SkillRunResult:
++    """Build a normalized result from runner-native values."""
++    return SkillRunResult(
++        skill=str(skill),
++        success=bool(success),
++        exit_code=int(exit_code),
++        output_dir=str(output_dir) if output_dir else None,
++        files=_normalize_files(files),
++        stdout=str(stdout or ""),
++        stderr=str(stderr or ""),
++        duration_seconds=round(float(duration_seconds or 0.0), 2),
++        method=str(method) if method else None,
++        readme_path=str(readme_path or ""),
++        notebook_path=str(notebook_path or ""),
++    )
++
++
++def result_json_fallback(result: SkillRunResult) -> str:
++    """Serialize the original runner mapping for log fallback text."""
++    return json.dumps(result.raw, ensure_ascii=False, default=str)
++
++
++__all__ = [
++    "SkillRunResult",
++    "build_skill_run_result",
++    "coerce_skill_run_result",
++    "result_json_fallback",
++]
+diff --git a/omicsclaw/core/skill_runner.py b/omicsclaw/core/skill_runner.py
+index eaccf591..446a71d4 100644
+--- a/omicsclaw/core/skill_runner.py
++++ b/omicsclaw/core/skill_runner.py
+@@ -10,13 +10,14 @@
+ import json
+ import os
+ import re
++import signal
+ import subprocess
+ import sys
+ import threading
+ import time
+ from datetime import datetime, timezone
+ from pathlib import Path
+-from typing import Any
++from typing import Any, Callable
+ 
+ from omicsclaw.common.report import (
+     build_output_dir_name,
+@@ -25,6 +26,7 @@
+     write_output_readme,
+ )
+ from omicsclaw.core.registry import registry
++from omicsclaw.core.skill_result import build_skill_run_result
+ 
+ 
+ OMICSCLAW_DIR = Path(__file__).resolve().parents[2]
+@@ -215,6 +217,34 @@ def _write_pipeline_readme(
+     return readme_path
+ 
+ 
++def _stream_to_sink(
++    stream,
++    sink: list[str],
++    callback: Callable[[str], None] | None,
++) -> None:
++    """Drain ``stream`` line-by-line into ``sink`` and forward to ``callback``.
++
++    ``callback`` receives each line stripped of its trailing newline. Callback
++    exceptions are swallowed so a buggy log handler cannot abort the run.
++    """
++    try:
++        for line in iter(stream.readline, ""):
++            if not line:
++                break
++            sink.append(line)
++            if callback is not None:
++                try:
++                    callback(line.rstrip("\n"))
++                except Exception:
++                    # The skill must complete even if the consumer's logger blows up.
++                    pass
++    finally:
++        try:
++            stream.close()
++        except Exception:
++            pass
++
++
+ def run_skill(
+     skill_name: str,
+     *,
+@@ -224,8 +254,22 @@ def run_skill(
+     demo: bool = False,
+     session_path: str | None = None,
+     extra_args: list[str] | None = None,
++    stdout_callback: Callable[[str], None] | None = None,
++    stderr_callback: Callable[[str], None] | None = None,
++    cancel_event: threading.Event | None = None,
+ ) -> dict:
+-    """Run a single skill via subprocess and return a stable result dict."""
++    """Run a single skill via subprocess and return a stable result dict.
++
++    When ``stdout_callback`` / ``stderr_callback`` are supplied the runner
++    invokes them once per line as the skill emits output (newline stripped),
++    so long-running skills produce visible logs in real time. Aggregated
++    ``stdout`` / ``stderr`` strings are still returned in the result dict.
++
++    When ``cancel_event`` is supplied the runner watches it; if the event is
++    set while the skill is running the child process group receives SIGTERM,
++    waits a short grace period, then SIGKILL, ensuring cancelled jobs do not
++    leak children consuming CPU/GPU until natural completion.
++    """
+     skill_name = resolve_skill_alias(skill_name)
+ 
+     if skill_name == "spatial-pipeline":
+@@ -342,6 +386,7 @@ def _next_token_is_value(tokens: list[str], idx: int) -> bool:
+             stdout=subprocess.PIPE,
+             stderr=subprocess.PIPE,
+             text=True,
++            bufsize=1,  # line-buffered so callbacks fire as the skill prints
+             cwd=str(script_path.parent),
+             env=env,
+             start_new_session=True,
+@@ -356,17 +401,76 @@ def _reaper():
+             except (ProcessLookupError, PermissionError, OSError):
+                 pass
+ 
++        def _cancel_watcher():
++            """Send SIGTERM (then SIGKILL after grace) when cancel_event is set."""
++            if cancel_event is None:
++                return
++            while popen.poll() is None:
++                if cancel_event.wait(timeout=0.2):
++                    try:
++                        os.killpg(os.getpgid(popen.pid), signal.SIGTERM)
++                    except (ProcessLookupError, PermissionError, OSError):
++                        return
++                    grace_deadline = time.time() + 5.0
++                    while popen.poll() is None and time.time() < grace_deadline:
++                        time.sleep(0.1)
++                    if popen.poll() is None:
++                        try:
++                            os.killpg(os.getpgid(popen.pid), signal.SIGKILL)
++                        except (ProcessLookupError, PermissionError, OSError):
++                            pass
++                    return
++
+         reap_thread = threading.Thread(target=_reaper, daemon=True)
+         reap_thread.start()
++        cancel_thread: threading.Thread | None = None
++        if cancel_event is not None:
++            cancel_thread = threading.Thread(target=_cancel_watcher, daemon=True)
++            cancel_thread.start()
++
++        stdout_lines: list[str] = []
++        stderr_lines: list[str] = []
++        stdout_thread = threading.Thread(
++            target=_stream_to_sink,
++            args=(popen.stdout, stdout_lines, stdout_callback),
++            daemon=True,
++        )
++        stderr_thread = threading.Thread(
++            target=_stream_to_sink,
++            args=(popen.stderr, stderr_lines, stderr_callback),
++            daemon=True,
++        )
++        stdout_thread.start()
++        stderr_thread.start()
++
+         try:
+-            stdout, stderr = popen.communicate()
++            popen.wait()
+         except Exception:
+-            stdout, stderr = "", ""
++            pass
++        stdout_thread.join(timeout=5)
++        stderr_thread.join(timeout=5)
+         reap_thread.join(timeout=5)
++        if cancel_thread is not None:
++            cancel_thread.join(timeout=5)
++
++        stdout = "".join(stdout_lines)
++        stderr = "".join(stderr_lines)
+         return_code = popen.returncode or 0
+-        if return_code == -9 and (Path(out_dir) / "result.json").exists():
++        # The ``-9 → 0`` heuristic was a workaround for the orphan reaper's
++        # SIGKILL race when the main process had already produced its
++        # ``result.json``. Once ``cancel_event`` was wired to escalate to
++        # SIGKILL, ``-9`` also became the *normal* outcome of cancellation.
++        # Skip the heuristic when the run was actually cancelled, otherwise a
++        # cancelled run that happened to leave a partial ``result.json``
++        # would be silently reported as success.
++        was_cancelled = cancel_event is not None and cancel_event.is_set()
++        if (
++            not was_cancelled
++            and return_code == -9
++            and (Path(out_dir) / "result.json").exists()
++        ):
+             return_code = 0
+-        proc = subprocess.CompletedProcess(cmd, return_code, stdout or "", stderr or "")
++        proc = subprocess.CompletedProcess(cmd, return_code, stdout, stderr)
+     except Exception as exc:
+         duration = time.time() - t0
+         return _err(skill_name, str(exc), duration=duration)
+@@ -399,19 +503,19 @@ def _reaper():
+         [path.name for path in final_out_dir.rglob("*") if path.is_file()]
+     ) if final_out_dir.exists() else []
+ 
+-    result = {
+-        "skill": skill_name,
+-        "success": proc.returncode == 0,
+-        "exit_code": proc.returncode,
+-        "output_dir": str(final_out_dir),
+-        "files": output_files,
+-        "stdout": proc.stdout,
+-        "stderr": proc.stderr,
+-        "duration_seconds": round(duration, 2),
+-        "method": actual_method,
+-        "readme_path": readme_path,
+-        "notebook_path": notebook_path,
+-    }
++    result = build_skill_run_result(
++        skill=skill_name,
++        success=proc.returncode == 0,
++        exit_code=proc.returncode,
++        output_dir=final_out_dir,
++        files=output_files,
++        stdout=proc.stdout,
++        stderr=proc.stderr,
++        duration_seconds=duration,
++        method=actual_method,
++        readme_path=readme_path,
++        notebook_path=notebook_path,
++    ).to_legacy_dict()
+ 
+     if session_path and result["success"]:
+         _store_result_in_session(session_path, skill_name, final_out_dir)
+@@ -483,18 +587,18 @@ def _run_spatial_pipeline(
+     )
+ 
+     succeeded = sum(1 for result in all_results.values() if result["success"])
+-    return {
+-        "skill": "spatial-pipeline",
+-        "success": succeeded == len(SPATIAL_PIPELINE),
+-        "exit_code": 0 if succeeded == len(SPATIAL_PIPELINE) else 1,
+-        "output_dir": str(out_dir),
+-        "files": [path.name for path in out_dir.rglob("*") if path.is_file()],
+-        "stdout": f"Pipeline: {succeeded}/{len(SPATIAL_PIPELINE)} skills succeeded.",
+-        "stderr": "",
+-        "duration_seconds": sum(result["duration"] for result in all_results.values()),
+-        "readme_path": str(pipeline_readme),
+-        "notebook_path": "",
+-    }
++    return build_skill_run_result(
++        skill="spatial-pipeline",
++        success=succeeded == len(SPATIAL_PIPELINE),
++        exit_code=0 if succeeded == len(SPATIAL_PIPELINE) else 1,
++        output_dir=out_dir,
++        files=[path.name for path in out_dir.rglob("*") if path.is_file()],
++        stdout=f"Pipeline: {succeeded}/{len(SPATIAL_PIPELINE)} skills succeeded.",
++        stderr="",
++        duration_seconds=sum(result["duration"] for result in all_results.values()),
++        readme_path=pipeline_readme,
++        notebook_path="",
++    ).to_legacy_dict()
+ 
+ 
+ def _store_result_in_session(session_path: str, skill_name: str, out_dir: Path) -> None:
+@@ -520,16 +624,11 @@ def _store_result_in_session(session_path: str, skill_name: str, out_dir: Path)
+ 
+ 
+ def _err(skill: str, msg: str, duration: float = 0) -> dict:
+-    return {
+-        "skill": skill,
+-        "success": False,
+-        "exit_code": -1,
+-        "output_dir": None,
+-        "files": [],
+-        "stdout": "",
+-        "stderr": msg,
+-        "duration_seconds": round(duration, 2),
+-        "method": None,
+-        "readme_path": "",
+-        "notebook_path": "",
+-    }
++    return build_skill_run_result(
++        skill=skill,
++        success=False,
++        exit_code=-1,
++        output_dir=None,
++        stderr=msg,
++        duration_seconds=duration,
++    ).to_legacy_dict()
+diff --git a/omicsclaw/execution/executors/default.py b/omicsclaw/execution/executors/default.py
+index 925995e8..3e07e82b 100644
+--- a/omicsclaw/execution/executors/default.py
++++ b/omicsclaw/execution/executors/default.py
+@@ -22,14 +22,14 @@
+ 
+ from __future__ import annotations
+ 
+-import json
++import asyncio
+ import sys
++import threading
+ from pathlib import Path
+ from typing import Any
+ 
+ from omicsclaw.autoagent.constants import param_to_cli_flag
+-
+-import asyncio
++from omicsclaw.core.skill_result import coerce_skill_run_result, result_json_fallback
+ 
+ from .base import JobContext, JobOutcome
+ 
+@@ -96,6 +96,7 @@ async def run(self, ctx: JobContext) -> JobOutcome:
+         input_paths = ctx.inputs.get("inputs")
+         demo = bool(ctx.inputs.get("demo"))
+         extra_args = _params_to_extra_args(ctx.params)
++        cancel_event = threading.Event()
+ 
+         def _run() -> dict[str, Any]:
+             return skill_runner.run_skill(
+@@ -106,29 +107,32 @@ def _run() -> dict[str, Any]:
+                 demo=demo,
+                 session_path=str(ctx.inputs["session_path"]) if ctx.inputs.get("session_path") else None,
+                 extra_args=extra_args or None,
++                cancel_event=cancel_event,
+             )
+ 
+         try:
+             result = await asyncio.to_thread(_run)
++        except asyncio.CancelledError:
++            # Forward asyncio cancellation to the worker thread / subprocess so
++            # the SIGTERM/SIGKILL path runs instead of leaking the child.
++            cancel_event.set()
++            raise
+         except Exception as exc:
+             text = f"skill_runner_failed: {exc}"
+             ctx.stdout_log.parent.mkdir(parents=True, exist_ok=True)
+             ctx.stdout_log.write_text(text, encoding="utf-8")
+             return JobOutcome(exit_code=1, error=text, stdout_text=text)
+ 
+-        stdout = str(result.get("stdout") or "")
+-        stderr = str(result.get("stderr") or "")
+-        stdout_text = stdout + (stderr if not stdout or not stderr else "\n" + stderr)
++        run_result = coerce_skill_run_result(result)
++        stdout_text = run_result.combined_output
+         if not stdout_text:
+-            stdout_text = json.dumps(result, ensure_ascii=False, default=str)
++            stdout_text = result_json_fallback(run_result)
+ 
+         ctx.stdout_log.parent.mkdir(parents=True, exist_ok=True)
+         ctx.stdout_log.write_text(stdout_text, encoding="utf-8")
+ 
+-        exit_code = int(result.get("exit_code") or 0)
+-        if not result.get("success", False) and exit_code == 0:
+-            exit_code = 1
+-        error = None if exit_code == 0 else stderr or stdout_text or "skill_runner_failed"
++        exit_code = run_result.adapter_exit_code
++        error = None if exit_code == 0 else run_result.stderr or stdout_text or "skill_runner_failed"
+         return JobOutcome(exit_code=exit_code, error=error, stdout_text=stdout_text)
+ 
+ 
+diff --git a/tests/test_bot_runner_contract.py b/tests/test_bot_runner_contract.py
+index c45e6ecb..1d036fb2 100644
+--- a/tests/test_bot_runner_contract.py
++++ b/tests/test_bot_runner_contract.py
+@@ -88,3 +88,121 @@ async def _unexpected_subprocess(*_args, **_kwargs):
+     assert calls[0]["skill_key"] == "literature"
+     assert calls[0]["mode"] == "demo"
+     assert "Bot Runner" in result
++
++
++def test_bot_run_skill_via_shared_runner_streams_lines_to_bot_logger(
++    tmp_path, monkeypatch, caplog
++):
++    """The bot must subscribe to runner stdout/stderr callbacks so long
++    skills produce visible operator-console logs in real time instead of
++    going silent until completion."""
++    import omicsclaw.core.skill_runner as runner_module
++
++    out_dir = tmp_path / "bot_streaming_out"
++    out_dir.mkdir()
++
++    def fake_run_skill(skill_name=None, *, stdout_callback=None, stderr_callback=None, **kwargs):
++        if stdout_callback is not None:
++            stdout_callback("epoch 1/3")
++            stdout_callback("epoch 2/3")
++            stdout_callback("epoch 3/3")
++        if stderr_callback is not None:
++            stderr_callback("warning: synthetic")
++        return {
++            "skill": skill_name,
++            "success": True,
++            "exit_code": 0,
++            "output_dir": str(out_dir),
++            "files": [],
++            "stdout": "epoch 1/3\nepoch 2/3\nepoch 3/3\n",
++            "stderr": "warning: synthetic\n",
++            "duration_seconds": 0.1,
++            "method": None,
++            "readme_path": "",
++            "notebook_path": "",
++        }
++
++    monkeypatch.setattr(runner_module, "run_skill", fake_run_skill)
++
++    with caplog.at_level("INFO", logger="omicsclaw.bot"):
++        result = asyncio.run(
++            core._run_skill_via_shared_runner(
++                skill_key="literature",
++                input_path=None,
++                session_path=None,
++                mode="demo",
++                out_dir=out_dir,
++            )
++        )
++
++    bot_messages = [r.getMessage() for r in caplog.records if r.name == "omicsclaw.bot"]
++    assert any("epoch 1/3" in m for m in bot_messages), bot_messages
++    assert any("epoch 2/3" in m for m in bot_messages), bot_messages
++    assert any("epoch 3/3" in m for m in bot_messages), bot_messages
++    assert any("warning: synthetic" in m for m in bot_messages), bot_messages
++    assert result["success"] is True
++
++
++def test_bot_run_skill_via_shared_runner_propagates_asyncio_cancel(tmp_path, monkeypatch):
++    """If the bot's coroutine is cancelled (user disconnect, parent task
++    killed), it must signal the runner so the worker thread / subprocess
++    actually shuts down. Without this, ``run_skill`` keeps running long
++    after the user is gone and continues to consume CPU/GPU.
++    """
++    import threading
++    import omicsclaw.core.skill_runner as runner_module
++
++    out_dir = tmp_path / "bot_cancel_out"
++    out_dir.mkdir()
++    captured_events: list[threading.Event] = []
++
++    def fake_run_skill(skill_name=None, *, cancel_event=None, **kwargs):
++        assert cancel_event is not None, (
++            "bot adapter must pass a cancel_event so cancellation propagates"
++        )
++        captured_events.append(cancel_event)
++        signaled = cancel_event.wait(timeout=10.0)
++        return {
++            "skill": skill_name,
++            "success": not signaled,
++            "exit_code": 137 if signaled else 0,
++            "output_dir": str(out_dir),
++            "files": [],
++            "stdout": "",
++            "stderr": "cancelled" if signaled else "",
++            "duration_seconds": 0.1,
++            "method": None,
++            "readme_path": "",
++            "notebook_path": "",
++        }
++
++    monkeypatch.setattr(runner_module, "run_skill", fake_run_skill)
++
++    async def driver() -> None:
++        task = asyncio.create_task(
++            core._run_skill_via_shared_runner(
++                skill_key="literature",
++                input_path=None,
++                session_path=None,
++                mode="demo",
++                out_dir=out_dir,
++            )
++        )
++        # Wait until the worker thread actually entered run_skill.
++        for _ in range(50):
++            if captured_events:
++                break
++            await asyncio.sleep(0.02)
++        task.cancel()
++        try:
++            await task
++        except asyncio.CancelledError:
++            pass
++
++    asyncio.run(driver())
++
++    assert captured_events, "fake_run_skill was never invoked"
++    assert captured_events[0].is_set(), (
++        "cancel_event was not set when the bot adapter's task was cancelled — "
++        "the worker thread / subprocess would leak"
++    )
+diff --git a/tests/test_execution_default_executor.py b/tests/test_execution_default_executor.py
+index 31581187..f99dd777 100644
+--- a/tests/test_execution_default_executor.py
++++ b/tests/test_execution_default_executor.py
+@@ -131,6 +131,7 @@ def test_jobs_router_default_executor_is_skill_runner_executor() -> None:
+ 
+ def test_skill_runner_executor_maps_job_context_to_run_skill(monkeypatch, tmp_path: Path) -> None:
+     import asyncio
++    import threading
+ 
+     from omicsclaw.execution.executors import JobOutcome
+     from omicsclaw.execution.executors.default import SkillRunnerExecutor
+@@ -163,6 +164,10 @@ def fake_run_skill(skill, **kwargs):
+     assert outcome.error is None
+     assert "runner-ok" in outcome.stdout_text
+     assert ctx.stdout_log.read_text(encoding="utf-8") == "runner-ok"
++
++    cancel_event = captured.pop("cancel_event")
++    assert isinstance(cancel_event, threading.Event)
++    assert not cancel_event.is_set()
+     assert captured == {
+         "skill": "literature",
+         "input_path": None,
+@@ -172,3 +177,78 @@ def fake_run_skill(skill, **kwargs):
+         "session_path": None,
+         "extra_args": ["--method", "metadata-extraction"],
+     }
++
++
++def test_skill_runner_executor_sets_cancel_event_on_asyncio_cancel(monkeypatch, tmp_path: Path) -> None:
++    """If the asyncio task running the executor is cancelled, the executor must
++    forward that cancellation to the runner by setting the ``cancel_event`` it
++    passed in. Otherwise the ``run_skill`` worker thread (and its subprocess)
++    would keep running after the user disconnected."""
++    import asyncio
++    import threading
++
++    from omicsclaw.execution.executors.default import SkillRunnerExecutor
++
++    captured_events: list[threading.Event] = []
++
++    def fake_run_skill(skill, **kwargs):
++        cancel_event = kwargs["cancel_event"]
++        captured_events.append(cancel_event)
++        # Block until the executor signals cancellation, with a safety timeout.
++        signaled = cancel_event.wait(timeout=10.0)
++        return {
++            "success": not signaled,
++            "exit_code": 137 if signaled else 0,
++            "stdout": "",
++            "stderr": "cancelled" if signaled else "",
++            "output_dir": str(tmp_path / "artifacts"),
++        }
++
++    monkeypatch.setattr("omicsclaw.core.skill_runner.run_skill", fake_run_skill)
++
++    ctx = _make_ctx(tmp_path=tmp_path, skill="literature", inputs={"demo": True})
++
++    async def driver() -> None:
++        task = asyncio.create_task(SkillRunnerExecutor().run(ctx))
++        # Give the worker thread time to enter run_skill and capture the event.
++        for _ in range(50):
++            if captured_events:
++                break
++            await asyncio.sleep(0.02)
++        task.cancel()
++        try:
++            await task
++        except asyncio.CancelledError:
++            pass
++
++    asyncio.run(driver())
++
++    assert captured_events, "fake_run_skill was never invoked"
++    assert captured_events[0].is_set(), (
++        "cancel_event was not set when the executor's asyncio task was cancelled — "
++        "the underlying worker thread / subprocess would leak"
++    )
++
++
++def test_skill_runner_executor_normalizes_failed_zero_exit(monkeypatch, tmp_path: Path) -> None:
++    import asyncio
++
++    from omicsclaw.execution.executors.default import SkillRunnerExecutor
++
++    def fake_run_skill(_skill, **_kwargs):
++        return {
++            "success": False,
++            "exit_code": 0,
++            "stdout": "",
++            "stderr": "missing dependency",
++            "output_dir": str(tmp_path / "artifacts"),
++        }
++
++    monkeypatch.setattr("omicsclaw.core.skill_runner.run_skill", fake_run_skill)
++
++    ctx = _make_ctx(tmp_path=tmp_path, skill="literature", inputs={"demo": True})
++    outcome = asyncio.run(SkillRunnerExecutor().run(ctx))
++
++    assert outcome.exit_code == 1
++    assert outcome.error == "missing dependency"
++    assert ctx.stdout_log.read_text(encoding="utf-8") == "missing dependency"
+diff --git a/tests/test_output_ux.py b/tests/test_output_ux.py
+index fa872514..34123122 100644
+--- a/tests/test_output_ux.py
++++ b/tests/test_output_ux.py
+@@ -106,12 +106,16 @@ def test_run_skill_generates_readme_and_human_readable_dir(monkeypatch, tmp_path
+     )
+     monkeypatch.setattr(skill_runner, "DOMAINS", {"demo": {"name": "Demo"}})
+ 
++    import io
++
+     class FakePopen:
+         pid = 999999
+         returncode = 0
+ 
+-        def __init__(self, cmd, stdout, stderr, text, cwd, env, start_new_session):
++        def __init__(self, cmd, **kwargs):
+             self.cmd = cmd
++            self.stdout = io.StringIO("ok\n")
++            self.stderr = io.StringIO("")
+             out_dir = Path(cmd[cmd.index("--output") + 1])
+             out_dir.mkdir(parents=True, exist_ok=True)
+             (out_dir / "report.md").write_text("# Fake report\n", encoding="utf-8")
+@@ -126,9 +130,6 @@ def __init__(self, cmd, stdout, stderr, text, cwd, env, start_new_session):
+         def wait(self):
+             return self.returncode
+ 
+-        def communicate(self):
+-            return "ok\n", ""
+-
+     monkeypatch.setattr(skill_runner.subprocess, "Popen", FakePopen)
+     monkeypatch.setattr(skill_runner.time, "sleep", lambda _seconds: None)
+ 
+diff --git a/tests/test_registry_alias_contract.py b/tests/test_registry_alias_contract.py
+index 8ba28ec9..19700e87 100644
+--- a/tests/test_registry_alias_contract.py
++++ b/tests/test_registry_alias_contract.py
+@@ -84,6 +84,29 @@ def test_declared_legacy_aliases_still_resolve_to_canonical_skill_names():
+ )
+ 
+ 
++def test_alias_views_do_not_share_mutable_dict_with_canonical():
++    """Mutating a skill info dict reached through one alias must not propagate
++    to the same skill viewed through its canonical or legacy alias.
++
++    Pre-fix the registry stored the same dict object under every alias key,
++    so a future caller editing one view would silently corrupt every other.
++    """
++    registry = OmicsRegistry()
++    registry.load_all()
++
++    canonical_view = registry.skills["spatial-preprocess"]
++    legacy_view = registry.skills["preprocess"]
++
++    # Top-level replacement.
++    canonical_view["description"] = "MUTATED"
++    assert legacy_view.get("description") != "MUTATED"
++
++    # In-place mutation of a nested mutable container (set).
++    canonical_flags = canonical_view.setdefault("allowed_extra_flags", set())
++    canonical_flags.add("--injected-by-test")
++    assert "--injected-by-test" not in (legacy_view.get("allowed_extra_flags") or set())
++
++
+ def test_locked_legacy_aliases_resolve_to_canonical_names():
+     """Snapshot test: removing any of these aliases breaks existing user invocations.
+ 
+diff --git a/tests/test_skill_run_result.py b/tests/test_skill_run_result.py
+new file mode 100644
+index 00000000..e21b605e
+--- /dev/null
++++ b/tests/test_skill_run_result.py
+@@ -0,0 +1,95 @@
++from __future__ import annotations
++
++from pathlib import Path
++
++from omicsclaw.core.skill_result import build_skill_run_result, coerce_skill_run_result
++
++
++def test_skill_run_result_normalizes_failed_zero_exit_for_adapters():
++    result = coerce_skill_run_result(
++        {
++            "skill": "demo-skill",
++            "success": False,
++            "exit_code": 0,
++            "stdout": "",
++            "stderr": "missing dependency",
++        }
++    )
++
++    assert result.adapter_exit_code == 1
++    assert result.error_text(default="skill_runner_failed") == "missing dependency"
++    assert result.combined_output == "missing dependency"
++
++
++def test_skill_run_result_preserves_run_skill_legacy_dict_shape():
++    result = coerce_skill_run_result(
++        {
++            "skill": "demo-skill",
++            "success": True,
++            "exit_code": 0,
++            "output_dir": "/tmp/demo",
++            "files": ("result.json",),
++            "stdout": "ok",
++            "stderr": "",
++            "duration_seconds": 1.25,
++            "method": "demo",
++            "readme_path": "/tmp/demo/README.md",
++            "notebook_path": "/tmp/demo/reproducibility/analysis_notebook.ipynb",
++        }
++    )
++
++    assert result.to_legacy_dict() == {
++        "skill": "demo-skill",
++        "success": True,
++        "exit_code": 0,
++        "output_dir": "/tmp/demo",
++        "files": ["result.json"],
++        "stdout": "ok",
++        "stderr": "",
++        "duration_seconds": 1.25,
++        "method": "demo",
++        "readme_path": "/tmp/demo/README.md",
++        "notebook_path": "/tmp/demo/reproducibility/analysis_notebook.ipynb",
++    }
++
++
++def test_build_skill_run_result_normalizes_runner_fields_for_legacy_dict():
++    result = build_skill_run_result(
++        skill="demo-skill",
++        success=True,
++        exit_code=0,
++        output_dir=Path("/tmp/demo"),
++        files=[Path("result.json"), "report.md"],
++        stdout="ok",
++        stderr="",
++        duration_seconds=1.234,
++        method="demo",
++        readme_path=Path("/tmp/demo/README.md"),
++        notebook_path=Path("/tmp/demo/reproducibility/analysis_notebook.ipynb"),
++    )
++
++    assert result.to_legacy_dict() == {
++        "skill": "demo-skill",
++        "success": True,
++        "exit_code": 0,
++        "output_dir": "/tmp/demo",
++        "files": ["result.json", "report.md"],
++        "stdout": "ok",
++        "stderr": "",
++        "duration_seconds": 1.23,
++        "method": "demo",
++        "readme_path": "/tmp/demo/README.md",
++        "notebook_path": "/tmp/demo/reproducibility/analysis_notebook.ipynb",
++    }
++
++
++def test_build_skill_run_result_treats_single_file_string_as_one_file():
++    result = build_skill_run_result(
++        skill="demo-skill",
++        success=True,
++        exit_code=0,
++        output_dir="/tmp/demo",
++        files="result.json",
++    )
++
++    assert result.files == ("result.json",)
+diff --git a/tests/test_skill_runner_contract.py b/tests/test_skill_runner_contract.py
+index 18680de3..4eed1513 100644
+--- a/tests/test_skill_runner_contract.py
++++ b/tests/test_skill_runner_contract.py
+@@ -2,6 +2,12 @@
+ 
+ import importlib
+ import inspect
++import json
++import sys
++import textwrap
++import threading
++import time
++from pathlib import Path
+ 
+ 
+ def test_skill_runner_module_exposes_run_skill_contract():
+@@ -17,6 +23,9 @@ def test_skill_runner_module_exposes_run_skill_contract():
+         "demo",
+         "session_path",
+         "extra_args",
++        "stdout_callback",
++        "stderr_callback",
++        "cancel_event",
+     ]
+ 
+ 
+@@ -25,3 +34,241 @@ def test_root_omicsclaw_reexports_shared_run_skill():
+     runner = importlib.import_module("omicsclaw.core.skill_runner")
+ 
+     assert root.run_skill is runner.run_skill
++
++
++def test_run_skill_streams_stdout_and_stderr_lines_via_callbacks(tmp_path, monkeypatch):
++    """The runner must surface skill output line-by-line in real time so that
++    long-running deep-learning skills produce visible logs to the bot/operator
++    instead of staying silent until completion."""
++    skill_runner = importlib.import_module("omicsclaw.core.skill_runner")
++
++    fake_script = tmp_path / "fake_streamer.py"
++    fake_script.write_text(textwrap.dedent("""\
++        import argparse, json, sys, time
++        from pathlib import Path
++
++        ap = argparse.ArgumentParser()
++        ap.add_argument("--demo", action="store_true")
++        ap.add_argument("--output", required=True)
++        args = ap.parse_args()
++
++        for i in range(3):
++            print(f"epoch {i}/3", flush=True)
++            time.sleep(0.02)
++        print("warning: synthetic stderr", file=sys.stderr, flush=True)
++        print("done", flush=True)
++
++        out = Path(args.output)
++        out.mkdir(parents=True, exist_ok=True)
++        (out / "result.json").write_text(json.dumps({"summary": {"method": "fake"}}), encoding="utf-8")
++    """), encoding="utf-8")
++
++    monkeypatch.setattr(skill_runner, "DEFAULT_OUTPUT_ROOT", tmp_path)
++    monkeypatch.setattr(skill_runner, "SKILLS", {
++        "fake-streamer": {
++            "script": fake_script,
++            "domain": "demo",
++            "demo_args": ["--demo"],
++            "allowed_extra_flags": set(),
++            "description": "Streaming test skill",
++        }
++    })
++    monkeypatch.setattr(skill_runner, "DOMAINS", {"demo": {"name": "Demo"}})
++
++    stdout_lines: list[str] = []
++    stderr_lines: list[str] = []
++
++    result = skill_runner.run_skill(
++        "fake-streamer",
++        demo=True,
++        output_dir=str(tmp_path / "out"),
++        stdout_callback=stdout_lines.append,
++        stderr_callback=stderr_lines.append,
++    )
++
++    assert result["success"] is True, result.get("stderr")
++    assert stdout_lines == ["epoch 0/3", "epoch 1/3", "epoch 2/3", "done"]
++    assert stderr_lines == ["warning: synthetic stderr"]
++    # Aggregated stdout/stderr fields must still contain the same content.
++    for line in stdout_lines:
++        assert line in result["stdout"]
++    assert "warning: synthetic stderr" in result["stderr"]
++
++
++def test_run_skill_callback_exception_does_not_break_run(tmp_path, monkeypatch):
++    """A buggy stdout/stderr callback must not abort the skill — the runner
++    swallows callback errors so the underlying analysis still completes."""
++    skill_runner = importlib.import_module("omicsclaw.core.skill_runner")
++
++    fake_script = tmp_path / "fake_one_line.py"
++    fake_script.write_text(textwrap.dedent("""\
++        import argparse, json
++        from pathlib import Path
++
++        ap = argparse.ArgumentParser()
++        ap.add_argument("--demo", action="store_true")
++        ap.add_argument("--output", required=True)
++        args = ap.parse_args()
++
++        print("hello")
++        Path(args.output).mkdir(parents=True, exist_ok=True)
++        (Path(args.output) / "result.json").write_text(json.dumps({"summary": {}}), encoding="utf-8")
++    """), encoding="utf-8")
++
++    monkeypatch.setattr(skill_runner, "DEFAULT_OUTPUT_ROOT", tmp_path)
++    monkeypatch.setattr(skill_runner, "SKILLS", {
++        "fake-one-line": {
++            "script": fake_script,
++            "domain": "demo",
++            "demo_args": ["--demo"],
++            "allowed_extra_flags": set(),
++            "description": "One-line test skill",
++        }
++    })
++    monkeypatch.setattr(skill_runner, "DOMAINS", {"demo": {"name": "Demo"}})
++
++    def boom(_line: str) -> None:
++        raise RuntimeError("callback exploded")
++
++    result = skill_runner.run_skill(
++        "fake-one-line",
++        demo=True,
++        output_dir=str(tmp_path / "out"),
++        stdout_callback=boom,
++    )
++    assert result["success"] is True
++    assert "hello" in result["stdout"]
++
++
++def test_run_skill_cancel_event_kills_long_running_subprocess(tmp_path, monkeypatch):
++    """Setting ``cancel_event`` while a skill is running must terminate the
++    child subprocess (and its process group) and return promptly.
++
++    Pre-fix the runner's ``popen.wait()`` would not wake up for asyncio
++    cancellation, so jobs cancelled by the FastAPI router would leak
++    children that kept consuming CPU/GPU until they finished naturally.
++    """
++    skill_runner = importlib.import_module("omicsclaw.core.skill_runner")
++
++    fake_script = tmp_path / "fake_long.py"
++    fake_script.write_text(textwrap.dedent("""\
++        import argparse, time
++        ap = argparse.ArgumentParser()
++        ap.add_argument("--demo", action="store_true")
++        ap.add_argument("--output", required=True)
++        args = ap.parse_args()
++        for i in range(60):
++            print(f"working {i}", flush=True)
++            time.sleep(0.5)
++    """), encoding="utf-8")
++
++    monkeypatch.setattr(skill_runner, "DEFAULT_OUTPUT_ROOT", tmp_path)
++    monkeypatch.setattr(skill_runner, "SKILLS", {
++        "fake-long": {
++            "script": fake_script,
++            "domain": "demo",
++            "demo_args": ["--demo"],
++            "allowed_extra_flags": set(),
++            "description": "Long-running test skill",
++        }
++    })
++    monkeypatch.setattr(skill_runner, "DOMAINS", {"demo": {"name": "Demo"}})
++
++    cancel_event = threading.Event()
++
++    def _trigger_cancel_after_startup() -> None:
++        # Wait for the child to actually start producing output before cancelling
++        # so we exercise the real "kill while busy" path, not "kill before start".
++        time.sleep(1.0)
++        cancel_event.set()
++
++    threading.Thread(target=_trigger_cancel_after_startup, daemon=True).start()
++
++    started_at = time.time()
++    result = skill_runner.run_skill(
++        "fake-long",
++        demo=True,
++        output_dir=str(tmp_path / "long_out"),
++        cancel_event=cancel_event,
++    )
++    elapsed = time.time() - started_at
++
++    # Without cancellation the fake script would run for ~30s. Cancellation
++    # must interrupt within a few seconds (1s pre-cancel + grace + cleanup).
++    assert elapsed < 10, f"cancel did not interrupt; ran for {elapsed:.1f}s"
++    assert result["success"] is False
++    assert result["exit_code"] != 0
++
++
++def test_run_skill_cancellation_with_partial_result_json_is_not_reported_as_success(
++    tmp_path, monkeypatch
++):
++    """A skill that wrote ``result.json`` early then was SIGKILL'd via
++    ``cancel_event`` must NOT be silently reclassified as success.
++
++    Pre-fix, the runner mapped any ``returncode == -9`` to ``0`` whenever
++    ``result.json`` existed (originally a workaround for the orphan reaper's
++    SIGKILL race). After we wired ``cancel_event`` through SIGTERM/SIGKILL,
++    ``-9`` also became the *normal* outcome of cancellation — so cancelled
++    runs that happened to leave a partial ``result.json`` were silently
++    reported as ``success=True``.
++    """
++    skill_runner = importlib.import_module("omicsclaw.core.skill_runner")
++
++    fake_script = tmp_path / "fake_partial_then_sleep.py"
++    fake_script.write_text(textwrap.dedent("""\
++        import argparse, json, signal, time
++        from pathlib import Path
++        # Ignore SIGTERM so the runner has to escalate to SIGKILL (-9), which is
++        # exactly the path that used to trip the "-9 + result.json → success"
++        # heuristic.
++        signal.signal(signal.SIGTERM, signal.SIG_IGN)
++        ap = argparse.ArgumentParser()
++        ap.add_argument("--demo", action="store_true")
++        ap.add_argument("--output", required=True)
++        args = ap.parse_args()
++        out = Path(args.output)
++        out.mkdir(parents=True, exist_ok=True)
++        (out / "result.json").write_text(
++            json.dumps({"summary": {"method": "fake", "partial": True}}),
++            encoding="utf-8",
++        )
++        print("partial-result-written", flush=True)
++        for _ in range(60):
++            time.sleep(0.5)
++    """), encoding="utf-8")
++
++    monkeypatch.setattr(skill_runner, "DEFAULT_OUTPUT_ROOT", tmp_path)
++    monkeypatch.setattr(skill_runner, "SKILLS", {
++        "fake-partial": {
++            "script": fake_script,
++            "domain": "demo",
++            "demo_args": ["--demo"],
++            "allowed_extra_flags": set(),
++            "description": "Partial-then-sleep test skill",
++        }
++    })
++    monkeypatch.setattr(skill_runner, "DOMAINS", {"demo": {"name": "Demo"}})
++
++    cancel_event = threading.Event()
++
++    def _trigger_cancel_after_partial_write() -> None:
++        # Give the child time to write result.json before cancelling.
++        time.sleep(1.0)
++        cancel_event.set()
++
++    threading.Thread(target=_trigger_cancel_after_partial_write, daemon=True).start()
++
++    result = skill_runner.run_skill(
++        "fake-partial",
++        demo=True,
++        output_dir=str(tmp_path / "partial_out"),
++        cancel_event=cancel_event,
++    )
++
++    # The partial result.json was on disk when SIGKILL fired, which used to
++    # trip the -9 → 0 heuristic. Cancellation must override the heuristic.
++    assert result["success"] is False, (
++        "cancelled run with partial result.json must NOT be reported as success"
++    )
++    assert result["exit_code"] != 0

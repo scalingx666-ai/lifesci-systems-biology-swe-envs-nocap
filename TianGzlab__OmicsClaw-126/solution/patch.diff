@@ -1,0 +1,1100 @@
+diff --git a/omicsclaw/memory/database.py b/omicsclaw/memory/database.py
+index 2e611cd3..3ad70bd0 100644
+--- a/omicsclaw/memory/database.py
++++ b/omicsclaw/memory/database.py
+@@ -136,6 +136,11 @@ def check_initialized(connection):
+                 if not is_initialized:
+                     await conn.run_sync(Base.metadata.create_all)
+ 
++            # Run any pending schema migrations after the base schema exists.
++            # Imported lazily to avoid a circular import at module load time.
++            from omicsclaw.memory.migrations import run_pending
++            await run_pending(self)
++
+             # Ensure the root node exists (all edges reference it as parent)
+             await self._ensure_root_node()
+ 
+diff --git a/omicsclaw/memory/migrations/001_namespace.py b/omicsclaw/memory/migrations/001_namespace.py
+new file mode 100644
+index 00000000..531c8b5a
+--- /dev/null
++++ b/omicsclaw/memory/migrations/001_namespace.py
+@@ -0,0 +1,167 @@
++"""001_namespace: Add namespace partition to paths, search_documents, glossary_keywords.
++
++Idempotent — checks for the namespace column on ``paths`` before doing any
++work. Backfills namespace from the ``disclosure`` field of session and memory
++records (best-effort; rows without parseable disclosure stay at ``__shared__``).
++"""
++
++from __future__ import annotations
++
++import re
++from typing import TYPE_CHECKING
++
++import sqlalchemy as sa
++
++if TYPE_CHECKING:
++    from omicsclaw.memory.database import DatabaseManager
++
++VERSION = "001_namespace"
++DESCRIPTION = "Add namespace partition to paths, search_documents, glossary_keywords"
++
++# Disclosure formats produced by compat.py:
++#   "Memory from session <platform>:<user_id>:<session_uuid>"
++#   "Session for user <user_id> on <platform>"
++_DISCLOSURE_MEMORY_RE = re.compile(r"Memory from session (\S+?):(\S+?):")
++_DISCLOSURE_SESSION_RE = re.compile(r"Session for user (\S+) on (\S+)")
++
++
++async def _column_exists(s, table: str, column: str) -> bool:
++    result = await s.execute(sa.text(f"PRAGMA table_info({table})"))
++    return any(row[1] == column for row in result.all())
++
++
++def _parse_disclosure_namespace(disclosure: str | None) -> str | None:
++    """Extract ``f"{platform}/{user_id}"`` from a disclosure string, if possible."""
++    if not disclosure:
++        return None
++    m = _DISCLOSURE_MEMORY_RE.search(disclosure)
++    if m:
++        platform, user_id = m.group(1), m.group(2)
++        return f"{platform}/{user_id}"
++    m = _DISCLOSURE_SESSION_RE.search(disclosure)
++    if m:
++        user_id, platform = m.group(1), m.group(2)
++        return f"{platform}/{user_id}"
++    return None
++
++
++async def _backfill_namespace_from_disclosure(s) -> None:
++    """Update ``namespace`` on paths + search_documents based on disclosure data."""
++    result = await s.execute(
++        sa.text(
++            "SELECT domain, path, disclosure FROM search_documents "
++            "WHERE disclosure IS NOT NULL"
++        )
++    )
++    for domain, path, disclosure in result.all():
++        ns = _parse_disclosure_namespace(disclosure)
++        if not ns:
++            continue
++        await s.execute(
++            sa.text(
++                "UPDATE paths SET namespace = :ns "
++                "WHERE namespace = '__shared__' AND domain = :d AND path = :p"
++            ),
++            {"ns": ns, "d": domain, "p": path},
++        )
++        await s.execute(
++            sa.text(
++                "UPDATE search_documents SET namespace = :ns "
++                "WHERE namespace = '__shared__' AND domain = :d AND path = :p"
++            ),
++            {"ns": ns, "d": domain, "p": path},
++        )
++
++
++async def apply(db: "DatabaseManager") -> None:
++    async with db.session() as s:
++        # Idempotent guard — column already added means migration has been applied.
++        if await _column_exists(s, "paths", "namespace"):
++            return
++
++        # 1. Rebuild paths with composite PK (namespace, domain, path)
++        await s.execute(sa.text("""
++            CREATE TABLE paths_new (
++                namespace  VARCHAR(128) NOT NULL DEFAULT '__shared__',
++                domain     VARCHAR(64)  NOT NULL DEFAULT 'core',
++                path       VARCHAR(512) NOT NULL,
++                edge_id    INTEGER REFERENCES edges(id),
++                created_at DATETIME,
++                PRIMARY KEY (namespace, domain, path)
++            )
++        """))
++        await s.execute(sa.text("""
++            INSERT INTO paths_new (namespace, domain, path, edge_id, created_at)
++            SELECT '__shared__', domain, path, edge_id, created_at FROM paths
++        """))
++        await s.execute(sa.text("DROP TABLE paths"))
++        await s.execute(sa.text("ALTER TABLE paths_new RENAME TO paths"))
++
++        # 2. Rebuild search_documents with composite PK
++        await s.execute(sa.text("""
++            CREATE TABLE search_documents_new (
++                namespace    VARCHAR(128) NOT NULL DEFAULT '__shared__',
++                domain       VARCHAR(64)  NOT NULL DEFAULT 'core',
++                path         VARCHAR(512) NOT NULL,
++                node_uuid    VARCHAR(36)  NOT NULL REFERENCES nodes(uuid) ON DELETE CASCADE,
++                memory_id    INTEGER      NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
++                uri          TEXT         NOT NULL,
++                content      TEXT         NOT NULL,
++                disclosure   TEXT,
++                search_terms TEXT         NOT NULL DEFAULT '',
++                priority     INTEGER      NOT NULL DEFAULT 0,
++                updated_at   DATETIME,
++                PRIMARY KEY (namespace, domain, path)
++            )
++        """))
++        await s.execute(sa.text("""
++            INSERT INTO search_documents_new
++                (namespace, domain, path, node_uuid, memory_id, uri,
++                 content, disclosure, search_terms, priority, updated_at)
++            SELECT '__shared__', domain, path, node_uuid, memory_id, uri,
++                   content, disclosure, search_terms, priority, updated_at
++            FROM search_documents
++        """))
++        await s.execute(sa.text("DROP TABLE search_documents"))
++        await s.execute(sa.text("ALTER TABLE search_documents_new RENAME TO search_documents"))
++
++        # 3. Rebuild glossary_keywords with namespace + new UNIQUE constraint
++        await s.execute(sa.text("""
++            CREATE TABLE glossary_keywords_new (
++                id         INTEGER PRIMARY KEY AUTOINCREMENT,
++                keyword    TEXT         NOT NULL,
++                node_uuid  VARCHAR(36)  NOT NULL REFERENCES nodes(uuid) ON DELETE CASCADE,
++                namespace  VARCHAR(128) NOT NULL DEFAULT '__shared__',
++                created_at DATETIME,
++                UNIQUE (namespace, keyword, node_uuid)
++            )
++        """))
++        await s.execute(sa.text("""
++            INSERT INTO glossary_keywords_new (id, keyword, node_uuid, namespace, created_at)
++            SELECT id, keyword, node_uuid, '__shared__', created_at FROM glossary_keywords
++        """))
++        await s.execute(sa.text("DROP TABLE glossary_keywords"))
++        await s.execute(sa.text("ALTER TABLE glossary_keywords_new RENAME TO glossary_keywords"))
++
++        # 4. Best-effort namespace backfill from disclosure metadata
++        await _backfill_namespace_from_disclosure(s)
++
++        # 5. Rebuild FTS5 virtual table with namespace column, repopulate from search_documents
++        await s.execute(sa.text("DROP TABLE IF EXISTS search_documents_fts"))
++        await s.execute(sa.text("""
++            CREATE VIRTUAL TABLE search_documents_fts USING fts5(
++                namespace, domain, path, node_uuid, uri, content,
++                disclosure, search_terms,
++                content=search_documents,
++                content_rowid=rowid
++            )
++        """))
++        await s.execute(sa.text("""
++            INSERT INTO search_documents_fts (
++                rowid, namespace, domain, path, node_uuid, uri,
++                content, disclosure, search_terms
++            )
++            SELECT rowid, namespace, domain, path, node_uuid, uri,
++                   content, disclosure, search_terms
++            FROM search_documents
++        """))
+diff --git a/omicsclaw/memory/migrations/__init__.py b/omicsclaw/memory/migrations/__init__.py
+new file mode 100644
+index 00000000..558b3733
+--- /dev/null
++++ b/omicsclaw/memory/migrations/__init__.py
+@@ -0,0 +1,11 @@
++"""Lightweight migrations framework for OmicsClaw memory schema.
++
++Each migration is a module exposing module-level ``VERSION`` (str),
++``DESCRIPTION`` (str), and ``async def apply(db: DatabaseManager) -> None``.
++The runner discovers them, applies pending ones in version-sorted order,
++and records applications in the ``_schema_version`` table.
++"""
++
++from omicsclaw.memory.migrations.runner import run_pending
++
++__all__ = ["run_pending"]
+diff --git a/omicsclaw/memory/migrations/runner.py b/omicsclaw/memory/migrations/runner.py
+new file mode 100644
+index 00000000..e2a9765c
+--- /dev/null
++++ b/omicsclaw/memory/migrations/runner.py
+@@ -0,0 +1,93 @@
++"""Lightweight migrations runner — see omicsclaw/memory/migrations/__init__.py."""
++
++from __future__ import annotations
++
++import importlib
++import pkgutil
++from datetime import datetime, timezone
++from typing import TYPE_CHECKING, Iterable, Protocol
++
++import sqlalchemy as sa
++
++if TYPE_CHECKING:
++    from omicsclaw.memory.database import DatabaseManager
++
++_DEFAULT_MIGRATIONS_PACKAGE = "omicsclaw.memory.migrations"
++
++
++class Migration(Protocol):
++    VERSION: str
++    DESCRIPTION: str
++
++    async def apply(self, db: "DatabaseManager") -> None: ...
++
++
++_SCHEMA_VERSION_DDL = sa.text(
++    "CREATE TABLE IF NOT EXISTS _schema_version ("
++    "  version TEXT PRIMARY KEY,"
++    "  applied_at TEXT NOT NULL"
++    ")"
++)
++
++
++async def _ensure_schema_version_table(db: "DatabaseManager") -> None:
++    async with db.session() as s:
++        await s.execute(_SCHEMA_VERSION_DDL)
++
++
++async def _get_applied_versions(db: "DatabaseManager") -> set[str]:
++    async with db.session() as s:
++        result = await s.execute(sa.text("SELECT version FROM _schema_version"))
++        return {row[0] for row in result.all()}
++
++
++async def _record_applied(db: "DatabaseManager", version: str) -> None:
++    async with db.session() as s:
++        await s.execute(
++            sa.text(
++                "INSERT INTO _schema_version (version, applied_at) "
++                "VALUES (:v, :t)"
++            ),
++            {"v": version, "t": datetime.now(timezone.utc).isoformat()},
++        )
++
++
++def _discover_migrations(package: str = _DEFAULT_MIGRATIONS_PACKAGE) -> list[Migration]:
++    """Import every NNN_*.py module in ``package`` and return them as migrations."""
++    pkg = importlib.import_module(package)
++    found: list[Migration] = []
++    for info in pkgutil.iter_modules(pkg.__path__):
++        if not info.name[:1].isdigit():
++            continue
++        mod = importlib.import_module(f"{package}.{info.name}")
++        if all(hasattr(mod, attr) for attr in ("VERSION", "DESCRIPTION", "apply")):
++            found.append(mod)  # type: ignore[arg-type]
++    return found
++
++
++async def run_pending(
++    db: "DatabaseManager",
++    *,
++    migrations: Iterable[Migration] | None = None,
++) -> list[str]:
++    """Apply pending migrations in version-sorted order. Returns versions applied.
++
++    If ``migrations`` is None, discovers them from
++    ``omicsclaw.memory.migrations`` (numbered modules: ``001_*.py``).
++    """
++    if migrations is None:
++        migrations = _discover_migrations()
++
++    await _ensure_schema_version_table(db)
++    applied = await _get_applied_versions(db)
++
++    pending = [m for m in migrations if m.VERSION not in applied]
++    pending.sort(key=lambda m: m.VERSION)
++
++    versions_applied: list[str] = []
++    for m in pending:
++        await m.apply(db)
++        await _record_applied(db, m.VERSION)
++        versions_applied.append(m.VERSION)
++
++    return versions_applied
+diff --git a/scripts/migrate_dry_run.py b/scripts/migrate_dry_run.py
+new file mode 100644
+index 00000000..77da9c23
+--- /dev/null
++++ b/scripts/migrate_dry_run.py
+@@ -0,0 +1,154 @@
++"""Dry-run for OmicsClaw memory schema migrations.
++
++Copies a memory.db to a temp location and runs all pending migrations against
++the copy, printing a diff (table row counts before/after, namespace
++distribution after, count of disclosures we couldn't parse). Exit code 0
++only if the migration ran cleanly and row counts are preserved.
++
++The original memory.db is never touched.
++
++Usage:
++
++    python scripts/migrate_dry_run.py
++        # Defaults to ~/.config/omicsclaw/memory.db
++
++    python scripts/migrate_dry_run.py --db-path /path/to/memory.db
++
++Recommended workflow before deploying a new migration:
++
++    1. cp ~/.config/omicsclaw/memory.db ~/.config/omicsclaw/memory.db.pre-NNN.bak
++    2. python scripts/migrate_dry_run.py
++    3. Inspect output; rollback recipe is `cp memory.db.pre-NNN.bak memory.db`
++"""
++
++from __future__ import annotations
++
++import argparse
++import asyncio
++import shutil
++import sys
++import tempfile
++from pathlib import Path
++
++import sqlalchemy as sa
++
++
++_TABLES = ("nodes", "memories", "edges", "paths", "search_documents", "glossary_keywords")
++
++
++async def _row_counts(db) -> dict[str, int]:
++    counts: dict[str, int] = {}
++    async with db.session() as s:
++        for table in _TABLES:
++            try:
++                result = await s.execute(sa.text(f"SELECT COUNT(*) FROM {table}"))
++                counts[table] = result.scalar_one()
++            except Exception as e:
++                counts[table] = -1  # table missing in this state
++    return counts
++
++
++async def _namespace_distribution(db) -> dict[str, int]:
++    """After migration, count rows per namespace across paths."""
++    async with db.session() as s:
++        result = await s.execute(
++            sa.text(
++                "SELECT namespace, COUNT(*) FROM paths GROUP BY namespace ORDER BY 2 DESC"
++            )
++        )
++        return {row[0]: row[1] for row in result.all()}
++
++
++async def _unparseable_disclosures(db) -> int:
++    """Count search_documents rows that have a non-empty disclosure but
++    still ended up in __shared__ (likely unparseable)."""
++    async with db.session() as s:
++        result = await s.execute(
++            sa.text(
++                "SELECT COUNT(*) FROM search_documents "
++                "WHERE namespace = '__shared__' "
++                "AND disclosure IS NOT NULL "
++                "AND TRIM(disclosure) <> ''"
++            )
++        )
++        return result.scalar_one()
++
++
++async def main_async(db_path: Path) -> int:
++    if not db_path.exists():
++        print(f"ERROR: source DB not found at {db_path}", file=sys.stderr)
++        return 2
++
++    # Copy to a temp file so the original is untouched
++    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
++        copy_path = Path(tmp.name)
++    shutil.copy2(db_path, copy_path)
++    print(f"Copied {db_path} -> {copy_path}")
++    print(f"Source size:  {db_path.stat().st_size:,} bytes")
++
++    # Defer DatabaseManager import so the script remains usable even with a
++    # partial install; if memory deps are missing it will surface here.
++    from omicsclaw.memory.database import DatabaseManager
++
++    url = f"sqlite+aiosqlite:///{copy_path}"
++    db = DatabaseManager(url)
++    try:
++        before = await _row_counts(db)
++        print(f"\nRow counts BEFORE migration:")
++        for tbl, n in before.items():
++            print(f"  {tbl:24s} {n:>8d}")
++
++        # init_db runs all pending migrations via the runner
++        await db.init_db()
++
++        after = await _row_counts(db)
++        print(f"\nRow counts AFTER migration:")
++        for tbl, n in after.items():
++            change = "" if before[tbl] == after[tbl] else f"  ← was {before[tbl]}"
++            print(f"  {tbl:24s} {n:>8d}{change}")
++
++        ns_dist = await _namespace_distribution(db)
++        print(f"\nNamespace distribution (paths) after migration:")
++        for ns, n in ns_dist.items():
++            print(f"  {ns:32s} {n:>8d}")
++
++        unparseable = await _unparseable_disclosures(db)
++        print(f"\nUnparseable disclosures: {unparseable}")
++
++        # Assertions
++        ok = True
++        for tbl in _TABLES:
++            if before[tbl] >= 0 and before[tbl] != after[tbl]:
++                print(
++                    f"\n❌ Row count changed for {tbl}: {before[tbl]} -> {after[tbl]}",
++                    file=sys.stderr,
++                )
++                ok = False
++
++        if ok:
++            print("\n✅ Migration applied cleanly. Row counts preserved.")
++            return 0
++        return 1
++    finally:
++        await db.close()
++        try:
++            copy_path.unlink()
++        except OSError:
++            pass
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser(description=__doc__.strip().splitlines()[0])
++    default = Path.home() / ".config" / "omicsclaw" / "memory.db"
++    parser.add_argument(
++        "--db-path",
++        type=Path,
++        default=default,
++        help=f"Path to source memory.db (default: {default})",
++    )
++    args = parser.parse_args()
++    return asyncio.run(main_async(args.db_path))
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/tests/memory/test_init_db_runs_migrations.py b/tests/memory/test_init_db_runs_migrations.py
+new file mode 100644
+index 00000000..6cc19298
+--- /dev/null
++++ b/tests/memory/test_init_db_runs_migrations.py
+@@ -0,0 +1,45 @@
++"""Tests that DatabaseManager.init_db() invokes the migrations runner."""
++
++import pytest
++import sqlalchemy as sa
++
++from omicsclaw.memory.database import DatabaseManager
++
++
++@pytest.mark.asyncio
++async def test_init_db_creates_schema_version_table(tmp_path):
++    db = DatabaseManager(f"sqlite+aiosqlite:///{tmp_path}/t.db")
++    try:
++        await db.init_db()
++
++        async with db.session() as s:
++            result = await s.execute(
++                sa.text(
++                    "SELECT name FROM sqlite_master "
++                    "WHERE type='table' AND name='_schema_version'"
++                )
++            )
++            assert result.scalar_one_or_none() == "_schema_version"
++    finally:
++        await db.close()
++
++
++@pytest.mark.asyncio
++async def test_init_db_is_idempotent(tmp_path):
++    db = DatabaseManager(f"sqlite+aiosqlite:///{tmp_path}/t.db")
++    try:
++        await db.init_db()
++
++        # Capture version count after first init
++        async with db.session() as s:
++            result = await s.execute(sa.text("SELECT COUNT(*) FROM _schema_version"))
++            count_after_first = result.scalar_one()
++
++        # Second init must not raise and must not re-apply anything
++        await db.init_db()
++
++        async with db.session() as s:
++            result = await s.execute(sa.text("SELECT COUNT(*) FROM _schema_version"))
++            assert result.scalar_one() == count_after_first
++    finally:
++        await db.close()
+diff --git a/tests/memory/test_migration_001_namespace.py b/tests/memory/test_migration_001_namespace.py
+new file mode 100644
+index 00000000..7d67cf33
+--- /dev/null
++++ b/tests/memory/test_migration_001_namespace.py
+@@ -0,0 +1,421 @@
++"""Tests for migration 001_namespace — schema rebuild + disclosure backfill."""
++
++import importlib
++
++import pytest
++import sqlalchemy as sa
++
++from omicsclaw.memory.database import DatabaseManager
++from omicsclaw.memory.models import Base
++
++
++def _load_001():
++    return importlib.import_module("omicsclaw.memory.migrations.001_namespace")
++
++
++async def _build_legacy_schema(db: DatabaseManager) -> None:
++    """Create the pre-001 schema (current ORM models — no namespace column)."""
++    async with db.engine.begin() as conn:
++        await conn.run_sync(Base.metadata.create_all)
++
++
++async def _pk_columns_in_order(s, table: str) -> list[str]:
++    result = await s.execute(sa.text(f"PRAGMA table_info({table})"))
++    rows = [(row[1], row[5]) for row in result.all() if row[5] > 0]
++    rows.sort(key=lambda x: x[1])
++    return [name for name, _ in rows]
++
++
++@pytest.mark.asyncio
++async def test_001_adds_namespace_column_to_paths(tmp_path):
++    db = DatabaseManager(f"sqlite+aiosqlite:///{tmp_path}/t.db")
++    try:
++        await _build_legacy_schema(db)
++
++        mig = _load_001()
++        await mig.apply(db)
++
++        async with db.session() as s:
++            result = await s.execute(sa.text("PRAGMA table_info(paths)"))
++            cols = [row[1] for row in result.all()]
++            assert "namespace" in cols
++    finally:
++        await db.close()
++
++
++@pytest.mark.asyncio
++async def test_001_paths_pk_is_namespace_domain_path(tmp_path):
++    db = DatabaseManager(f"sqlite+aiosqlite:///{tmp_path}/t.db")
++    try:
++        await _build_legacy_schema(db)
++
++        mig = _load_001()
++        await mig.apply(db)
++
++        async with db.session() as s:
++            assert await _pk_columns_in_order(s, "paths") == ["namespace", "domain", "path"]
++    finally:
++        await db.close()
++
++
++@pytest.mark.asyncio
++async def test_001_search_documents_pk_is_namespace_domain_path(tmp_path):
++    db = DatabaseManager(f"sqlite+aiosqlite:///{tmp_path}/t.db")
++    try:
++        await _build_legacy_schema(db)
++
++        mig = _load_001()
++        await mig.apply(db)
++
++        async with db.session() as s:
++            assert await _pk_columns_in_order(s, "search_documents") == [
++                "namespace",
++                "domain",
++                "path",
++            ]
++            result = await s.execute(sa.text("PRAGMA table_info(search_documents)"))
++            cols = [row[1] for row in result.all()]
++            assert "namespace" in cols
++    finally:
++        await db.close()
++
++
++@pytest.mark.asyncio
++async def test_001_is_idempotent(tmp_path):
++    db = DatabaseManager(f"sqlite+aiosqlite:///{tmp_path}/t.db")
++    try:
++        await _build_legacy_schema(db)
++
++        mig = _load_001()
++        await mig.apply(db)
++        await mig.apply(db)  # second invocation must not raise or duplicate work
++
++        async with db.session() as s:
++            result = await s.execute(sa.text("PRAGMA table_info(paths)"))
++            cols = [row[1] for row in result.all()]
++            assert cols.count("namespace") == 1
++            assert await _pk_columns_in_order(s, "paths") == [
++                "namespace",
++                "domain",
++                "path",
++            ]
++    finally:
++        await db.close()
++
++
++@pytest.mark.asyncio
++async def test_001_idempotent_does_not_reset_post_migration_namespaces(tmp_path):
++    """Re-running 001 must preserve any namespace edits already applied."""
++    db = DatabaseManager(f"sqlite+aiosqlite:///{tmp_path}/t.db")
++    try:
++        await _build_legacy_schema(db)
++
++        # Seed a single legacy path
++        async with db.session() as s:
++            await s.execute(sa.text("INSERT INTO nodes (uuid) VALUES ('n1')"))
++            await s.execute(
++                sa.text(
++                    "INSERT INTO edges (id, parent_uuid, child_uuid, name) "
++                    "VALUES (1, 'n1', 'n1', 'test')"
++                )
++            )
++            await s.execute(
++                sa.text(
++                    "INSERT INTO paths (domain, path, edge_id) "
++                    "VALUES ('core', 'foo', 1)"
++                )
++            )
++
++        mig = _load_001()
++        await mig.apply(db)
++
++        # Caller updates namespace after migration
++        async with db.session() as s:
++            await s.execute(
++                sa.text(
++                    "UPDATE paths SET namespace='tg/userA' "
++                    "WHERE domain='core' AND path='foo'"
++                )
++            )
++
++        # Re-running the migration must NOT reset that namespace
++        await mig.apply(db)
++
++        async with db.session() as s:
++            result = await s.execute(
++                sa.text(
++                    "SELECT namespace FROM paths "
++                    "WHERE domain='core' AND path='foo'"
++                )
++            )
++            assert result.scalar_one() == "tg/userA"
++    finally:
++        await db.close()
++
++
++async def _build_legacy_schema_with_fts(db: DatabaseManager) -> None:
++    """Legacy schema + the legacy FTS5 virtual table (no namespace col)."""
++    await _build_legacy_schema(db)
++    async with db.session() as s:
++        await s.execute(sa.text("""
++            CREATE VIRTUAL TABLE search_documents_fts USING fts5(
++                domain, path, node_uuid, uri, content, disclosure, search_terms,
++                content=search_documents,
++                content_rowid=rowid
++            )
++        """))
++
++
++@pytest.mark.asyncio
++async def test_001_rebuilds_fts5_with_namespace_column(tmp_path):
++    db = DatabaseManager(f"sqlite+aiosqlite:///{tmp_path}/t.db")
++    try:
++        await _build_legacy_schema_with_fts(db)
++
++        mig = _load_001()
++        await mig.apply(db)
++
++        async with db.session() as s:
++            # If namespace is a column on the FTS table, this query parses.
++            await s.execute(sa.text("SELECT namespace FROM search_documents_fts LIMIT 0"))
++    finally:
++        await db.close()
++
++
++async def _seed_path_with_disclosure(
++    db: DatabaseManager,
++    *,
++    domain: str,
++    path: str,
++    disclosure: str,
++) -> None:
++    """Seed nodes/edges/paths/memories/search_documents for one path row."""
++    async with db.session() as s:
++        await s.execute(sa.text("INSERT OR IGNORE INTO nodes (uuid) VALUES ('n1')"))
++        await s.execute(
++            sa.text(
++                "INSERT OR IGNORE INTO edges (id, parent_uuid, child_uuid, name) "
++                "VALUES (1, 'n1', 'n1', 'seed')"
++            )
++        )
++        await s.execute(
++            sa.text(
++                "INSERT INTO paths (domain, path, edge_id) "
++                "VALUES (:d, :p, 1)"
++            ),
++            {"d": domain, "p": path},
++        )
++        await s.execute(
++            sa.text(
++                "INSERT INTO memories (node_uuid, content) "
++                "VALUES ('n1', 'test-content')"
++            )
++        )
++        result = await s.execute(sa.text("SELECT last_insert_rowid()"))
++        memory_id = result.scalar_one()
++        await s.execute(
++            sa.text(
++                "INSERT INTO search_documents "
++                "(domain, path, node_uuid, memory_id, uri, content, "
++                "disclosure, search_terms, priority) "
++                "VALUES (:d, :p, 'n1', :mid, :uri, 'test-content', :disc, :st, 0)"
++            ),
++            {
++                "d": domain,
++                "p": path,
++                "mid": memory_id,
++                "uri": f"{domain}://{path}",
++                "disc": disclosure,
++                "st": path,
++            },
++        )
++
++
++@pytest.mark.asyncio
++async def test_001_backfills_namespace_from_memory_disclosure(tmp_path):
++    db = DatabaseManager(f"sqlite+aiosqlite:///{tmp_path}/t.db")
++    try:
++        await _build_legacy_schema_with_fts(db)
++        await _seed_path_with_disclosure(
++            db,
++            domain="analysis",
++            path="sc-de/run42",
++            disclosure="Memory from session app:userA:abcdef",
++        )
++
++        mig = _load_001()
++        await mig.apply(db)
++
++        async with db.session() as s:
++            result = await s.execute(
++                sa.text(
++                    "SELECT namespace FROM paths "
++                    "WHERE domain='analysis' AND path='sc-de/run42'"
++                )
++            )
++            assert result.scalar_one() == "app/userA"
++
++            result = await s.execute(
++                sa.text(
++                    "SELECT namespace FROM search_documents "
++                    "WHERE domain='analysis' AND path='sc-de/run42'"
++                )
++            )
++            assert result.scalar_one() == "app/userA"
++    finally:
++        await db.close()
++
++
++@pytest.mark.asyncio
++async def test_001_backfills_namespace_from_session_disclosure(tmp_path):
++    db = DatabaseManager(f"sqlite+aiosqlite:///{tmp_path}/t.db")
++    try:
++        await _build_legacy_schema_with_fts(db)
++        await _seed_path_with_disclosure(
++            db,
++            domain="session",
++            path="abc123",
++            disclosure="Session for user userA on tg",
++        )
++
++        mig = _load_001()
++        await mig.apply(db)
++
++        async with db.session() as s:
++            result = await s.execute(
++                sa.text(
++                    "SELECT namespace FROM paths "
++                    "WHERE domain='session' AND path='abc123'"
++                )
++            )
++            assert result.scalar_one() == "tg/userA"
++    finally:
++        await db.close()
++
++
++@pytest.mark.asyncio
++async def test_001_falls_back_to_shared_when_disclosure_unparseable(tmp_path):
++    db = DatabaseManager(f"sqlite+aiosqlite:///{tmp_path}/t.db")
++    try:
++        await _build_legacy_schema_with_fts(db)
++        await _seed_path_with_disclosure(
++            db,
++            domain="analysis",
++            path="orphan",
++            disclosure="some garbage that doesn't match",
++        )
++
++        mig = _load_001()
++        await mig.apply(db)
++
++        async with db.session() as s:
++            result = await s.execute(
++                sa.text(
++                    "SELECT namespace FROM paths "
++                    "WHERE domain='analysis' AND path='orphan'"
++                )
++            )
++            assert result.scalar_one() == "__shared__"
++    finally:
++        await db.close()
++
++
++@pytest.mark.asyncio
++async def test_001_preserves_row_counts(tmp_path):
++    db = DatabaseManager(f"sqlite+aiosqlite:///{tmp_path}/t.db")
++    try:
++        await _build_legacy_schema_with_fts(db)
++
++        for i in range(5):
++            await _seed_path_with_disclosure(
++                db,
++                domain="analysis",
++                path=f"run_{i}",
++                disclosure=f"Memory from session app:user{i}:s{i}",
++            )
++
++        async def counts(s):
++            return {
++                tbl: (
++                    await s.execute(sa.text(f"SELECT COUNT(*) FROM {tbl}"))
++                ).scalar_one()
++                for tbl in ("paths", "search_documents", "memories", "nodes", "edges")
++            }
++
++        async with db.session() as s:
++            before = await counts(s)
++
++        mig = _load_001()
++        await mig.apply(db)
++
++        async with db.session() as s:
++            after = await counts(s)
++
++        assert before == after
++    finally:
++        await db.close()
++
++
++@pytest.mark.asyncio
++async def test_001_discovered_and_run_via_init_db(tmp_path):
++    """End-to-end: init_db on a fresh DB applies 001 via discovery."""
++    db = DatabaseManager(f"sqlite+aiosqlite:///{tmp_path}/t.db")
++    try:
++        await db.init_db()
++
++        async with db.session() as s:
++            # paths has namespace column post-migration
++            result = await s.execute(sa.text("PRAGMA table_info(paths)"))
++            cols = [row[1] for row in result.all()]
++            assert "namespace" in cols
++
++            # 001 was recorded by the runner
++            result = await s.execute(sa.text("SELECT version FROM _schema_version"))
++            assert "001_namespace" in {row[0] for row in result.all()}
++    finally:
++        await db.close()
++
++
++@pytest.mark.asyncio
++async def test_001_glossary_keywords_has_namespace_in_unique_constraint(tmp_path):
++    db = DatabaseManager(f"sqlite+aiosqlite:///{tmp_path}/t.db")
++    try:
++        await _build_legacy_schema(db)
++
++        # Seed a node so glossary FK is valid
++        async with db.session() as s:
++            await s.execute(sa.text("INSERT INTO nodes (uuid) VALUES ('node-1')"))
++
++        mig = _load_001()
++        await mig.apply(db)
++
++        # Same (keyword, node_uuid) but different namespace — both must succeed
++        async with db.session() as s:
++            await s.execute(
++                sa.text(
++                    "INSERT INTO glossary_keywords (keyword, node_uuid, namespace) "
++                    "VALUES ('foo', 'node-1', 'ns1')"
++                )
++            )
++            await s.execute(
++                sa.text(
++                    "INSERT INTO glossary_keywords (keyword, node_uuid, namespace) "
++                    "VALUES ('foo', 'node-1', 'ns2')"
++                )
++            )
++            result = await s.execute(
++                sa.text("SELECT COUNT(*) FROM glossary_keywords")
++            )
++            assert result.scalar_one() == 2
++
++        # Duplicate (namespace, keyword, node_uuid) — must fail
++        with pytest.raises(Exception):
++            async with db.session() as s:
++                await s.execute(
++                    sa.text(
++                        "INSERT INTO glossary_keywords (keyword, node_uuid, namespace) "
++                        "VALUES ('foo', 'node-1', 'ns1')"
++                    )
++                )
++    finally:
++        await db.close()
+diff --git a/tests/memory/test_migration_runner.py b/tests/memory/test_migration_runner.py
+new file mode 100644
+index 00000000..513d4cd8
+--- /dev/null
++++ b/tests/memory/test_migration_runner.py
+@@ -0,0 +1,151 @@
++"""Tests for the lightweight migrations framework runner."""
++
++import pytest
++import sqlalchemy as sa
++
++from omicsclaw.memory.database import DatabaseManager
++from omicsclaw.memory.migrations.runner import run_pending
++
++
++@pytest.mark.asyncio
++async def test_run_pending_creates_schema_version_table(tmp_path):
++    db = DatabaseManager(f"sqlite+aiosqlite:///{tmp_path}/t.db")
++    try:
++        await run_pending(db, migrations=[])
++
++        async with db.session() as s:
++            result = await s.execute(
++                sa.text(
++                    "SELECT name FROM sqlite_master "
++                    "WHERE type='table' AND name='_schema_version'"
++                )
++            )
++            assert result.scalar_one_or_none() == "_schema_version"
++    finally:
++        await db.close()
++
++
++@pytest.mark.asyncio
++async def test_run_pending_applies_migration_and_records_version(tmp_path):
++    db = DatabaseManager(f"sqlite+aiosqlite:///{tmp_path}/t.db")
++    apply_calls: list[DatabaseManager] = []
++
++    class Mig:
++        VERSION = "001_test"
++        DESCRIPTION = "first"
++
++        async def apply(self, d: DatabaseManager) -> None:
++            apply_calls.append(d)
++
++    try:
++        versions = await run_pending(db, migrations=[Mig()])
++        assert versions == ["001_test"]
++        assert apply_calls == [db]
++
++        async with db.session() as s:
++            result = await s.execute(sa.text("SELECT version FROM _schema_version"))
++            assert {row[0] for row in result.all()} == {"001_test"}
++    finally:
++        await db.close()
++
++
++@pytest.mark.asyncio
++async def test_run_pending_skips_already_applied(tmp_path):
++    db = DatabaseManager(f"sqlite+aiosqlite:///{tmp_path}/t.db")
++    apply_count = 0
++
++    class Mig:
++        VERSION = "001_test"
++        DESCRIPTION = "first"
++
++        async def apply(self, d: DatabaseManager) -> None:
++            nonlocal apply_count
++            apply_count += 1
++
++    try:
++        v1 = await run_pending(db, migrations=[Mig()])
++        v2 = await run_pending(db, migrations=[Mig()])
++        assert v1 == ["001_test"]
++        assert v2 == []
++        assert apply_count == 1  # idempotent
++    finally:
++        await db.close()
++
++
++@pytest.mark.asyncio
++async def test_run_pending_applies_in_version_sorted_order(tmp_path):
++    db = DatabaseManager(f"sqlite+aiosqlite:///{tmp_path}/t.db")
++    order_seen: list[str] = []
++
++    def make_mig(v: str):
++        class M:
++            VERSION = v
++            DESCRIPTION = f"m{v}"
++
++            async def apply(self, d: DatabaseManager) -> None:
++                order_seen.append(v)
++        return M()
++
++    try:
++        # Caller passes in reversed order — runner must sort
++        versions = await run_pending(
++            db, migrations=[make_mig("003"), make_mig("001"), make_mig("002")]
++        )
++        assert versions == ["001", "002", "003"]
++        assert order_seen == ["001", "002", "003"]
++    finally:
++        await db.close()
++
++
++@pytest.mark.asyncio
++async def test_failed_migration_is_not_recorded(tmp_path):
++    db = DatabaseManager(f"sqlite+aiosqlite:///{tmp_path}/t.db")
++
++    class GoodMig:
++        VERSION = "001"
++        DESCRIPTION = "good"
++
++        async def apply(self, d: DatabaseManager) -> None:
++            pass
++
++    class BadMig:
++        VERSION = "002"
++        DESCRIPTION = "bad"
++
++        async def apply(self, d: DatabaseManager) -> None:
++            raise RuntimeError("boom")
++
++    try:
++        with pytest.raises(RuntimeError, match="boom"):
++            await run_pending(db, migrations=[GoodMig(), BadMig()])
++
++        # 001 succeeded → recorded; 002 raised → NOT recorded
++        async with db.session() as s:
++            result = await s.execute(sa.text("SELECT version FROM _schema_version"))
++            assert {row[0] for row in result.all()} == {"001"}
++    finally:
++        await db.close()
++
++
++def test_discover_migrations_imports_numbered_modules(tmp_path, monkeypatch):
++    pkg_dir = tmp_path / "fake_mig_pkg"
++    pkg_dir.mkdir()
++    (pkg_dir / "__init__.py").write_text("")
++    (pkg_dir / "001_alpha.py").write_text(
++        "VERSION = '001_alpha'\nDESCRIPTION = 'a'\n\n"
++        "async def apply(db):\n    pass\n"
++    )
++    (pkg_dir / "002_beta.py").write_text(
++        "VERSION = '002_beta'\nDESCRIPTION = 'b'\n\n"
++        "async def apply(db):\n    pass\n"
++    )
++    # non-numbered modules in the package should be ignored
++    (pkg_dir / "helper.py").write_text("# not a migration\n")
++
++    monkeypatch.syspath_prepend(str(tmp_path))
++
++    from omicsclaw.memory.migrations.runner import _discover_migrations
++    found = _discover_migrations("fake_mig_pkg")
++
++    versions = sorted(m.VERSION for m in found)
++    assert versions == ["001_alpha", "002_beta"]

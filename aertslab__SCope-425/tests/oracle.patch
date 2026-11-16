@@ -1,0 +1,87 @@
+diff --git a/opt/scopeserver/dataserver/utils/cell_color_by_features.py b/opt/scopeserver/dataserver/utils/cell_color_by_features.py
+index d97a3e06..6e2e1794 100644
+--- a/opt/scopeserver/dataserver/utils/cell_color_by_features.py
++++ b/opt/scopeserver/dataserver/utils/cell_color_by_features.py
+@@ -9,6 +9,7 @@
+ 
+ from scopeserver.dataserver.modules.gserver import s_pb2
+ from scopeserver.dataserver.utils import constant
++from scopeserver.dataserver.utils.constant import to_colours
+ from scopeserver.dataserver.utils import data
+ from scopeserver.dataserver.utils.annotation import Annotation
+ import logging
+@@ -140,12 +141,7 @@ def setAnnotationFeature(self, feature: str, annotations: Optional[List[Annotati
+         md_annotation_values = self.loom.get_meta_data_annotation_by_name(name=feature)["values"]
+         ca_annotation = self.loom.get_ca_attr_by_name(name=feature)
+         ca_annotation_as_int = list(map(lambda x: md_annotation_values.index(str(x)), ca_annotation))
+-        num_annotations = max(ca_annotation_as_int)
+-        if num_annotations <= len(constant.BIG_COLOR_LIST):
+-            self.hex_vec = list(map(lambda x: constant.BIG_COLOR_LIST[x], ca_annotation_as_int))
+-        else:
+-            raise ValueError("The annotation {0} has too many unique values.".format(feature))
+-        # Set the reply
++        self.hex_vec = to_colours(ca_annotation_as_int)
+ 
+         if annotations is not None:
+             cellIndices = self.loom.get_anno_cells(annotations=annotations, logic=logic)
+@@ -154,9 +150,7 @@ def setAnnotationFeature(self, feature: str, annotations: Optional[List[Annotati
+         reply = s_pb2.CellColorByFeaturesReply(
+             color=self.hex_vec,
+             vmax=self.v_max,
+-            legend=s_pb2.ColorLegend(
+-                values=md_annotation_values, colors=constant.BIG_COLOR_LIST[: len(md_annotation_values)]
+-            ),
++            legend=s_pb2.ColorLegend(values=md_annotation_values, colors=to_colours(range(len(md_annotation_values)))),
+         )
+         self.setReply(reply=reply)
+ 
+diff --git a/opt/scopeserver/dataserver/utils/constant.py b/opt/scopeserver/dataserver/utils/constant.py
+index e81cf898..d16cf688 100644
+--- a/opt/scopeserver/dataserver/utils/constant.py
++++ b/opt/scopeserver/dataserver/utils/constant.py
+@@ -1,4 +1,5 @@
+ from enum import Enum, auto, unique
++from typing import Iterable, List
+ 
+ ACTIVE_SESSIONS_LIMIT = 25
+ MOUSE_EVENTS_THRESHOLD = 1
+@@ -270,3 +271,11 @@ class Species(Enum):
+     "69238c",
+     "bf606c",
+ ]
++
++
++def to_colours(index: Iterable[int]) -> List[str]:
++    """Convert indexes (`index`) into pre-determined HTML hex colour values.
++    `index` can be a `range(some_number)` or any iterable collection of numbers.
++    """
++    num_colours = len(BIG_COLOR_LIST)
++    return [BIG_COLOR_LIST[i % num_colours] for i in index]
+diff --git a/opt/scopeserver/dataserver/utils/labels.py b/opt/scopeserver/dataserver/utils/labels.py
+index b660ca6b..15b6731e 100644
+--- a/opt/scopeserver/dataserver/utils/labels.py
++++ b/opt/scopeserver/dataserver/utils/labels.py
+@@ -10,6 +10,7 @@
+ 
+ 
+ from scopeserver.dataserver.utils import constant
++from scopeserver.dataserver.utils.constant import to_colours
+ from scopeserver.dataserver.utils.loom import Loom
+ from scopeserver.dataserver.utils.annotation import Annotation
+ from scopeserver.dataserver.utils.data import uniq
+@@ -38,13 +39,10 @@ def label_annotation(loom: Loom, embedding: int, feature: str) -> List[FeatureLa
+     at the barycentre of the cell cluster.
+     """
+     values = loom.get_meta_data_annotation_by_name(name=feature)["values"]
+-    all_annotations = loom.get_ca_attr_by_name(name=feature)
+-    colours = uniq((constant.BIG_COLOR_LIST[values.index(i)] for i in all_annotations))
+-
+-    annotations = uniq(loom.get_ca_attr_by_name(name=feature))
++    colours = to_colours(range(len(values)))
+ 
+     def labels() -> Generator[FeatureLabel, None, None]:
+-        for i, annotation in enumerate(annotations):
++        for i, annotation in enumerate(values):
+             coords = loom.get_coordinates(
+                 coordinatesID=embedding, annotation=[Annotation(name=feature, values=[annotation])]
+             )

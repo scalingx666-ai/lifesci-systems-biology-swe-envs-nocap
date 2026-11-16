@@ -1,0 +1,65 @@
+version = "1.0"
+
+[task]
+name = "default/aertslab__SCope-360"
+description = "Remove reliance on file hashes"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "SCope",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aertslab/SCope"
+ref = "f8acb444406e6d36ffecd79ce6f921b40465734b"
+reference = "https://github.com/aertslab/SCope/pull/360"
+source_access = "auto"
+built_at = "2026-11-15T19:38:27.008451+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:0c189dcf1036b83641042c99c91c755c9388c9c92027765ad5ef07fb6d92325b"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2020-08-17T13:55:54Z"
+diff_format = "unified"
+context_files = [
+    "opt/scopeserver/dataserver/modules/gserver/GServer.py",
+    "opt/scopeserver/dataserver/utils/loom.py",
+    "opt/scopeserver/dataserver/utils/loom_file_handler.py",
+    "opt/scopeserver/dataserver/utils/search_space.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 313
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

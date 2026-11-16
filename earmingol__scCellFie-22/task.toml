@@ -1,0 +1,69 @@
+version = "1.0"
+
+[task]
+name = "default/earmingol__scCellFie-22"
+description = "Updates for v0.5.0"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "scCellFie",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "earmingol/scCellFie"
+ref = "30a326abd4bc9fd661151d5411dcd5a331ab3e37"
+reference = "https://github.com/earmingol/scCellFie/pull/22"
+source_access = "auto"
+built_at = "2026-11-15T19:42:12.482619+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:35cff29ae831413a853897f6d965f048e1d9eab246e1f8bf2dd6d0681c0c5694"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2025-09-03T14:19:53Z"
+diff_format = "unified"
+context_files = [
+    "sccellfie/__init__.py",
+    "sccellfie/external/__init__.py",
+    "sccellfie/external/tensor.py",
+    "sccellfie/external/tests/test_tensor.py",
+    "sccellfie/external/tests/test_tf_idf.py",
+    "sccellfie/external/tf_idf.py",
+    "sccellfie/reports/summary.py",
+    "sccellfie/stats/gam_analysis.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 726
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

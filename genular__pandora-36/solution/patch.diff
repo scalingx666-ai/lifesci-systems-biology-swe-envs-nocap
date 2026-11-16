@@ -1,0 +1,96 @@
+diff --git a/src/app/translations/files/translated/ar.json b/src/app/translations/files/translated/ar.json
+index 24a27903..a1f86cf3 100644
+--- a/src/app/translations/files/translated/ar.json
++++ b/src/app/translations/files/translated/ar.json
+@@ -105,8 +105,8 @@
+   "views.apps.simon.analysis.components.StartButton.dialogs.cancel.message": "هل أنت متأكد من أنك تريد إغلاق وإلغاء هذا التقديم ؟",
+   "views.apps.simon.analysis.components.StartButton.dialogs.errors.title": "الأخطاء التالية يحتاج إلى تصحيح",
+   "views.apps.simon.analysis.components.StartButton.dialogs.errors.confirm": "تأكيد",
+-  "views.apps.simon.analysis.components.StartButton.dialogs.errors_resample.title": "Following errors",
+-  "views.apps.simon.analysis.components.StartButton.dialogs.errors_resample.messages.invalid_sample_count_test": "Less than 10 samples in test set, Found only:",
++  "views.apps.simon.analysis.components.StartButton.dialogs.errors_resample.title": "الأخطاء التالية",
++  "views.apps.simon.analysis.components.StartButton.dialogs.errors_resample.messages.invalid_sample_count_test": "أقل من 10 عينات في مجموعة الاختبار ، وجدت فقط:",
+   "views.apps.simon.analysis.components.StartButton.other.loading_data": "تحميل البيانات ، يرجى الانتظار...",
+   "views.apps.simon.analysis.components.StartButton.other.misssing_features": "حدد على الأقل 2 ميزات تحليل",
+   "views.apps.simon.analysis.components.StartButton.other.misssing_packages": "صالح عدد من مجموعات مختارة",
+@@ -375,7 +375,7 @@
+   "sidebar.analysis": "تحليل",
+   "sidebar.exploratory-analysis": "الاستكشاف",
+   "globals.page_loading": "تجهيز",
+-  "globals.page_loading_slow": "please be patient this may take a while...",
++  "globals.page_loading_slow": "يرجى أن يكون المريض قد يستغرق هذا بعض الوقت...",
+   "globals.buttons.copy": "نسخ",
+   "globals.buttons.ok": "طيب",
+   "globals.buttons.cancel": "إلغاء",
+diff --git a/src/app/translations/files/translated/de.json b/src/app/translations/files/translated/de.json
+index 19c84d6e..b5c4278c 100644
+--- a/src/app/translations/files/translated/de.json
++++ b/src/app/translations/files/translated/de.json
+@@ -105,8 +105,8 @@
+   "views.apps.simon.analysis.components.StartButton.dialogs.cancel.message": "Sind Sie sicher, dass Sie diese Einreichung beenden und abbrechen möchten?",
+   "views.apps.simon.analysis.components.StartButton.dialogs.errors.title": "Folgende Fehler müssen korrigiert werden",
+   "views.apps.simon.analysis.components.StartButton.dialogs.errors.confirm": "Bestätigen",
+-  "views.apps.simon.analysis.components.StartButton.dialogs.errors_resample.title": "Following errors",
+-  "views.apps.simon.analysis.components.StartButton.dialogs.errors_resample.messages.invalid_sample_count_test": "Less than 10 samples in test set, Found only:",
++  "views.apps.simon.analysis.components.StartButton.dialogs.errors_resample.title": "Folgenden Fehler",
++  "views.apps.simon.analysis.components.StartButton.dialogs.errors_resample.messages.invalid_sample_count_test": "Weniger als 10 Proben, die im test-set Gefunden, nur:",
+   "views.apps.simon.analysis.components.StartButton.other.loading_data": "Daten werden hochgeladen, bitte warten...",
+   "views.apps.simon.analysis.components.StartButton.other.misssing_features": "Bitte wählen Sie mindestens 2 Funktionen zum Analysieren aus",
+   "views.apps.simon.analysis.components.StartButton.other.misssing_packages": "Ungültige Anzahl an ausgewählten Paketen",
+@@ -375,7 +375,7 @@
+   "sidebar.analysis": "Analyse",
+   "sidebar.exploratory-analysis": "Erkundung",
+   "globals.page_loading": "Verarbeite",
+-  "globals.page_loading_slow": "please be patient this may take a while...",
++  "globals.page_loading_slow": "bitte etwas Geduld, es kann eine Weile dauern...",
+   "globals.buttons.copy": "Kopieren",
+   "globals.buttons.ok": "OK",
+   "globals.buttons.cancel": "Abbrechen",
+diff --git a/src/app/translations/files/translated/fr.json b/src/app/translations/files/translated/fr.json
+index 7a46a381..11af6670 100644
+--- a/src/app/translations/files/translated/fr.json
++++ b/src/app/translations/files/translated/fr.json
+@@ -105,8 +105,8 @@
+   "views.apps.simon.analysis.components.StartButton.dialogs.cancel.message": "Êtes-vous sûr de vouloir fermer et annuler cette soumission ?",
+   "views.apps.simon.analysis.components.StartButton.dialogs.errors.title": "Les erreurs suivantes doivent être corrigées",
+   "views.apps.simon.analysis.components.StartButton.dialogs.errors.confirm": "Confirmer",
+-  "views.apps.simon.analysis.components.StartButton.dialogs.errors_resample.title": "Following errors",
+-  "views.apps.simon.analysis.components.StartButton.dialogs.errors_resample.messages.invalid_sample_count_test": "Less than 10 samples in test set, Found only:",
++  "views.apps.simon.analysis.components.StartButton.dialogs.errors_resample.title": "Messages d'erreur suivants",
++  "views.apps.simon.analysis.components.StartButton.dialogs.errors_resample.messages.invalid_sample_count_test": "Moins de 10 échantillons de test, Trouvé seulement:",
+   "views.apps.simon.analysis.components.StartButton.other.loading_data": "Envoi des données, veuillez patienter...",
+   "views.apps.simon.analysis.components.StartButton.other.misssing_features": "Veuillez sélectionner au moins 2 fonctionnalités à analyser",
+   "views.apps.simon.analysis.components.StartButton.other.misssing_packages": "Nombre de paquets sélectionné invalide",
+@@ -375,7 +375,7 @@
+   "sidebar.analysis": "Analyse",
+   "sidebar.exploratory-analysis": "Exploration",
+   "globals.page_loading": "Traitement",
+-  "globals.page_loading_slow": "please be patient this may take a while...",
++  "globals.page_loading_slow": "s'il vous plaît être patient, cela peut prendre un certain temps...",
+   "globals.buttons.copy": "Copier",
+   "globals.buttons.ok": "OK",
+   "globals.buttons.cancel": "Annuler",
+diff --git a/src/app/translations/files/translated/zh.json b/src/app/translations/files/translated/zh.json
+index 0c091d65..68287d57 100644
+--- a/src/app/translations/files/translated/zh.json
++++ b/src/app/translations/files/translated/zh.json
+@@ -105,8 +105,8 @@
+   "views.apps.simon.analysis.components.StartButton.dialogs.cancel.message": "你确定你想要关闭和取消这个提议?",
+   "views.apps.simon.analysis.components.StartButton.dialogs.errors.title": "以下错误，需要加以纠正",
+   "views.apps.simon.analysis.components.StartButton.dialogs.errors.confirm": "确认",
+-  "views.apps.simon.analysis.components.StartButton.dialogs.errors_resample.title": "Following errors",
+-  "views.apps.simon.analysis.components.StartButton.dialogs.errors_resample.messages.invalid_sample_count_test": "Less than 10 samples in test set, Found only:",
++  "views.apps.simon.analysis.components.StartButton.dialogs.errors_resample.title": "以下错误。",
++  "views.apps.simon.analysis.components.StartButton.dialogs.errors_resample.messages.invalid_sample_count_test": "少于10个样本中测试的设置、发现，只有:",
+   "views.apps.simon.analysis.components.StartButton.other.loading_data": "上载数据，请等等...",
+   "views.apps.simon.analysis.components.StartButton.other.misssing_features": "请选择至少2特征分析",
+   "views.apps.simon.analysis.components.StartButton.other.misssing_packages": "无效的包数的选择",
+@@ -375,7 +375,7 @@
+   "sidebar.analysis": "分析",
+   "sidebar.exploratory-analysis": "勘探",
+   "globals.page_loading": "处理",
+-  "globals.page_loading_slow": "please be patient this may take a while...",
++  "globals.page_loading_slow": "请耐心这可能需要一段时间...",
+   "globals.buttons.copy": "复制",
+   "globals.buttons.ok": "\"确定\"",
+   "globals.buttons.cancel": "取消",

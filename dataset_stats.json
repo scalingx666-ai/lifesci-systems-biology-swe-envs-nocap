@@ -1,0 +1,39 @@
+{
+  "slug": "systems-biology",
+  "title": "Systems Biology & Network Modeling",
+  "target_repos": 73,
+  "routing_mode": "primary",
+  "repos_with_tasks": 12,
+  "total_tasks": 337,
+  "max_tasks_per_repo": 94,
+  "per_repo": {
+    "TianGzlab/OmicsClaw": 94,
+    "aertslab/AUCell": 1,
+    "aertslab/SCENIC": 3,
+    "aertslab/SCope": 92,
+    "aertslab/pySCENIC": 16,
+    "aertslab/scenicplus": 6,
+    "cailab-tamu/scTenifoldKnk": 3,
+    "earmingol/scCellFie": 11,
+    "federicomarini/GeneTonic": 18,
+    "genular/pandora": 34,
+    "scverse/muon": 56,
+    "smorabit/hdWGCNA": 3
+  },
+  "build": "expansion",
+  "task_cap": "unlimited",
+  "snapshot": {
+    "publish_mode": "partial_snapshot",
+    "generation_complete": false,
+    "generation_complete_flag": "generation_complete_expansion.flag (ABSENT - deliberately not faked)",
+    "snapshot_local": "2026-11-16 23:39:22 UTC+08:00",
+    "bank_live_task_tomls_at_snapshot": 26225,
+    "bank_repos_checkpointed_at_snapshot": 785,
+    "bank_repos_total_at_snapshot": 830,
+    "target_task_goal": 100000,
+    "target_fraction_reached": 0.26225,
+    "domain_tasks": 337,
+    "domain_repos_with_tasks": 12,
+    "note": "PARTIAL snapshot of an unfinished real-PR generation run. Not the 100k dataset; further tasks land in later releases. Nothing is fabricated and zero-yield repos are listed, not padded."
+  }
+}

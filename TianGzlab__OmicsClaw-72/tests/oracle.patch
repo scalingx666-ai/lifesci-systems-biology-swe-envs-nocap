@@ -1,0 +1,91 @@
+diff --git a/skills/singlecell/scrna/sc-count/sc_count.py b/skills/singlecell/scrna/sc-count/sc_count.py
+index d9ddef1d..6d0c2b18 100644
+--- a/skills/singlecell/scrna/sc-count/sc_count.py
++++ b/skills/singlecell/scrna/sc-count/sc_count.py
+@@ -324,6 +324,8 @@ def main() -> None:
+     parser.add_argument("--threads", type=int, default=8, help="Backend thread count")
+     parser.add_argument("--chemistry", default="auto", help="Chemistry hint; STARsolo currently supports 10xv2, 10xv3, and 10xv4")
+     parser.add_argument("--whitelist", help="STARsolo barcode whitelist file")
++    parser.add_argument("--r-enhanced", action="store_true",
++        help="(Accepted for CLI consistency; no R Enhanced plots available for this skill.)")
+     args = parser.parse_args()
+ 
+     output_dir = Path(args.output_dir)
+diff --git a/skills/singlecell/scrna/sc-drug-response/sc_drug_response.py b/skills/singlecell/scrna/sc-drug-response/sc_drug_response.py
+index 98628e84..fbadbbc2 100644
+--- a/skills/singlecell/scrna/sc-drug-response/sc_drug_response.py
++++ b/skills/singlecell/scrna/sc-drug-response/sc_drug_response.py
+@@ -698,6 +698,8 @@ def main() -> None:
+     parser.add_argument("--drug-db", choices=["gdsc", "prism"], default="gdsc", help="Drug database (GDSC or PRISM)")
+     parser.add_argument("--n-drugs", type=int, default=DEFAULT_N_DRUGS, help="Number of top drugs to report")
+     parser.add_argument("--cluster-key", default=None, help="obs column for cluster labels")
++    parser.add_argument("--r-enhanced", action="store_true",
++        help="(Accepted for CLI consistency; no R Enhanced plots available for this skill.)")
+     args = parser.parse_args()
+ 
+     output_dir = Path(args.output_dir)
+diff --git a/skills/singlecell/scrna/sc-fastq-qc/sc_fastq_qc.py b/skills/singlecell/scrna/sc-fastq-qc/sc_fastq_qc.py
+index 6ea4821b..df80896f 100644
+--- a/skills/singlecell/scrna/sc-fastq-qc/sc_fastq_qc.py
++++ b/skills/singlecell/scrna/sc-fastq-qc/sc_fastq_qc.py
+@@ -277,6 +277,8 @@ def main() -> None:
+     parser.add_argument("--sample", help="Choose one sample from a multi-sample FASTQ directory")
+     parser.add_argument("--threads", type=int, default=4, help="Thread count for external FastQC runs")
+     parser.add_argument("--max-reads", type=int, default=20000, help="Per-FASTQ read sampling depth for the Python fallback summary")
++    parser.add_argument("--r-enhanced", action="store_true",
++        help="(Accepted for CLI consistency; no R Enhanced plots available for this skill.)")
+     args = parser.parse_args()
+ 
+     output_dir = Path(args.output_dir)
+diff --git a/skills/singlecell/scrna/sc-multi-count/sc_multi_count.py b/skills/singlecell/scrna/sc-multi-count/sc_multi_count.py
+index c03573de..cb627d7e 100644
+--- a/skills/singlecell/scrna/sc-multi-count/sc_multi_count.py
++++ b/skills/singlecell/scrna/sc-multi-count/sc_multi_count.py
+@@ -322,6 +322,8 @@ def main() -> None:
+         "--sample-id", dest="sample_ids", action="append", default=[],
+         help="Sample ID for the corresponding --input (repeat for each sample, same order)",
+     )
++    parser.add_argument("--r-enhanced", action="store_true",
++        help="(Accepted for CLI consistency; no R Enhanced plots available for this skill.)")
+     args = parser.parse_args()
+ 
+     output_dir = Path(args.output_dir)
+diff --git a/skills/singlecell/scrna/sc-perturb-prep/sc_perturb_prep.py b/skills/singlecell/scrna/sc-perturb-prep/sc_perturb_prep.py
+index 92a64ec1..8271bbdd 100644
+--- a/skills/singlecell/scrna/sc-perturb-prep/sc_perturb_prep.py
++++ b/skills/singlecell/scrna/sc-perturb-prep/sc_perturb_prep.py
+@@ -67,6 +67,8 @@ def _parse_args() -> argparse.Namespace:
+     parser.add_argument("--control-label", type=str, default="NT", help="Canonical control label stored in the perturbation column")
+     parser.add_argument("--keep-multi-guide", action="store_true", help="Keep cells with multiple sgRNA assignments instead of dropping them")
+     parser.add_argument("--species", type=str, default="human", choices=["human", "mouse"], help="Species hint for canonicalization")
++    parser.add_argument("--r-enhanced", action="store_true",
++        help="(Accepted for CLI consistency; no R Enhanced plots available for this skill.)")
+     return parser.parse_args()
+ 
+ 
+diff --git a/skills/singlecell/scrna/sc-standardize-input/sc_standardize_input.py b/skills/singlecell/scrna/sc-standardize-input/sc_standardize_input.py
+index 02543a4d..9c98ccee 100644
+--- a/skills/singlecell/scrna/sc-standardize-input/sc_standardize_input.py
++++ b/skills/singlecell/scrna/sc-standardize-input/sc_standardize_input.py
+@@ -248,6 +248,8 @@ def main() -> None:
+     parser.add_argument("--output", dest="output_dir", required=True, help="Output directory")
+     parser.add_argument("--demo", action="store_true", help="Run with demo data")
+     parser.add_argument("--species", default="auto", choices=["human", "mouse", "auto"], help="Species hint (default: auto-detect from gene names)")
++    parser.add_argument("--r-enhanced", action="store_true",
++        help="(Accepted for CLI consistency; no R Enhanced plots available for this skill.)")
+     args = parser.parse_args()
+ 
+     output_dir = Path(args.output_dir)
+diff --git a/skills/singlecell/scrna/sc-velocity-prep/sc_velocity_prep.py b/skills/singlecell/scrna/sc-velocity-prep/sc_velocity_prep.py
+index 3284e084..1e401e7f 100644
+--- a/skills/singlecell/scrna/sc-velocity-prep/sc_velocity_prep.py
++++ b/skills/singlecell/scrna/sc-velocity-prep/sc_velocity_prep.py
+@@ -353,6 +353,8 @@ def main() -> None:
+     parser.add_argument("--threads", type=int, default=8, help="Backend thread count")
+     parser.add_argument("--chemistry", default="auto", help="STARsolo chemistry; real FASTQ runs require explicit 10xv2, 10xv3, or 10xv4")
+     parser.add_argument("--whitelist", help="STARsolo barcode whitelist file")
++    parser.add_argument("--r-enhanced", action="store_true",
++        help="(Accepted for CLI consistency; no R Enhanced plots available for this skill.)")
+     args = parser.parse_args()
+ 
+     output_dir = Path(args.output_dir)

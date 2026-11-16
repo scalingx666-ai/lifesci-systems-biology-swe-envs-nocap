@@ -1,0 +1,120 @@
+diff --git a/omicsclaw/memory/__init__.py b/omicsclaw/memory/__init__.py
+index 7ca25797..628123ca 100644
+--- a/omicsclaw/memory/__init__.py
++++ b/omicsclaw/memory/__init__.py
+@@ -175,26 +175,34 @@ def cli_namespace_from_workspace(workspace_dir: Optional[str]) -> str:
+ 
+ 
+ def desktop_chat_user_id() -> str:
+-    """User-id portion of the Desktop chat agent loop's CompatMemoryStore session.
++    """Stable user-id portion of the Desktop namespace.
+ 
+     The chat path constructs its namespace as ``f"app/{user_id}"`` (see
+-    ``CompatMemoryStore._client_for_session``). Returning the same id
++    ``CompatMemoryStore._client_for_session``); returning the same id
+     component ``desktop_namespace()`` derives keeps the chat-write and
+-    endpoint-read namespaces aligned, including under
+-    ``OMICSCLAW_DESKTOP_LAUNCH_ID`` multi-launch deployments where
+-    they would otherwise diverge.
++    endpoint-read partitions aligned across surface entry points.
++
++    Reads ``OMICSCLAW_DESKTOP_USER_ID`` for explicit override (multi-
++    user/sandboxed deployments where each user is a distinct partition).
++    Falls back to the single-user constant so the same machine
++    consistently lands in the same namespace launch after launch.
++
++    NOTE: This deliberately does *not* read ``OMICSCLAW_DESKTOP_LAUNCH_ID``.
++    That env var is a per-launch random token used only by the Electron
++    shell's /health probe (cross-launch port-collision detection).
++    Treating it as a namespace token — as earlier versions did — created
++    a fresh empty partition every launch and orphaned previous writes.
+     """
+-    launch_id = (os.getenv("OMICSCLAW_DESKTOP_LAUNCH_ID") or "").strip()
+-    return launch_id or _DESKTOP_DEFAULT_USER_ID
++    user_id = (os.getenv("OMICSCLAW_DESKTOP_USER_ID") or "").strip()
++    return user_id or _DESKTOP_DEFAULT_USER_ID
+ 
+ 
+ def desktop_namespace() -> str:
+     """Derive the Desktop FastAPI namespace.
+ 
+-    Reads ``OMICSCLAW_DESKTOP_LAUNCH_ID`` if set (multi-user desktop or
+-    sandboxed launch), otherwise the single-user default. The launch id
+-    is prefixed with ``app/`` so cross-surface collisions with bot
+-    namespaces (``telegram/...``, ``feishu/...``) are impossible.
++    Returns ``app/<user_id>`` where ``user_id`` is the stable id from
++    ``desktop_chat_user_id()``. The ``app/`` prefix prevents collisions
++    with bot namespaces (``telegram/...``, ``feishu/...``).
+     """
+     return f"app/{desktop_chat_user_id()}"
+ 
+diff --git a/tests/memory/test_namespace_helpers.py b/tests/memory/test_namespace_helpers.py
+index 6e6dbbed..796835de 100644
+--- a/tests/memory/test_namespace_helpers.py
++++ b/tests/memory/test_namespace_helpers.py
+@@ -3,9 +3,15 @@
+ Each surface (CLI, Desktop, Bot) derives its namespace differently:
+ 
+   - CLI/TUI:    absolute workspace path (cwd or --workspace flag)
+-  - Desktop:    OMICSCLAW_DESKTOP_LAUNCH_ID, falling back to "app/desktop_user"
++  - Desktop:    OMICSCLAW_DESKTOP_USER_ID, falling back to "app/desktop_user"
+   - Bot:        f"{platform}/{user_id}" (already done in CompatMemoryStore)
+ 
++OMICSCLAW_DESKTOP_LAUNCH_ID is a *separate* per-launch random token used
++only by the Electron shell's /health probe (cross-launch port collision
++detection). It deliberately does NOT participate in namespace derivation
++— mixing it in would create a fresh empty partition on every launch
++and orphan previous writes.
++
+ These helpers live in ``omicsclaw.memory`` so any surface can derive a
+ namespace consistently. Bot's logic stays in CompatMemoryStore because
+ it needs session lookup.
+@@ -65,16 +71,18 @@ def test_cli_namespace_strips_trailing_slash(tmp_path):
+ # ----------------------------------------------------------------------
+ 
+ 
+-def test_desktop_namespace_uses_launch_id_when_set(monkeypatch):
++def test_desktop_namespace_uses_user_id_when_set(monkeypatch):
+     from omicsclaw.memory import desktop_namespace
+ 
+-    monkeypatch.setenv("OMICSCLAW_DESKTOP_LAUNCH_ID", "launch-abc123")
+-    assert desktop_namespace() == "app/launch-abc123"
++    monkeypatch.setenv("OMICSCLAW_DESKTOP_USER_ID", "alice")
++    monkeypatch.delenv("OMICSCLAW_DESKTOP_LAUNCH_ID", raising=False)
++    assert desktop_namespace() == "app/alice"
+ 
+ 
+-def test_desktop_namespace_default_when_no_launch_id(monkeypatch):
++def test_desktop_namespace_default_when_no_user_id(monkeypatch):
+     from omicsclaw.memory import desktop_namespace
+ 
++    monkeypatch.delenv("OMICSCLAW_DESKTOP_USER_ID", raising=False)
+     monkeypatch.delenv("OMICSCLAW_DESKTOP_LAUNCH_ID", raising=False)
+     assert desktop_namespace() == "app/desktop_user"
+ 
+@@ -82,8 +90,23 @@ def test_desktop_namespace_default_when_no_launch_id(monkeypatch):
+ def test_desktop_namespace_strips_whitespace(monkeypatch):
+     from omicsclaw.memory import desktop_namespace
+ 
+-    monkeypatch.setenv("OMICSCLAW_DESKTOP_LAUNCH_ID", "  launch-xyz  ")
+-    assert desktop_namespace() == "app/launch-xyz"
++    monkeypatch.setenv("OMICSCLAW_DESKTOP_USER_ID", "  bob  ")
++    assert desktop_namespace() == "app/bob"
++
++
++def test_desktop_namespace_ignores_launch_id(monkeypatch):
++    """LAUNCH_ID is a per-launch health-check token, not a namespace.
++
++    Regression test for memory_bug.png: with the old behavior, every
++    Electron launch would generate a random UUID launch_id and the
++    desktop namespace would become ``app/<random-uuid>`` — orphaning
++    all data written under the previous launch's namespace.
++    """
++    from omicsclaw.memory import desktop_namespace
++
++    monkeypatch.delenv("OMICSCLAW_DESKTOP_USER_ID", raising=False)
++    monkeypatch.setenv("OMICSCLAW_DESKTOP_LAUNCH_ID", "random-uuid-12345")
++    assert desktop_namespace() == "app/desktop_user"
+ 
+ 
+ # ----------------------------------------------------------------------

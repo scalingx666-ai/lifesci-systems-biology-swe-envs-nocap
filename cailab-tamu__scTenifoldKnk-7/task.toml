@@ -1,0 +1,70 @@
+version = "1.0"
+
+[task]
+name = "default/cailab-tamu__scTenifoldKnk-7"
+description = "answer to issue 15"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "scTenifoldKnk",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "cailab-tamu/scTenifoldKnk"
+ref = "1360d27d3c663ecedfc1215131c08bbdee6114e1"
+reference = "https://github.com/cailab-tamu/scTenifoldKnk/pull/7"
+source_access = "auto"
+built_at = "2026-11-15T16:51:49.569348+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:e3413fd533ca6b82af1df43bf218f409188edc152d2e35d297115d95dfa9c4fb"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2021-11-11T21:19:19Z"
+diff_format = "unified"
+context_files = [
+    "inst/manuscript/NKX2-1/Results/Biphasic.txt",
+    "inst/manuscript/NKX2-1/Results/Compare_trajectory.png",
+    "inst/manuscript/NKX2-1/Results/DE_GSM3716703_issue15.csv",
+    "inst/manuscript/NKX2-1/Results/EarlyDown.txt",
+    "inst/manuscript/NKX2-1/Results/EarlyUp.txt",
+    "inst/manuscript/NKX2-1/Results/LateDown.txt",
+    "inst/manuscript/NKX2-1/Results/LateUp.txt",
+    "inst/manuscript/NKX2-1/Results/pnas.1906663116.sd03.xlsx",
+    "inst/manuscript/reviewer1_comment4.R",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 7593
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

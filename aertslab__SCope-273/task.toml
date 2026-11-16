@@ -1,0 +1,66 @@
+version = "1.0"
+
+[task]
+name = "default/aertslab__SCope-273"
+description = "Bugfix/272 error on getting regulon data"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "SCope",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aertslab/SCope"
+ref = "54f224286afcda9c64fd0dd4adb35cdf23a3af22"
+reference = "https://github.com/aertslab/SCope/pull/273"
+source_access = "auto"
+built_at = "2026-11-15T19:39:12.021210+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:3976c2a3fc8fd53993b7be06f9d8aca394ac9f94d0c587a3b6df96d8adb84d44"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2020-03-10T13:12:26Z"
+diff_format = "unified"
+context_files = [
+    "CHANGELOG.md",
+    "VERSION",
+    "opt/pyproject.toml",
+    "opt/scopeserver/dataserver/utils/loom.py",
+    "package.json",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 40
+difficulty = "medium"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

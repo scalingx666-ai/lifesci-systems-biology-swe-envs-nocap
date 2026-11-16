@@ -1,0 +1,66 @@
+version = "1.0"
+
+[task]
+name = "default/aertslab__SCope-397"
+description = "Changes to bring inline with current live instance"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "SCope",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aertslab/SCope"
+ref = "1ba9adc92cd88bbae944551a0f163a8ca652bdd5"
+reference = "https://github.com/aertslab/SCope/pull/397"
+source_access = "auto"
+built_at = "2026-11-15T19:38:05.372544+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:010decda861d1ae8320743223c9000256d23bf0aa42281534aa900f2f7c5217a"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2020-11-26T14:21:49Z"
+diff_format = "unified"
+context_files = [
+    "src/components/App.jsx",
+    "src/components/AppHeader.jsx",
+    "src/components/common/API.jsx",
+    "src/components/common/FeatureSearchBox.jsx",
+    "src/components/pages/Annotations.jsx",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 481
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

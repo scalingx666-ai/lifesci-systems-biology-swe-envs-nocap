@@ -1,0 +1,65 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-202"
+description = "fix(memory): restore memory_store init + clarify disabled-store hint"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "726dacb3b3b4cb65994d498d38e07d13381af0ff"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/202"
+source_access = "auto"
+built_at = "2026-11-15T18:16:40.009467+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:f8e631045291ea82aa1cd3b9eb2de83fa238c70333a07201fb5a4b7d4863d0ae"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-05-13T11:59:05Z"
+diff_format = "unified"
+context_files = [
+    "bot/session.py",
+    "bot/tool_executors.py",
+    "tests/bot/test_tool_executors.py",
+    "tests/test_bot_core_timeout.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 110
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

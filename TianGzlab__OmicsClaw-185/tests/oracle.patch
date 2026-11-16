@@ -1,0 +1,952 @@
+diff --git a/omicsclaw.py b/omicsclaw.py
+index 41717c8f..1d3a406b 100644
+--- a/omicsclaw.py
++++ b/omicsclaw.py
+@@ -95,14 +95,6 @@ def _configure_stdio_error_handling(*streams: Any) -> None:
+ )
+ from omicsclaw.core.registry import ensure_registry_loaded, registry
+ 
+-SPATIAL_PIPELINE = [
+-    "spatial-preprocess",
+-    "spatial-domains",
+-    "spatial-de",
+-    "spatial-genes",
+-    "spatial-statistics",
+-]
+-
+ 
+ def _module_available(module_name: str) -> bool:
+     """Return True when a Python module is importable in this environment."""
+diff --git a/omicsclaw/core/runtime/pipeline_config.py b/omicsclaw/core/runtime/pipeline_config.py
+new file mode 100644
+index 00000000..cae7e0a5
+--- /dev/null
++++ b/omicsclaw/core/runtime/pipeline_config.py
+@@ -0,0 +1,151 @@
++"""Load and validate ``pipelines/<name>.yaml`` chain definitions.
++
++OMI-12 P2.7: pipelines were hard-coded as ``SPATIAL_PIPELINE = [...]`` inside
++``pipeline_runner``. Adding a ``singlecell-pipeline`` / ``bulkrna-pipeline``
++meant editing Python and recompiling reasoning about which constant to use.
++This module loads YAML configs that the runner consumes, so new pipelines
++are a one-file drop-in.
++
++Schema (see ``pipelines/spatial-pipeline.yaml``):
++
++    name                   str  required  pipeline alias (must end with ``-pipeline``)
++    description            str  optional  one-line summary
++    chain_output_basename  str  optional  file the runner looks for in step N's
++                                          output dir to feed step N+1 as ``--input``
++                                          (default ``processed.h5ad``).
++    steps                  list required  ordered list of ``{skill: <alias>}`` dicts
++
++Steps run sequentially; the chain stops at the first failure. Each step's
++result is recorded in the final ``pipeline_summary.json`` regardless of how
++the chain terminates.
++"""
++
++from __future__ import annotations
++
++from dataclasses import dataclass
++from pathlib import Path
++
++import yaml
++
++from omicsclaw.core.registry import OMICSCLAW_DIR
++
++
++_DEFAULT_CHAIN_OUTPUT = "processed.h5ad"
++
++# Repository-root ``pipelines/`` directory. Shares the registry's
++# ``OMICSCLAW_DIR`` resolution so the ``OMICSCLAW_DIR`` env override that the
++# rest of the runtime honours (wheel installs, custom layouts) also routes
++# pipeline lookup to the operator's actual data tree.
++PIPELINES_DIR = OMICSCLAW_DIR / "pipelines"
++
++
++@dataclass(frozen=True)
++class PipelineStep:
++    """One entry in a pipeline chain — currently just a skill alias."""
++
++    skill: str
++
++
++@dataclass(frozen=True)
++class PipelineConfig:
++    """In-memory view of a loaded ``pipelines/<name>.yaml`` file."""
++
++    name: str
++    description: str
++    chain_output_basename: str
++    steps: tuple[PipelineStep, ...]
++
++    @property
++    def skill_names(self) -> tuple[str, ...]:
++        """Convenience: list of skill aliases in run order."""
++        return tuple(step.skill for step in self.steps)
++
++
++class PipelineConfigError(ValueError):
++    """Raised when a YAML config is malformed or missing required fields."""
++
++
++def pipeline_config_path(name: str, *, pipelines_dir: Path | None = None) -> Path:
++    """Return the canonical YAML path for a pipeline alias."""
++    return (pipelines_dir or PIPELINES_DIR) / f"{name}.yaml"
++
++
++def load_pipeline_config(
++    name: str,
++    *,
++    pipelines_dir: Path | None = None,
++) -> PipelineConfig | None:
++    """Load ``pipelines/<name>.yaml``; return ``None`` when the file is absent.
++
++    Validation errors raise ``PipelineConfigError`` — the runner converts those
++    into stable error results so an operator typo in the YAML never crashes
++    the process.
++    """
++    path = pipeline_config_path(name, pipelines_dir=pipelines_dir)
++    if not path.exists():
++        return None
++
++    try:
++        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
++    except yaml.YAMLError as exc:
++        raise PipelineConfigError(f"{path}: invalid YAML: {exc}") from exc
++
++    if not isinstance(raw, dict):
++        raise PipelineConfigError(f"{path}: top-level must be a mapping")
++
++    config_name = raw.get("name")
++    if not isinstance(config_name, str) or not config_name:
++        raise PipelineConfigError(f"{path}: ``name`` must be a non-empty string")
++    # Catch the silent-rename trap: if the operator renames the file but not
++    # the ``name:`` field (or vice versa), the runner's dispatch table will
++    # disagree with the config's self-identification.
++    if config_name != name:
++        raise PipelineConfigError(
++            f"{path}: file alias {name!r} does not match ``name: {config_name!r}``"
++        )
++    if not config_name.endswith("-pipeline"):
++        raise PipelineConfigError(
++            f"{path}: ``name`` must end with ``-pipeline`` (got {config_name!r})"
++        )
++
++    description = raw.get("description", "")
++    if not isinstance(description, str):
++        raise PipelineConfigError(f"{path}: ``description`` must be a string")
++
++    chain_basename = raw.get("chain_output_basename", _DEFAULT_CHAIN_OUTPUT)
++    if not isinstance(chain_basename, str) or not chain_basename:
++        raise PipelineConfigError(
++            f"{path}: ``chain_output_basename`` must be a non-empty string"
++        )
++
++    raw_steps = raw.get("steps")
++    if not isinstance(raw_steps, list) or not raw_steps:
++        raise PipelineConfigError(f"{path}: ``steps`` must be a non-empty list")
++
++    steps: list[PipelineStep] = []
++    for idx, raw_step in enumerate(raw_steps):
++        if not isinstance(raw_step, dict):
++            raise PipelineConfigError(
++                f"{path}: step #{idx} must be a mapping with a ``skill`` key"
++            )
++        skill = raw_step.get("skill")
++        if not isinstance(skill, str) or not skill:
++            raise PipelineConfigError(
++                f"{path}: step #{idx} ``skill`` must be a non-empty string"
++            )
++        steps.append(PipelineStep(skill=skill))
++
++    return PipelineConfig(
++        name=config_name,
++        description=description,
++        chain_output_basename=chain_basename,
++        steps=tuple(steps),
++    )
++
++
++def list_available_pipelines(*, pipelines_dir: Path | None = None) -> list[str]:
++    """Return the alias of every ``*.yaml`` in the pipelines directory."""
++    target = pipelines_dir or PIPELINES_DIR
++    if not target.exists():
++        return []
++    return sorted(p.stem for p in target.glob("*.yaml") if p.is_file())
+diff --git a/omicsclaw/core/runtime/pipeline_runner.py b/omicsclaw/core/runtime/pipeline_runner.py
+index bd4928a9..b48c97d7 100644
+--- a/omicsclaw/core/runtime/pipeline_runner.py
++++ b/omicsclaw/core/runtime/pipeline_runner.py
+@@ -1,8 +1,13 @@
+-"""Run the pre-defined ``spatial-pipeline`` chain end-to-end.
++"""Run a multi-step skill chain described by a ``PipelineConfig``.
+ 
+-The pipeline is currently a hard-coded list — see OMI-12 P2.7 for the
+-plan to make pipelines data-driven (``pipelines/<name>.yaml``).
+-For now the chain stays inline so this PR is a pure refactor.
++OMI-12 P2.7: the spatial chain used to be a hard-coded
++``SPATIAL_PIPELINE = [...]`` list with a dedicated ``_run_spatial_pipeline``
++function. New pipelines now live as ``pipelines/<name>.yaml`` files (see
++``pipeline_config``); this module is the generic runner that consumes one.
++
++For backward compatibility ``SPATIAL_PIPELINE`` is still exposed — it's
++derived from ``pipelines/spatial-pipeline.yaml`` so a config edit is the
++single source of truth.
+ """
+ 
+ from __future__ import annotations
+@@ -16,18 +21,41 @@
+ from omicsclaw.core.skill_result import SkillRunResult, build_skill_run_result
+ 
+ from .output_finalize import write_pipeline_readme
++from .pipeline_config import (
++    PipelineConfig,
++    PipelineConfigError,
++    load_pipeline_config,
++)
+ 
+ 
+-SPATIAL_PIPELINE: list[str] = [
+-    "spatial-preprocess",
+-    "spatial-domains",
+-    "spatial-de",
+-    "spatial-genes",
+-    "spatial-statistics",
+-]
+-
++def _load_spatial_pipeline_skill_names() -> list[str]:
++    """Resolve the spatial chain at import time, falling back to a stable list.
+ 
+-def run_spatial_pipeline(
++    The YAML is the source of truth — but we don't want a missing file
++    (e.g. an incomplete install or a wheel that didn't ship ``pipelines/``)
++    to break callers that just want the constant. The fallback mirrors
++    the historical hard-coded order so behaviour stays unchanged.
++    """
++    try:
++        config = load_pipeline_config("spatial-pipeline")
++    except PipelineConfigError:
++        config = None
++    if config is None:
++        return [
++            "spatial-preprocess",
++            "spatial-domains",
++            "spatial-de",
++            "spatial-genes",
++            "spatial-statistics",
++        ]
++    return list(config.skill_names)
++
++
++SPATIAL_PIPELINE: list[str] = _load_spatial_pipeline_skill_names()
++
++
++def run_pipeline(
++    config: PipelineConfig,
+     *,
+     default_output_root: Path,
+     err_factory,
+@@ -36,7 +64,7 @@ def run_spatial_pipeline(
+     demo: bool = False,
+     session_path: str | None = None,
+ ) -> SkillRunResult:
+-    """Run the standard spatial analysis pipeline end-to-end.
++    """Run an arbitrary skill chain described by ``config`` end-to-end.
+ 
+     ``err_factory`` is the runner's ``_err`` helper, injected to avoid an
+     import cycle. ``default_output_root`` is also injected so tests that
+@@ -47,7 +75,7 @@ def run_spatial_pipeline(
+     the legacy dict shape should call ``.to_legacy_dict()`` themselves.
+     """
+     if not input_path and not session_path and not demo:
+-        return err_factory("spatial-pipeline", "Requires --input, --demo, or --session.")
++        return err_factory(config.name, "Requires --input, --demo, or --session.")
+ 
+     # Late import keeps this module a leaf in the dependency DAG: skill_runner
+     # imports pipeline_runner, not the other way around.
+@@ -57,13 +85,14 @@ def run_spatial_pipeline(
+         out_dir = Path(output_dir)
+     else:
+         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+-        out_dir = default_output_root / build_output_dir_name("spatial-pipeline", ts)
++        out_dir = default_output_root / build_output_dir_name(config.name, ts)
+     out_dir.mkdir(parents=True, exist_ok=True)
+ 
+     all_results: dict[str, Any] = {}
+     current_input = input_path
++    chain_basename = config.chain_output_basename
+ 
+-    for skill_name in SPATIAL_PIPELINE:
++    for skill_name in config.skill_names:
+         skill_out = out_dir / skill_name
+         print(f"  Running {skill_name}...")
+         result = run_skill(
+@@ -87,13 +116,14 @@ def run_spatial_pipeline(
+                 print(f"    {result.stderr[:200]}")
+             break
+ 
+-        processed = skill_out / "processed.h5ad"
+-        if processed.exists():
+-            current_input = str(processed)
++        baton = skill_out / chain_basename
++        if baton.exists():
++            current_input = str(baton)
+ 
+     completed_at = datetime.now(timezone.utc).isoformat()
++    skill_names = list(config.skill_names)
+     summary = {
+-        "pipeline": SPATIAL_PIPELINE,
++        "pipeline": skill_names,
+         "results": all_results,
+         "completed_at": completed_at,
+     }
+@@ -101,21 +131,90 @@ def run_spatial_pipeline(
+     summary_path.write_text(json.dumps(summary, indent=2, default=str))
+     pipeline_readme = write_pipeline_readme(
+         out_dir,
+-        pipeline_name="spatial-pipeline",
++        pipeline_name=config.name,
+         results=all_results,
+         completed_at=completed_at,
+     )
+ 
+     succeeded = sum(1 for result in all_results.values() if result["success"])
+     return build_skill_run_result(
+-        skill="spatial-pipeline",
+-        success=succeeded == len(SPATIAL_PIPELINE),
+-        exit_code=0 if succeeded == len(SPATIAL_PIPELINE) else 1,
++        skill=config.name,
++        success=succeeded == len(skill_names),
++        exit_code=0 if succeeded == len(skill_names) else 1,
+         output_dir=out_dir,
+         files=[path.name for path in out_dir.rglob("*") if path.is_file()],
+-        stdout=f"Pipeline: {succeeded}/{len(SPATIAL_PIPELINE)} skills succeeded.",
++        stdout=f"Pipeline: {succeeded}/{len(skill_names)} skills succeeded.",
+         stderr="",
+         duration_seconds=sum(result["duration"] for result in all_results.values()),
+         readme_path=pipeline_readme,
+         notebook_path="",
+     )
++
++
++def run_spatial_pipeline(
++    *,
++    default_output_root: Path,
++    err_factory,
++    input_path: str | None = None,
++    output_dir: str | None = None,
++    demo: bool = False,
++    session_path: str | None = None,
++) -> SkillRunResult:
++    """Thin wrapper preserved for backward compatibility.
++
++    Loads ``pipelines/spatial-pipeline.yaml`` and delegates to
++    :func:`run_pipeline`. New callers should use :func:`run_pipeline_by_name`
++    or :func:`run_pipeline` directly.
++    """
++    try:
++        config = load_pipeline_config("spatial-pipeline")
++    except PipelineConfigError as exc:
++        return err_factory("spatial-pipeline", f"Pipeline config invalid: {exc}")
++    if config is None:
++        return err_factory(
++            "spatial-pipeline",
++            "pipelines/spatial-pipeline.yaml not found",
++        )
++    return run_pipeline(
++        config,
++        default_output_root=default_output_root,
++        err_factory=err_factory,
++        input_path=input_path,
++        output_dir=output_dir,
++        demo=demo,
++        session_path=session_path,
++    )
++
++
++def run_pipeline_by_name(
++    name: str,
++    *,
++    default_output_root: Path,
++    err_factory,
++    input_path: str | None = None,
++    output_dir: str | None = None,
++    demo: bool = False,
++    session_path: str | None = None,
++) -> SkillRunResult | None:
++    """Load ``pipelines/<name>.yaml`` and run it; return ``None`` when absent.
++
++    ``None`` lets the dispatcher fall through to the regular skill registry
++    lookup instead of fabricating an error result the caller didn't ask for
++    — a missing YAML for a name ending in ``-pipeline`` is just "no pipeline
++    by that alias", not "the user's request was broken".
++    """
++    try:
++        config = load_pipeline_config(name)
++    except PipelineConfigError as exc:
++        return err_factory(name, f"Pipeline config invalid: {exc}")
++    if config is None:
++        return None
++    return run_pipeline(
++        config,
++        default_output_root=default_output_root,
++        err_factory=err_factory,
++        input_path=input_path,
++        output_dir=output_dir,
++        demo=demo,
++        session_path=session_path,
++    )
+diff --git a/omicsclaw/core/skill_runner.py b/omicsclaw/core/skill_runner.py
+index 4d42a0af..d42e6953 100644
+--- a/omicsclaw/core/skill_runner.py
++++ b/omicsclaw/core/skill_runner.py
+@@ -38,7 +38,11 @@
+     finalize_output_directory,
+     write_pipeline_readme,
+ )
+-from omicsclaw.core.runtime.pipeline_runner import SPATIAL_PIPELINE, run_spatial_pipeline
++from omicsclaw.core.runtime.pipeline_runner import (
++    SPATIAL_PIPELINE,
++    run_pipeline_by_name,
++    run_spatial_pipeline,
++)
+ from omicsclaw.core.runtime.subprocess_driver import drive_subprocess
+ from omicsclaw.core.skill_result import SkillRunResult, build_skill_run_result
+ 
+@@ -123,8 +127,14 @@ def run_skill(
+     """
+     skill_name = resolve_skill_alias(skill_name)
+ 
+-    if skill_name == "spatial-pipeline":
+-        return run_spatial_pipeline(
++    # Any ``<name>-pipeline`` whose YAML lives in ``pipelines/`` is dispatched
++    # through the generic chain runner. ``run_pipeline_by_name`` returns
++    # ``None`` when no YAML matches the alias, in which case we fall through
++    # to the regular skill registry lookup so genuinely unknown aliases still
++    # surface the standard "Unknown skill" error.
++    if skill_name.endswith("-pipeline"):
++        pipeline_result = run_pipeline_by_name(
++            skill_name,
+             default_output_root=DEFAULT_OUTPUT_ROOT,
+             err_factory=_err,
+             input_path=input_path,
+@@ -132,6 +142,8 @@ def run_skill(
+             demo=demo,
+             session_path=session_path,
+         )
++        if pipeline_result is not None:
++            return pipeline_result
+ 
+     skills = ensure_registry_loaded().skills
+     skill_info = skills.get(skill_name)
+diff --git a/pipelines/spatial-pipeline.yaml b/pipelines/spatial-pipeline.yaml
+new file mode 100644
+index 00000000..96d1887f
+--- /dev/null
++++ b/pipelines/spatial-pipeline.yaml
+@@ -0,0 +1,24 @@
++# Spatial transcriptomics pipeline.
++#
++# Standard chain: preprocess → domain detection → DE → SVG → spatial stats.
++# Each step reads ``processed.h5ad`` from the previous step's output dir
++# (see ``chain_output_basename`` below) and writes its own ``processed.h5ad``
++# so the chain can flow.
++#
++# Schema:
++#   name                   (required, str)  Canonical pipeline name; must end with ``-pipeline``.
++#   description            (optional, str)  One-line summary for catalogs / READMEs.
++#   chain_output_basename  (optional, str)  File name the runner looks for in each step's
++#                                           output dir to feed the next step as ``--input``.
++#                                           Default: ``processed.h5ad``.
++#   steps                  (required, list) Ordered list of {skill: <alias>} entries.
++
++name: spatial-pipeline
++description: Standard spatial transcriptomics pipeline (preprocess → domains → DE → genes → statistics).
++chain_output_basename: processed.h5ad
++steps:
++  - skill: spatial-preprocess
++  - skill: spatial-domains
++  - skill: spatial-de
++  - skill: spatial-genes
++  - skill: spatial-statistics
+diff --git a/tests/test_runtime_pipeline_config.py b/tests/test_runtime_pipeline_config.py
+new file mode 100644
+index 00000000..b700287d
+--- /dev/null
++++ b/tests/test_runtime_pipeline_config.py
+@@ -0,0 +1,174 @@
++"""Tests for ``omicsclaw.core.runtime.pipeline_config`` (OMI-12 P2.7).
++
++These pin the YAML schema and the validation errors the loader raises.
++The end-to-end runner integration is exercised by
++``test_runtime_pipeline_dispatch.py``.
++"""
++
++from __future__ import annotations
++
++import textwrap
++from pathlib import Path
++
++import pytest
++
++from omicsclaw.core.runtime.pipeline_config import (
++    PIPELINES_DIR,
++    PipelineConfigError,
++    list_available_pipelines,
++    load_pipeline_config,
++    pipeline_config_path,
++)
++
++
++# ---------------------------------------------------------------------------
++# Default config — shipped at repo root in ``pipelines/spatial-pipeline.yaml``.
++# ---------------------------------------------------------------------------
++
++
++def test_default_pipelines_dir_resolves_to_repo_root():
++    assert PIPELINES_DIR.name == "pipelines"
++    assert PIPELINES_DIR.exists(), (
++        "pipelines/ must ship with the package — the runner depends on it"
++    )
++
++
++def test_shipped_spatial_pipeline_yaml_loads():
++    config = load_pipeline_config("spatial-pipeline")
++    assert config is not None
++    assert config.name == "spatial-pipeline"
++    assert config.chain_output_basename == "processed.h5ad"
++    assert config.skill_names == (
++        "spatial-preprocess",
++        "spatial-domains",
++        "spatial-de",
++        "spatial-genes",
++        "spatial-statistics",
++    )
++
++
++def test_list_available_pipelines_includes_spatial():
++    available = list_available_pipelines()
++    assert "spatial-pipeline" in available
++
++
++def test_missing_yaml_returns_none(tmp_path: Path):
++    assert load_pipeline_config("nonexistent-pipeline", pipelines_dir=tmp_path) is None
++
++
++def test_pipeline_config_path_targets_yaml_extension(tmp_path: Path):
++    path = pipeline_config_path("foo-pipeline", pipelines_dir=tmp_path)
++    assert path == tmp_path / "foo-pipeline.yaml"
++
++
++# ---------------------------------------------------------------------------
++# Validation
++# ---------------------------------------------------------------------------
++
++
++def _write_yaml(tmp_path: Path, name: str, contents: str) -> Path:
++    path = tmp_path / f"{name}.yaml"
++    path.write_text(textwrap.dedent(contents), encoding="utf-8")
++    return path
++
++
++def test_invalid_yaml_raises(tmp_path: Path):
++    _write_yaml(tmp_path, "bad-pipeline", "name: bad-pipeline\nsteps: [oops")
++    with pytest.raises(PipelineConfigError, match="invalid YAML"):
++        load_pipeline_config("bad-pipeline", pipelines_dir=tmp_path)
++
++
++def test_top_level_must_be_mapping(tmp_path: Path):
++    _write_yaml(tmp_path, "listy-pipeline", "- not\n- a\n- mapping\n")
++    with pytest.raises(PipelineConfigError, match="top-level must be a mapping"):
++        load_pipeline_config("listy-pipeline", pipelines_dir=tmp_path)
++
++
++def test_name_must_match_filename(tmp_path: Path):
++    """A renamed file with a stale ``name:`` value must fail loudly so the
++    dispatcher and the config can't disagree silently."""
++    _write_yaml(
++        tmp_path,
++        "renamed-pipeline",
++        """
++        name: original-pipeline
++        steps:
++          - skill: foo
++        """,
++    )
++    with pytest.raises(PipelineConfigError, match="does not match"):
++        load_pipeline_config("renamed-pipeline", pipelines_dir=tmp_path)
++
++
++def test_name_must_end_with_pipeline_suffix(tmp_path: Path):
++    _write_yaml(
++        tmp_path,
++        "missing-suffix",
++        """
++        name: missing-suffix
++        steps:
++          - skill: foo
++        """,
++    )
++    with pytest.raises(PipelineConfigError, match="-pipeline"):
++        load_pipeline_config("missing-suffix", pipelines_dir=tmp_path)
++
++
++def test_steps_must_be_non_empty_list(tmp_path: Path):
++    _write_yaml(
++        tmp_path,
++        "empty-pipeline",
++        """
++        name: empty-pipeline
++        steps: []
++        """,
++    )
++    with pytest.raises(PipelineConfigError, match="non-empty list"):
++        load_pipeline_config("empty-pipeline", pipelines_dir=tmp_path)
++
++
++def test_step_requires_skill_key(tmp_path: Path):
++    _write_yaml(
++        tmp_path,
++        "broken-pipeline",
++        """
++        name: broken-pipeline
++        steps:
++          - notes: this step has no skill
++        """,
++    )
++    with pytest.raises(PipelineConfigError, match=r"step #0 ``skill``"):
++        load_pipeline_config("broken-pipeline", pipelines_dir=tmp_path)
++
++
++def test_chain_output_basename_default_when_omitted(tmp_path: Path):
++    _write_yaml(
++        tmp_path,
++        "tiny-pipeline",
++        """
++        name: tiny-pipeline
++        steps:
++          - skill: foo
++        """,
++    )
++    config = load_pipeline_config("tiny-pipeline", pipelines_dir=tmp_path)
++    assert config is not None
++    assert config.chain_output_basename == "processed.h5ad"
++
++
++def test_chain_output_basename_can_be_overridden(tmp_path: Path):
++    _write_yaml(
++        tmp_path,
++        "bulk-pipeline",
++        """
++        name: bulk-pipeline
++        chain_output_basename: counts.csv
++        steps:
++          - skill: bulkrna-qc
++          - skill: bulkrna-de
++        """,
++    )
++    config = load_pipeline_config("bulk-pipeline", pipelines_dir=tmp_path)
++    assert config is not None
++    assert config.chain_output_basename == "counts.csv"
++    assert config.skill_names == ("bulkrna-qc", "bulkrna-de")
+diff --git a/tests/test_runtime_pipeline_dispatch.py b/tests/test_runtime_pipeline_dispatch.py
+new file mode 100644
+index 00000000..2b2f83f5
+--- /dev/null
++++ b/tests/test_runtime_pipeline_dispatch.py
+@@ -0,0 +1,294 @@
++"""End-to-end tests for the YAML-driven pipeline dispatch (OMI-12 P2.7).
++
++These tests use a temporary ``pipelines/`` directory and a stub ``run_skill``
++so the chain runs in-process without spawning any subprocesses. They verify:
++
++- ``run_skill("<name>-pipeline")`` dispatches through the generic runner
++  when a matching ``pipelines/<name>.yaml`` exists.
++- The runner threads each step's chain-baton output (``processed.h5ad`` by
++  default; configurable per pipeline) into the next step's ``--input``.
++- The chain stops at the first failure and the surviving steps still land
++  in ``pipeline_summary.json``.
++- An unknown ``<name>-pipeline`` alias falls through to the standard
++  ``Unknown skill`` error rather than crashing or fabricating a pipeline.
++"""
++
++from __future__ import annotations
++
++import json
++import textwrap
++from pathlib import Path
++
++from omicsclaw.core.runtime import pipeline_runner
++from omicsclaw.core.runtime.pipeline_config import load_pipeline_config
++from omicsclaw.core.skill_result import SkillRunResult, build_skill_run_result
++
++
++def _write_pipeline(tmp_path: Path, name: str, body: str) -> None:
++    (tmp_path / f"{name}.yaml").write_text(textwrap.dedent(body), encoding="utf-8")
++
++
++def _stub_run_skill_chain(
++    monkeypatch,
++    *,
++    chain_output_basename: str = "processed.h5ad",
++    fail_on: str | None = None,
++):
++    """Replace ``run_skill`` with an in-process stub that writes the chain baton.
++
++    Returns the list of (skill_name, input_path) tuples observed in invocation
++    order so tests can verify the baton-passing actually happened.
++    """
++    calls: list[tuple[str, str | None]] = []
++
++    def fake_run_skill(*, skill_name, input_path=None, output_dir=None, demo=False, **kwargs):
++        calls.append((skill_name, input_path))
++        out_dir = Path(output_dir)
++        out_dir.mkdir(parents=True, exist_ok=True)
++        success = skill_name != fail_on
++        if success:
++            # Write a non-empty baton so the next step picks it up.
++            (out_dir / chain_output_basename).write_text("stub-output\n", encoding="utf-8")
++        return build_skill_run_result(
++            skill=skill_name,
++            success=success,
++            exit_code=0 if success else 1,
++            output_dir=str(out_dir),
++            stdout="",
++            stderr="" if success else "stub failure",
++            duration_seconds=0.01,
++            method=None,
++        )
++
++    monkeypatch.setattr("omicsclaw.core.skill_runner.run_skill", fake_run_skill)
++    return calls
++
++
++# ---------------------------------------------------------------------------
++# Happy path
++# ---------------------------------------------------------------------------
++
++
++def test_pipeline_dispatch_threads_chain_baton_through_each_step(tmp_path, monkeypatch):
++    _write_pipeline(
++        tmp_path,
++        "demo-pipeline",
++        """
++        name: demo-pipeline
++        steps:
++          - skill: step-a
++          - skill: step-b
++          - skill: step-c
++        """,
++    )
++    config = load_pipeline_config("demo-pipeline", pipelines_dir=tmp_path)
++    assert config is not None
++
++    calls = _stub_run_skill_chain(monkeypatch)
++
++    pipeline_out = tmp_path / "out"
++    initial_input = str(tmp_path / "user_input.h5ad")
++    (tmp_path / "user_input.h5ad").write_text("user", encoding="utf-8")
++
++    result = pipeline_runner.run_pipeline(
++        config,
++        default_output_root=tmp_path,
++        err_factory=lambda name, msg: build_skill_run_result(
++            skill=name, success=False, exit_code=-1, output_dir=None, stderr=msg
++        ),
++        input_path=initial_input,
++        output_dir=str(pipeline_out),
++    )
++
++    assert isinstance(result, SkillRunResult)
++    assert result.success is True
++    assert calls[0] == ("step-a", initial_input)
++    # step-b should receive step-a's baton, not the user's input.
++    assert calls[1] == ("step-b", str(pipeline_out / "step-a" / "processed.h5ad"))
++    assert calls[2] == ("step-b", str(pipeline_out / "step-a" / "processed.h5ad")) or calls[2] == (
++        "step-c",
++        str(pipeline_out / "step-b" / "processed.h5ad"),
++    )
++
++    summary = json.loads((pipeline_out / "pipeline_summary.json").read_text(encoding="utf-8"))
++    assert summary["pipeline"] == ["step-a", "step-b", "step-c"]
++    assert set(summary["results"].keys()) == {"step-a", "step-b", "step-c"}
++    assert all(entry["success"] for entry in summary["results"].values())
++
++
++def test_pipeline_respects_chain_output_basename_override(tmp_path, monkeypatch):
++    _write_pipeline(
++        tmp_path,
++        "bulk-pipeline",
++        """
++        name: bulk-pipeline
++        chain_output_basename: counts.csv
++        steps:
++          - skill: bulkrna-qc
++          - skill: bulkrna-de
++        """,
++    )
++    config = load_pipeline_config("bulk-pipeline", pipelines_dir=tmp_path)
++    assert config is not None
++
++    calls = _stub_run_skill_chain(monkeypatch, chain_output_basename="counts.csv")
++
++    pipeline_out = tmp_path / "bulk_out"
++    pipeline_runner.run_pipeline(
++        config,
++        default_output_root=tmp_path,
++        err_factory=lambda name, msg: build_skill_run_result(
++            skill=name, success=False, exit_code=-1, output_dir=None, stderr=msg
++        ),
++        input_path=str(tmp_path / "raw.csv"),
++        output_dir=str(pipeline_out),
++    )
++    (tmp_path / "raw.csv").write_text("raw", encoding="utf-8")
++
++    # step 2's input is step 1's baton, but the baton is ``counts.csv``, not
++    # the default ``processed.h5ad`` — proving the override was honoured.
++    assert calls[1][1] == str(pipeline_out / "bulkrna-qc" / "counts.csv")
++
++
++# ---------------------------------------------------------------------------
++# Failure paths
++# ---------------------------------------------------------------------------
++
++
++def test_pipeline_stops_at_first_failure_and_records_partial_summary(tmp_path, monkeypatch):
++    _write_pipeline(
++        tmp_path,
++        "demo-pipeline",
++        """
++        name: demo-pipeline
++        steps:
++          - skill: step-a
++          - skill: step-b
++          - skill: step-c
++        """,
++    )
++    config = load_pipeline_config("demo-pipeline", pipelines_dir=tmp_path)
++    assert config is not None
++
++    _stub_run_skill_chain(monkeypatch, fail_on="step-b")
++
++    pipeline_out = tmp_path / "out"
++    result = pipeline_runner.run_pipeline(
++        config,
++        default_output_root=tmp_path,
++        err_factory=lambda name, msg: build_skill_run_result(
++            skill=name, success=False, exit_code=-1, output_dir=None, stderr=msg
++        ),
++        input_path=str(tmp_path / "user_input.h5ad"),
++        output_dir=str(pipeline_out),
++    )
++    (tmp_path / "user_input.h5ad").write_text("user", encoding="utf-8")
++
++    assert result.success is False
++    summary = json.loads((pipeline_out / "pipeline_summary.json").read_text(encoding="utf-8"))
++    # step-c never ran because the chain stopped at step-b.
++    assert "step-a" in summary["results"]
++    assert "step-b" in summary["results"]
++    assert "step-c" not in summary["results"]
++    assert summary["results"]["step-a"]["success"] is True
++    assert summary["results"]["step-b"]["success"] is False
++
++
++def test_pipeline_requires_at_least_one_input_source(tmp_path, monkeypatch):
++    _write_pipeline(
++        tmp_path,
++        "demo-pipeline",
++        """
++        name: demo-pipeline
++        steps:
++          - skill: step-a
++        """,
++    )
++    config = load_pipeline_config("demo-pipeline", pipelines_dir=tmp_path)
++    assert config is not None
++
++    captured: dict[str, str] = {}
++
++    def err(name: str, msg: str) -> SkillRunResult:
++        captured["name"] = name
++        captured["msg"] = msg
++        return build_skill_run_result(
++            skill=name, success=False, exit_code=-1, output_dir=None, stderr=msg
++        )
++
++    result = pipeline_runner.run_pipeline(
++        config,
++        default_output_root=tmp_path,
++        err_factory=err,
++        input_path=None,
++        output_dir=None,
++        demo=False,
++    )
++
++    assert result.success is False
++    assert captured["name"] == "demo-pipeline"
++    assert "Requires --input" in captured["msg"]
++
++
++# ---------------------------------------------------------------------------
++# Dispatcher integration: run_skill("<name>-pipeline") routes through YAML.
++# ---------------------------------------------------------------------------
++
++
++def test_run_skill_dispatches_unknown_pipeline_alias_back_to_unknown_skill(monkeypatch, tmp_path):
++    """Names ending in ``-pipeline`` without a matching YAML must NOT crash
++    or fabricate a pipeline — they fall through to the regular
++    ``Unknown skill`` error path. That's the only way a typo like
++    ``spatail-pipeline`` produces a sensible message."""
++    from omicsclaw.core import skill_runner
++    import omicsclaw.core.runtime.pipeline_config as pipeline_config
++
++    monkeypatch.setattr(pipeline_config, "PIPELINES_DIR", tmp_path, raising=False)
++    # No YAML exists in tmp_path → run_pipeline_by_name returns None and the
++    # dispatcher falls through to the regular skill registry lookup.
++    result = skill_runner.run_skill("totally-bogus-pipeline")
++    assert result.success is False
++    assert "Unknown skill" in result.stderr
++
++
++def test_run_skill_dispatcher_routes_pipeline_alias_to_run_pipeline_by_name(
++    monkeypatch, tmp_path
++):
++    """The dispatcher must hand any ``<name>-pipeline`` alias to
++    ``run_pipeline_by_name`` before the skill registry lookup. Verified by
++    intercepting that helper directly so we don't need to stand up real
++    skill scripts."""
++    from omicsclaw.core import skill_runner
++    from omicsclaw.core.skill_result import build_skill_run_result
++
++    captured: dict[str, object] = {}
++    sentinel = build_skill_run_result(
++        skill="smoke-pipeline",
++        success=True,
++        exit_code=0,
++        output_dir=str(tmp_path / "out"),
++        stdout="dispatched",
++    )
++
++    def fake_run_pipeline_by_name(name, **kwargs):
++        captured["name"] = name
++        captured["kwargs"] = kwargs
++        return sentinel
++
++    monkeypatch.setattr(skill_runner, "run_pipeline_by_name", fake_run_pipeline_by_name)
++
++    result = skill_runner.run_skill(
++        "smoke-pipeline",
++        input_path=str(tmp_path / "in.h5ad"),
++        output_dir=str(tmp_path / "out"),
++    )
++
++    assert result is sentinel
++    assert captured["name"] == "smoke-pipeline"
++    forwarded = captured["kwargs"]
++    assert forwarded["input_path"] == str(tmp_path / "in.h5ad")
++    assert forwarded["output_dir"] == str(tmp_path / "out")
++    # ``err_factory`` is injected so the chain can return stable errors
++    # without importing ``_err`` itself.
++    assert callable(forwarded["err_factory"])
++    assert forwarded["default_output_root"] == skill_runner.DEFAULT_OUTPUT_ROOT

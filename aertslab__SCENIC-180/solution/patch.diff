@@ -1,0 +1,82 @@
+diff --git a/R/class_ScenicOptions.R b/R/class_ScenicOptions.R
+index 56b0954..9d820ed 100644
+--- a/R/class_ScenicOptions.R
++++ b/R/class_ScenicOptions.R
+@@ -472,12 +472,14 @@ dbVersion <- function(dbs)
+ #' @rdname ScenicOptions-class
+ #' @export 
+ dbLoadingAttempt <- function(dbFilePath){
+-  ret <- FALSE
+-  ret <- tryCatch({
+-    md <- feather::feather_metadata(dbFilePath)
+-    md$path
+-    md$dim[2] == length(md$types)
+-    randomCol <- sample(names(md$types),1)
++    ret <- FALSE
++    ret <- tryCatch({
++    rf <- arrow::ReadableFile$create(dbFilePath)
++    fr <- arrow::FeatherReader$create(rf)
++    fr$version
++    genesInDb <- names(fr)
++    randomCol <- sample(genesInDb, 1)
++    fr$Read(randomCol)
+     rnk <- RcisTarget::importRankings(dbFilePath, columns=randomCol)
+     return(TRUE)
+   }
+@@ -497,10 +499,12 @@ checkAnnots <- function(object, motifAnnot)
+   allFeaturesInAnnot <- unlist(motifAnnot[,1]) # motif or track
+   featuresWithAnnot <-  lapply(getDatabases(object), function(dbFile) 
+   {
+-    nRnks <- unlist(feather::read_feather(dbFile, columns="features")[,1])
++    rnktype = "features"	#TODO: add as option for custom dbs
++    nRnks <- getRanking(RcisTarget::importRankings(dbFile, columns = rnktype))
++    nRnks <- dplyr::pull(nRnks, rnktype)
++
+     length(intersect(allFeaturesInAnnot,nRnks))/length(unique(c(allFeaturesInAnnot,nRnks)))
+   })
+   return(featuresWithAnnot)
+ }
+ 
+-
+diff --git a/R/runSCENIC_2_createRegulons.R b/R/runSCENIC_2_createRegulons.R
+index 286f689..b7ed53d 100755
+--- a/R/runSCENIC_2_createRegulons.R
++++ b/R/runSCENIC_2_createRegulons.R
+@@ -64,8 +64,13 @@ runSCENIC_2_createRegulons <- function(scenicOptions,
+   if(any(!loadAttempt)) stop("It is not possible to load the following databses: \n",
+                                 paste(dbs[which(!loadAttempt)], collapse="\n"))
+   
+-  genesInDb <- unique(unlist(lapply(getDatabases(scenicOptions), function(x)
+-    names(feather::feather_metadata(x)[["types"]]))))
++  genesInDb <- unique(unlist(lapply(getDatabases(scenicOptions), function(dbFilePath) {
++	rf <- arrow::ReadableFile$create(dbFilePath)
++	fr <- arrow::FeatherReader$create(rf)
++	genesInDb <- names(fr)
++	rnktype <- "features"        #TODO: add as option for custom dbs
++	genesInDb <- genesInDb[genesInDb != rnktype]
++	})))
+   
+   ## Check if annotation and rankings (potentially) match:
+   featuresWithAnnot <- checkAnnots(scenicOptions, motifAnnot)
+@@ -208,7 +213,7 @@ runSCENIC_2_createRegulons <- function(scenicOptions,
+   
+   ################################################################
+   # 2. Prune targets
+-  msg <- paste0(format(Sys.time(), "%H:%M"), "\tRcisTarget: Prunning targets")
++  msg <- paste0(format(Sys.time(), "%H:%M"), "\tRcisTarget: Pruning targets")
+   if(getSettings(scenicOptions, "verbose")) message(msg)
+     
+   dbNames <- getDatabases(scenicOptions)
+diff --git a/R/runSCENIC_2_createRegulons_Original.R b/R/runSCENIC_2_createRegulons_Original.R
+index 33a4700..566e34e 100755
+--- a/R/runSCENIC_2_createRegulons_Original.R
++++ b/R/runSCENIC_2_createRegulons_Original.R
+@@ -144,7 +144,7 @@
+ #'   
+ #'   ################################################################
+ #'   # 2. Prune targets
+-#'   msg <- paste0(format(Sys.time(), "%H:%M"), "\tRcisTarget: Prunning targets")
++#'   msg <- paste0(format(Sys.time(), "%H:%M"), "\tRcisTarget: Pruning targets")
+ #'   if(getSettings(scenicOptions, "verbose")) message(msg)
+ #'     
+ #'   dbNames <- getDatabases(scenicOptions)

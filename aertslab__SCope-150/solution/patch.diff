@@ -1,0 +1,80 @@
+diff --git a/opt/scopeserver/utils/Loom.py b/opt/scopeserver/utils/Loom.py
+index dfe60b7d..f4d1f656 100644
+--- a/opt/scopeserver/utils/Loom.py
++++ b/opt/scopeserver/utils/Loom.py
+@@ -21,15 +21,15 @@ def __init__(self, partial_md5_hash, file_path, abs_file_path, loom_connection):
+ 
+     def get_connection(self):
+         return self.loom_connection
+-    
++
+     def get_file_path(self):
+         return self.file_path
+-    
++
+     def get_abs_file_path(self):
+         return self.abs_file_path
+-    
++
+     def get_global_attribute_by_name(self, name):
+-        if not hasattr(self.loom_connection.attrs, name):
++        if name not in self.loom_connection.attrs.keys():
+             raise AttributeError("The global attribute {0} does not exist in the .loom file.".format(name))
+         return self.loom_connection.attrs[name]
+ 
+@@ -42,7 +42,7 @@ def dfToNamedMatrix(df):
+ 
+     def get_cell_ids(self):
+         return self.loom_connection.ca["CellID"]
+-    
++
+     #############
+     # Meta Data #
+     #############
+@@ -190,7 +190,7 @@ def get_meta_data(self):
+             return json.loads(md)
+         except json.decoder.JSONDecodeError:
+             return Loom.decompress_meta(meta=md)
+-    
++
+     def get_nb_cells(self):
+         return self.loom_connection.shape[1]
+ 
+@@ -283,7 +283,7 @@ def get_gene_expression(self, gene_symbol, log_transform=True, cpm_normalise=Fal
+         else:
+             cellIndices = list(range(self.get_nb_cells()))
+         return gene_expr, cellIndices
+-    
++
+     ############
+     # Regulons #
+     ############
+@@ -310,7 +310,7 @@ def get_auc_values(self, regulon, annotation='', logic='OR'):
+                 vals = vals[cellIndices]
+             return vals, cellIndices
+         return [], cellIndices
+-    
++
+     ##############
+     # Embeddings #
+     ##############
+@@ -381,15 +381,15 @@ def get_ca_attr_by_name(self, name):
+ 
+     def get_clustering_by_id(self, clustering_id):
+         return self.loom_connection.ca.Clusterings[str(clustering_id)]
+-    
++
+     # def get_cluster_IDs(self, loom_file_path, clustering_id):
+     #     loom = self.lfh.get_loom_connection(loom_file_path)
+     #     return loom.ca.Clusterings[str(clustering_id)]
+ 
+     def get_cluster_marker_genes(self, clustering_id, cluster_id):
+         return self.get_genes()[self.loom_connection.ra["ClusterMarkers_{0}".format(clustering_id)][str(cluster_id)] == 1]
+-    
++
+     def get_cluster_marker_metrics(self, clustering_id, cluster_id, metric_accessor):
+         cluster_marker_metric = self.loom_connection.row_attrs["ClusterMarkers_{0}_{1}".format(clustering_id, metric_accessor)][str(cluster_id)]
+         # Return non-zero values
+-        return cluster_marker_metric[cluster_marker_metric != 0]
+\ No newline at end of file
++        return cluster_marker_metric[cluster_marker_metric != 0]

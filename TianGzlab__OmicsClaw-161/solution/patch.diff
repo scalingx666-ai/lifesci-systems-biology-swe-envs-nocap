@@ -1,0 +1,602 @@
+diff --git a/omicsclaw/app/server.py b/omicsclaw/app/server.py
+index 27ccec1f..869d2aa0 100644
+--- a/omicsclaw/app/server.py
++++ b/omicsclaw/app/server.py
+@@ -2469,6 +2469,40 @@ async def uninstall_skill(req: SkillUninstallRequest):
+ # GET /memory/browse — browse memory graph nodes
+ # ---------------------------------------------------------------------------
+ 
++async def _decorate_analysis_titles(children: list) -> None:
++    """Replace ``name`` with a derived display label for analysis://*
++    children, in-place. See
++    docs/adr/0002-derived-display-label-for-analysis-memory.md.
++
++    The engine's ``list_children_rich`` returns a 100-char
++    ``content_snippet`` that's too short to carry the full
++    ``executed_at``/``parameters.input``, so we fetch the full content
++    via ``recall`` for each analysis child. Cost = N indexed reads where
++    N = number of analysis children rendered in the current tree level
++    (typically ≤ 50 in the desktop UI). Silent fallback to ``edge.name``
++    on parse failure or missing fields means the UI never renders blank.
++    """
++    if _memory_client is None:
++        return
++    from omicsclaw.memory.compat import _analysis_content_to_title
++
++    for child in children:
++        if child.get("domain") != "analysis":
++            continue
++        path = child.get("path")
++        if not isinstance(path, str) or not path:
++            continue
++        try:
++            record = await _memory_client.recall(f"analysis://{path}")
++        except Exception:
++            continue
++        if record is None or not getattr(record, "content", None):
++            continue
++        title = _analysis_content_to_title(record.content)
++        if title is not None:
++            child["name"] = title
++
++
+ @app.get("/memory/browse")
+ async def memory_browse(
+     path: str = Query("", description="Node path to browse"),
+@@ -2495,6 +2529,7 @@ async def memory_browse(
+             context_path=path,
+             include_shared=True,
+         )
++        await _decorate_analysis_titles(children)
+ 
+         # Also get the node itself if path is provided
+         node = None
+@@ -2929,6 +2964,7 @@ async def memory_children(
+             context_path=path_str or None,
+             include_shared=True,
+         )
++        await _decorate_analysis_titles(children)
+         return {"node_uuid": parent_uuid, "domain": domain_str, "children": children}
+     except Exception as exc:
+         logger.exception("Memory children error")
+diff --git a/omicsclaw/memory/compat.py b/omicsclaw/memory/compat.py
+index c77b052c..24854084 100644
+--- a/omicsclaw/memory/compat.py
++++ b/omicsclaw/memory/compat.py
+@@ -214,6 +214,73 @@ def _content_to_memory(content: str, memory_type: str) -> Optional[BaseMemory]:
+         return None
+ 
+ 
++def _analysis_content_to_title(
++    content: str, *, now: Optional[datetime] = None
++) -> Optional[str]:
++    """Render the desktop tree label for an ``analysis://*`` memory.
++
++    The URI's last path segment is a UUID hex (load-bearing for write-
++    collision avoidance), so the segment alone is unintelligible. This
++    helper parses the Pydantic-serialized content and produces a
++    human-readable Display label:
++
++        ``<dataset_basename> · <hh:mm or yyyy-mm-dd hh:mm> · <status>``
++
++    Returns ``None`` on any failure (non-JSON, missing ``executed_at``,
++    unparseable timestamp). Callers fall back to ``edge.name`` so the
++    UI never renders a blank row.
++
++    The ``now`` keyword exists so tests can pin the today/older
++    boundary; production passes ``None`` and the helper uses
++    ``datetime.now(tz=UTC)``. Both ``executed_at`` and ``now`` are
++    converted to the server's local TZ for the date/time format —
++    correct for the desktop deployment (server == user); remote-mode
++    surfaces a known caveat (see
++    docs/adr/0002-derived-display-label-for-analysis-memory.md).
++    """
++    if not content:
++        return None
++    try:
++        data = json.loads(content)
++    except (json.JSONDecodeError, ValueError):
++        return None
++    if not isinstance(data, dict):
++        return None
++
++    executed_raw = data.get("executed_at")
++    if not isinstance(executed_raw, str):
++        return None
++    try:
++        executed_at = datetime.fromisoformat(executed_raw.replace("Z", "+00:00"))
++    except (ValueError, TypeError):
++        return None
++    if executed_at.tzinfo is None:
++        executed_at = executed_at.replace(tzinfo=timezone.utc)
++    local_executed = executed_at.astimezone()
++
++    if now is None:
++        now = datetime.now(tz=timezone.utc)
++    elif now.tzinfo is None:
++        now = now.replace(tzinfo=timezone.utc)
++    local_now = now.astimezone()
++
++    if local_executed.date() == local_now.date():
++        time_str = local_executed.strftime("%H:%M")
++    else:
++        time_str = local_executed.strftime("%Y-%m-%d %H:%M")
++
++    params = data.get("parameters") if isinstance(data.get("parameters"), dict) else {}
++    raw_input = params.get("input") if isinstance(params.get("input"), str) else ""
++    if raw_input:
++        basename = os.path.basename(raw_input) or raw_input
++    else:
++        basename = "<unknown dataset>"
++
++    status = data.get("status") if isinstance(data.get("status"), str) else "?"
++
++    return f"{basename} · {time_str} · {status}"
++
++
+ # =============================================================================
+ # CompatMemoryStore — implements the old MemoryStore interface
+ # =============================================================================
+diff --git a/tests/memory/test_compat_display_label.py b/tests/memory/test_compat_display_label.py
+new file mode 100644
+index 00000000..36cef25d
+--- /dev/null
++++ b/tests/memory/test_compat_display_label.py
+@@ -0,0 +1,242 @@
++"""Tests for the AnalysisMemory display label derivation.
++
++The desktop memory tree shows ``edge.name`` as the entry label. For
++``analysis://*`` URIs, ``edge.name`` is a UUID hex chosen for write-
++collision avoidance (analysis is overwrite-mode, every run needs a
++unique URI). Users see entries like ``3c7a182ee7ab498ea4454a2f8465063c``
++and cannot tell which dataset, when, or whether the run succeeded.
++
++``_analysis_content_to_title`` derives a human label from the JSON
++content of an AnalysisMemory row:
++
++    <dataset_basename> · <hh:mm or yyyy-mm-dd hh:mm> · <status>
++
++Decided in ``docs/adr/0002-derived-display-label-for-analysis-memory.md``:
++- Server-local timezone for the time component
++- Today → ``HH:MM``; older → ``YYYY-MM-DD HH:MM``
++- Silent fallback to ``None`` on parse failure or missing fields so the
++  caller can keep the existing ``edge.name`` and never render blanks
++"""
++
++from __future__ import annotations
++
++import json
++import os
++import time
++from datetime import datetime, timedelta, timezone
++
++import pytest
++
++# Pin the test process to UTC so the function's ``astimezone()`` call —
++# which uses libc's local TZ — produces deterministic strings regardless
++# of the developer's or CI runner's locale. The function itself
++# intentionally renders in server-local TZ in production; tests just
++# fix what "local" means.
++os.environ["TZ"] = "UTC"
++time.tzset()
++
++from omicsclaw.memory.compat import _analysis_content_to_title  # noqa: E402
++
++
++def _analysis_payload(**overrides):
++    """Build a JSON-encoded AnalysisMemory content. Tests override
++    individual fields via kwargs."""
++    base = {
++        "memory_id": "01e28fff4cee429987c4cce68f02b6e2",
++        "memory_type": "analysis",
++        "created_at": "2026-05-05T04:43:47.942398Z",
++        "source_dataset_id": "b16e3d05b64d49eaa6537f1891c961c1",
++        "parent_analysis_id": None,
++        "skill": "sc-preprocessing",
++        "method": "default",
++        "parameters": {
++            "input": "/data/beifen/zhouwg_data/omicsclaw-workspace/data/pbmc3k_raw.h5ad",
++        },
++        "output_path": "",
++        "status": "failed",
++        "executed_at": "2026-05-05T04:43:47.942410Z",
++        "duration_seconds": 0.0,
++    }
++    base.update(overrides)
++    return json.dumps(base)
++
++
++# ----------------------------------------------------------------------
++# Happy path: dataset basename · time · status
++# ----------------------------------------------------------------------
++
++
++def test_happy_path_uses_basename_time_status():
++    """Full AnalysisMemory content with today's timestamp produces the
++    canonical ``<basename> · HH:MM · <status>`` label."""
++    today = datetime(2026, 5, 5, 12, 43, 0, tzinfo=timezone.utc)
++    content = _analysis_payload(
++        executed_at="2026-05-05T12:43:00Z",
++        status="completed",
++    )
++
++    title = _analysis_content_to_title(content, now=today)
++
++    assert title == "pbmc3k_raw.h5ad · 12:43 · completed", (
++        f"got {title!r}"
++    )
++
++
++def test_older_date_includes_full_date_in_label():
++    """When executed_at is on a previous day relative to ``now``, the
++    label includes the date so the user can tell apart runs from
++    different days at the same clock-time."""
++    now = datetime(2026, 5, 10, 9, 0, 0, tzinfo=timezone.utc)
++    content = _analysis_payload(
++        executed_at="2026-05-05T12:43:00Z",
++        status="failed",
++    )
++
++    title = _analysis_content_to_title(content, now=now)
++
++    assert title == "pbmc3k_raw.h5ad · 2026-05-05 12:43 · failed", (
++        f"got {title!r}"
++    )
++
++
++@pytest.mark.parametrize("status", ["completed", "failed", "interrupted"])
++def test_each_status_value_renders_verbatim(status):
++    """All three valid AnalysisMemory.status enum values appear in the
++    label as-is."""
++    today = datetime(2026, 5, 5, 12, 43, 0, tzinfo=timezone.utc)
++    content = _analysis_payload(
++        executed_at="2026-05-05T12:43:00Z",
++        status=status,
++    )
++
++    title = _analysis_content_to_title(content, now=today)
++
++    assert title is not None
++    assert title.endswith(f" · {status}"), f"got {title!r}"
++
++
++# ----------------------------------------------------------------------
++# Dataset basename extraction
++# ----------------------------------------------------------------------
++
++
++def test_parameters_input_full_path_extracts_basename():
++    """``parameters.input`` carrying a POSIX-style absolute path is
++    reduced to its basename so the label stays short."""
++    today = datetime(2026, 5, 5, 12, 43, 0, tzinfo=timezone.utc)
++    content = _analysis_payload(
++        parameters={"input": "/some/very/long/path/to/dataset.h5ad"},
++        executed_at="2026-05-05T12:43:00Z",
++        status="completed",
++    )
++
++    title = _analysis_content_to_title(content, now=today)
++
++    assert title is not None
++    assert title.startswith("dataset.h5ad · "), f"got {title!r}"
++
++
++def test_parameters_input_already_a_filename_is_unchanged():
++    """When ``parameters.input`` is already a bare filename (no slashes),
++    the basename helper is a no-op."""
++    today = datetime(2026, 5, 5, 12, 43, 0, tzinfo=timezone.utc)
++    content = _analysis_payload(
++        parameters={"input": "pbmc3k_raw.h5ad"},
++        executed_at="2026-05-05T12:43:00Z",
++        status="completed",
++    )
++
++    title = _analysis_content_to_title(content, now=today)
++
++    assert title is not None
++    assert title.startswith("pbmc3k_raw.h5ad · "), f"got {title!r}"
++
++
++def test_missing_parameters_input_falls_back_to_unknown_dataset():
++    """When ``parameters`` exists but lacks ``input`` (e.g., a skill
++    that doesn't take an input file), the time + status portion is
++    still useful — render with an ``<unknown dataset>`` placeholder
++    instead of returning None."""
++    today = datetime(2026, 5, 5, 12, 43, 0, tzinfo=timezone.utc)
++    content = _analysis_payload(
++        parameters={"foo": "bar"},
++        executed_at="2026-05-05T12:43:00Z",
++        status="completed",
++    )
++
++    title = _analysis_content_to_title(content, now=today)
++
++    assert title == "<unknown dataset> · 12:43 · completed", (
++        f"got {title!r}"
++    )
++
++
++def test_missing_parameters_dict_entirely_still_renders_with_placeholder():
++    """``parameters`` key absent — still produce time+status with the
++    unknown-dataset placeholder."""
++    today = datetime(2026, 5, 5, 12, 43, 0, tzinfo=timezone.utc)
++    content = _analysis_payload(
++        parameters={},  # empty dict
++        executed_at="2026-05-05T12:43:00Z",
++        status="failed",
++    )
++
++    title = _analysis_content_to_title(content, now=today)
++
++    assert title is not None
++    assert "<unknown dataset>" in title
++
++
++# ----------------------------------------------------------------------
++# Fallback: silent None on bad input
++# ----------------------------------------------------------------------
++
++
++def test_non_json_content_returns_none():
++    """Plain-text content (e.g., a session record decoded as text)
++    is not derivable. Return None so the caller falls back to
++    edge.name."""
++    title = _analysis_content_to_title("not json at all")
++    assert title is None
++
++
++def test_empty_content_returns_none():
++    title = _analysis_content_to_title("")
++    assert title is None
++
++
++def test_json_without_executed_at_returns_none():
++    """A JSON object that lacks the load-bearing ``executed_at`` field
++    is treated as not-an-analysis and falls back."""
++    content = json.dumps({"skill": "sc-preprocessing", "status": "completed"})
++    title = _analysis_content_to_title(content)
++    assert title is None
++
++
++def test_executed_at_with_invalid_format_returns_none():
++    """Malformed timestamp (not ISO-8601) is unparseable; refuse to
++    guess and fall back."""
++    content = _analysis_payload(executed_at="not-a-timestamp")
++    title = _analysis_content_to_title(content)
++    assert title is None
++
++
++# ----------------------------------------------------------------------
++# Today-vs-older boundary
++# ----------------------------------------------------------------------
++
++
++def test_yesterday_renders_as_dated_label():
++    """Edge of the today/older cutoff: events on the local-day before
++    ``now`` get the full date format."""
++    now = datetime(2026, 5, 10, 0, 30, 0, tzinfo=timezone.utc)
++    yesterday = now - timedelta(days=1)
++    content = _analysis_payload(
++        executed_at=yesterday.isoformat().replace("+00:00", "Z"),
++        status="completed",
++    )
++
++    title = _analysis_content_to_title(content, now=now)
++
++    assert title is not None
++    assert title.startswith("pbmc3k_raw.h5ad · 2026-05-09 "), f"got {title!r}"
+diff --git a/tests/test_app_server.py b/tests/test_app_server.py
+index 701c6a3b..faadf4aa 100644
+--- a/tests/test_app_server.py
++++ b/tests/test_app_server.py
+@@ -2558,6 +2558,210 @@ async def test_memory_browse_children_have_rich_shape(monkeypatch, tmp_path):
+         await memory_pkg.close_db()
+ 
+ 
++# ---------------------------------------------------------------------------
++# /memory/browse + /memory/children — derived display label for analysis://*
++# (see docs/adr/0002-derived-display-label-for-analysis-memory.md)
++# ---------------------------------------------------------------------------
++
++
++def _seed_analysis_payload(*, status: str, dataset_path: str, executed_at: str):
++    """Build a Pydantic-compatible AnalysisMemory JSON for seeding."""
++    import json as _json
++
++    return _json.dumps({
++        "memory_id": "any-uuid-fake",
++        "memory_type": "analysis",
++        "created_at": executed_at,
++        "source_dataset_id": "ds-uuid",
++        "parent_analysis_id": None,
++        "skill": "sc-preprocessing",
++        "method": "default",
++        "parameters": {"input": dataset_path},
++        "output_path": "",
++        "status": status,
++        "executed_at": executed_at,
++        "duration_seconds": 0.0,
++    })
++
++
++@pytest.mark.asyncio
++async def test_memory_browse_decorates_analysis_children_with_derived_title(
++    monkeypatch, tmp_path
++):
++    """For ``analysis://*`` parents, ``/memory/browse`` must surface
++    ``<basename> · <time> · <status>`` in each child's ``name`` field,
++    not the URI's UUID-style last segment. The desktop tree currently
++    renders ``name`` directly so the user sees identifiable rows
++    instead of opaque hex.
++    """
++    import os as _os
++    import time as _time
++
++    # Pin the test process to UTC so the time-of-day rendered by
++    # ``_analysis_content_to_title`` is deterministic regardless of the
++    # CI runner's locale.
++    _os.environ["TZ"] = "UTC"
++    _time.tzset()
++
++    pytest.importorskip("fastapi")
++
++    from omicsclaw.app import server
++    from omicsclaw.memory.memory_client import MemoryClient
++
++    _, _, memory_pkg = await _setup_memory_review_runtime(monkeypatch, tmp_path)
++
++    try:
++        engine = memory_pkg.get_memory_engine()
++        desktop_client = MemoryClient(engine=engine, namespace="app/desktop_user")
++        monkeypatch.setattr(server, "_memory_client", desktop_client)
++
++        # Two analysis runs under the same skill, different datasets and
++        # statuses. URI last-segments are intentionally unreadable to
++        # mimic the production UUID-hex pattern this fix exists for.
++        await desktop_client.remember(
++            "analysis://sc-preprocessing/3c7a182ee7ab498ea4454a2f8465063c",
++            _seed_analysis_payload(
++                status="completed",
++                dataset_path="/data/work/pbmc3k_raw.h5ad",
++                executed_at="2026-05-05T12:43:00Z",
++            ),
++        )
++        await desktop_client.remember(
++            "analysis://sc-preprocessing/9c71d3252e4c4fc3ae51468db124d5cc",
++            _seed_analysis_payload(
++                status="failed",
++                dataset_path="/data/work/visium_brain.h5ad",
++                executed_at="2026-05-05T08:15:00Z",
++            ),
++        )
++
++        result = await server.memory_browse(
++            path="sc-preprocessing", domain="analysis"
++        )
++        children = result["children"]
++        assert len(children) == 2, (
++            f"seeded 2 children, got {len(children)}: {children!r}"
++        )
++
++        names = {c["name"] for c in children}
++
++        # Both children should have the derived title in ``name``. We
++        # don't pin exact strings on the time portion (older-than-today
++        # vs today depends on the test's wall clock) — assert the two
++        # invariant pieces: dataset basename and status.
++        for c in children:
++            assert "·" in c["name"], (
++                f"expected derived title with separator in name, got "
++                f"{c['name']!r} — looks like raw UUID, decoration didn't fire"
++            )
++            assert (
++                "pbmc3k_raw.h5ad" in c["name"]
++                or "visium_brain.h5ad" in c["name"]
++            ), f"name {c['name']!r} missing dataset basename"
++            assert (
++                c["name"].endswith(" · completed")
++                or c["name"].endswith(" · failed")
++            ), f"name {c['name']!r} missing status suffix"
++
++        # The original UUID is preserved in ``path`` so the frontend
++        # can still link to / inspect / delete the row.
++        paths = {c["path"] for c in children}
++        assert (
++            "sc-preprocessing/3c7a182ee7ab498ea4454a2f8465063c" in paths
++        ), f"path {paths!r} should keep UUID"
++
++        # Negative: bare UUID hex must NOT appear as a name (that was
++        # the pre-fix behaviour).
++        assert (
++            "3c7a182ee7ab498ea4454a2f8465063c" not in names
++        ), f"name set still contains raw UUID: {names!r}"
++    finally:
++        await memory_pkg.close_db()
++
++
++@pytest.mark.asyncio
++async def test_memory_children_endpoint_decorates_analysis_too(
++    monkeypatch, tmp_path
++):
++    """The ``/memory/children`` endpoint shares the decoration. The
++    desktop graph view loads children through this endpoint after the
++    initial ``/memory/browse`` so both paths must produce the same
++    label or the UI would flicker between hex and title."""
++    import os as _os
++    import time as _time
++
++    _os.environ["TZ"] = "UTC"
++    _time.tzset()
++
++    pytest.importorskip("fastapi")
++
++    from omicsclaw.app import server
++    from omicsclaw.memory.memory_client import MemoryClient
++
++    _, _, memory_pkg = await _setup_memory_review_runtime(monkeypatch, tmp_path)
++
++    try:
++        engine = memory_pkg.get_memory_engine()
++        desktop_client = MemoryClient(engine=engine, namespace="app/desktop_user")
++        monkeypatch.setattr(server, "_memory_client", desktop_client)
++
++        await desktop_client.remember(
++            "analysis://sc-preprocessing/abc123fakeuuid",
++            _seed_analysis_payload(
++                status="completed",
++                dataset_path="/x/pbmc3k_raw.h5ad",
++                executed_at="2026-05-05T12:43:00Z",
++            ),
++        )
++
++        result = await server.memory_children(
++            node_uuid="", domain="analysis", path="sc-preprocessing"
++        )
++        children = result["children"]
++        assert len(children) == 1, f"got {children!r}"
++        assert "·" in children[0]["name"]
++        assert "pbmc3k_raw.h5ad" in children[0]["name"]
++        assert children[0]["name"].endswith(" · completed")
++        assert children[0]["path"] == "sc-preprocessing/abc123fakeuuid", (
++            "path must preserve the raw URI segment"
++        )
++    finally:
++        await memory_pkg.close_db()
++
++
++@pytest.mark.asyncio
++async def test_memory_browse_does_not_decorate_non_analysis_domains(
++    monkeypatch, tmp_path
++):
++    """The decoration is scoped to ``analysis://*``. Other domains —
++    here ``core://`` — keep their existing ``edge.name`` (URI's last
++    path segment) so the fix doesn't perturb dataset / preference /
++    session / core listings."""
++    pytest.importorskip("fastapi")
++
++    from omicsclaw.app import server
++    from omicsclaw.memory.memory_client import MemoryClient
++
++    _, _, memory_pkg = await _setup_memory_review_runtime(monkeypatch, tmp_path)
++
++    try:
++        engine = memory_pkg.get_memory_engine()
++        desktop_client = MemoryClient(engine=engine, namespace="app/desktop_user")
++        monkeypatch.setattr(server, "_memory_client", desktop_client)
++
++        await desktop_client.remember("core://my_user/note", "v1")
++
++        result = await server.memory_browse(path="my_user", domain="core")
++        children = result["children"]
++        assert len(children) == 1
++        assert children[0]["name"] == "note", (
++            f"core domain should keep edge.name; got {children[0]['name']!r}. "
++            f"Decoration must be scoped to analysis://* only."
++        )
++    finally:
++        await memory_pkg.close_db()
++
++
+ # ---------------------------------------------------------------------------
+ # T2 S3 — /memory/search namespace-scoped (caller + __shared__ only)
+ # ---------------------------------------------------------------------------

@@ -1,0 +1,625 @@
+diff --git a/DESCRIPTION b/DESCRIPTION
+index 6aa30523..deef0541 100644
+--- a/DESCRIPTION
++++ b/DESCRIPTION
+@@ -8,6 +8,10 @@ Authors@R:
+         person(
+             given = "Federico", family = "Marini", role = c("aut", "cre"), 
+             email = "marinif@uni-mainz.de", comment = c(ORCID = "0000-0003-3252-7758")
++        ),
++		person(
++            given = "Annekathrin", family = "Ludt", role = c("aut"), 
++            email = "anneludt@uni-mainz.de", comment = c(ORCID = "0000-0002-2475-4945")
+         )
+     )
+ Description: This package provides a Shiny application that aims to combine at 
+@@ -23,6 +27,7 @@ Imports:
+     AnnotationDbi,
+     bs4Dash,
+     colorspace,
++	colourpicker,
+     ComplexHeatmap,
+     dendextend,
+     DESeq2,
+diff --git a/NAMESPACE b/NAMESPACE
+index b85650d1..755053d2 100644
+--- a/NAMESPACE
++++ b/NAMESPACE
+@@ -45,6 +45,7 @@ export(shake_enrichrResult)
+ export(shake_fgseaResult)
+ export(shake_gprofilerResult)
+ export(shake_topGOtableResult)
++export(signature_volcano)
+ export(styleColorBar_divergent)
+ import(GO.db)
+ import(SummarizedExperiment)
+@@ -92,6 +93,7 @@ importFrom(bs4Dash,bs4ValueBoxOutput)
+ importFrom(bs4Dash,renderbs4InfoBox)
+ importFrom(bs4Dash,renderbs4ValueBox)
+ importFrom(colorspace,rainbow_hcl)
++importFrom(colourpicker,colourInput)
+ importFrom(dendextend,branches_attr_by_clusters)
+ importFrom(dendextend,set)
+ importFrom(dplyr,"%>%")
+diff --git a/NEWS.md b/NEWS.md
+index a1505db3..f9579a20 100644
+--- a/NEWS.md
++++ b/NEWS.md
+@@ -2,11 +2,14 @@
+ 
+ ## New features
+ 
+-* The main function `GeneTonic()` gains an extra parameter, `gtl` - this can be used to provided a named list object where a single parameter is passed (e.g. after loading in a single seralized object), while the functionality stays unaltered. 
++* The main function `GeneTonic()` gains an extra parameter, `gtl` - this can be used to provided a named list object where a single parameter is passed (e.g. after loading in a single serialized object), while the functionality stays unaltered. 
+   The same `gtl` parameter is also exposed in other functions of the package - see the vignette for some examples, or check the documentation of each specific function.
+   
+ * A new function to perform fuzzy clustering (following the implementation of DAVID) is added - see `gs_fuzzyclustering()`. It returns a table with additional information on the cluster of genesets and the status of each set in the group.  
+ 
++* A new function, `signature_volcano()`, adds a signature volcano plot to the `Gene-Geneset` panel. This plot displays the genes of a chosen geneset in color, while the remaining genes of the data are shown as shaded dots in the background. 
++  The color and transparency of the displayed genes can be chosen by the user, as well as the option to display the gene names of all genes in the geneset.
++
+ * `gs_summary_overview` can also generate bar plots instead of the default segment-dot (lollipop) plots
+ 
+ # GeneTonic 1.2.0
+diff --git a/R/GeneTonic-pkg.R b/R/GeneTonic-pkg.R
+index eba2e045..ec47e115 100644
+--- a/R/GeneTonic-pkg.R
++++ b/R/GeneTonic-pkg.R
+@@ -13,6 +13,7 @@
+ #' bs4ValueBoxOutput renderbs4InfoBox renderbs4ValueBox
+ #' bs4TabPanel bs4TabCard
+ #' @importFrom colorspace rainbow_hcl
++#' @importFrom colourpicker colourInput
+ #' @importFrom ComplexHeatmap Heatmap HeatmapAnnotation draw
+ #' @importFrom dendextend branches_attr_by_clusters set
+ #' @importFrom DESeq2 vst counts estimateSizeFactors normalizationFactors sizeFactors
+diff --git a/R/GeneTonic.R b/R/GeneTonic.R
+index 5946cc3e..3f64ab3f 100644
+--- a/R/GeneTonic.R
++++ b/R/GeneTonic.R
+@@ -58,6 +58,7 @@
+ #'   row.names = rownames(dds_macrophage)
+ #' )
+ #'
++#' 
+ #' # res object
+ #' data(res_de_macrophage, package = "GeneTonic")
+ #' res_de <- res_macrophage_IFNg_vs_naive
+@@ -672,7 +673,11 @@ GeneTonic <- function(dds,
+                    label = "Number of genesets",
+                    value = 15, min = 1, max = nrow(res_enrich)),
+       selectInput("exp_condition", label = "Group/color by: ",
+-                  choices = c(NULL, names(colData(dds))), selected = NULL, multiple = TRUE)
++                  choices = c(NULL, names(colData(dds))), selected = NULL, multiple = TRUE),
++      colourInput("col", "Select colour for volcano plot", "#1a81c2",
++                  returnName = TRUE,
++                  allowTransparent = TRUE),
++      checkboxInput("labels", label = "Display all labels", value = FALSE)
+     ),
+     
+     # footer definition -------------------------------------------------------
+@@ -862,6 +867,7 @@ GeneTonic <- function(dds,
+       tagList(
+         # verbatimTextOutput("netnode"),
+         plotOutput("net_sigheatplot"),
++        plotOutput("sig_volcano"),
+         uiOutput("ggs_geneset_info")
+       )
+     })
+@@ -908,6 +914,38 @@ GeneTonic <- function(dds,
+       }
+     })
+     
++    output$sig_volcano <- renderPlot({
++      g <- reactive_values$ggs_graph()
++      cur_sel <- input$ggsnetwork_selected
++      cur_node <- match(cur_sel, V(g)$name)
++      cur_nodetype <- V(g)$nodetype[cur_node]
++      validate(need(cur_nodetype == "GeneSet",
++                    message = "Please select a gene set from the Gene-Geneset Graph."
++      ))
++      cur_gsid <- res_enrich$gs_id[match(input$ggsnetwork_selected, res_enrich$gs_description)]
++      
++      if (input$labels) {
++        signature_volcano(
++          res_de,
++          res_enrich,
++          annotation_obj = annotation_obj,
++          geneset_id = cur_gsid,
++          FDR = input$de_fdr,
++          color = input$col,
++          volcano_labels = Inf
++        )
++      } else {
++        signature_volcano(
++          res_de,
++          res_enrich,
++          annotation_obj = annotation_obj,
++          geneset_id = cur_gsid,
++          FDR = input$de_fdr,
++          color = input$col
++       )
++      }
++    })
++    
+     output$ggs_geneset_info <- renderUI({
+       g <- reactive_values$ggs_graph()
+       cur_sel <- input$ggsnetwork_selected
+diff --git a/R/gs_heatmap.R b/R/gs_heatmap.R
+index b02dcc6c..7a068937 100644
+--- a/R/gs_heatmap.R
++++ b/R/gs_heatmap.R
+@@ -133,7 +133,6 @@ gs_heatmap <- function(se,
+     thisset_name <- "Custom list"
+   }
+ 
+-  thisset_members_ids
+   sig_to_keep <- (thisset_members_ids %in% rownames(se))#
+   thisset_members_ids_available <- thisset_members_ids[sig_to_keep]
+ 
+diff --git a/R/signature_volcano.R b/R/signature_volcano.R
+new file mode 100644
+index 00000000..d1c0bfdb
+--- /dev/null
++++ b/R/signature_volcano.R
+@@ -0,0 +1,206 @@
++#' Plot a volcano plot of a geneset
++#'
++#' Plot a volcano plot for the geneset of the provided data, with the remaining
++#' genes as shaded dots in the background of the plot.
++#'
++#' @param res_de A `DESeqResults` object.
++#' @param res_enrich A `data.frame` object, storing the result of the functional
++#' enrichment analysis. See more in the main function, [GeneTonic()], to check the
++#' formatting requirements (a minimal set of columns should be present).
++#' @param annotation_obj A `data.frame` object with the feature annotation
++#' information, with at least two columns, `gene_id` and `gene_name`.
++#' @param gtl A `GeneTonic`-list object, containing in its slots the arguments
++#' specified above: `dds`, `res_de`, `res_enrich`, and `annotation_obj` - the names
++#' of the list _must_ be specified following the content they are expecting.
++#' @param geneset_id Character specifying the gene set identifier to be plotted.
++#' @param genelist A vector of character strings, specifying the identifiers
++#' contained in the `rownames` of the `res_de` input object.
++#' @param FDR Numeric value, specifying the significance level for thresholding
++#' adjusted p-values. Defaults to 0.05.
++#' @param color Character string to specify color of filtered points in the plot.
++#' Defaults to #1a81c2 (shade of blue).
++#' @param volcano_labels Integer, maximum number of labels for the gene sets to be
++#' plotted as labels on the volcano scatter plot. Defaults to 25.
++#' @param plot_title Character string, to specify the title of the plot,
++#' displayed over the volcano plot. If left to `NULL` as by default, it tries to use
++#' the information on the geneset identifier provided.
++#'
++#' @return A plot returned by the [ggplot()] function
++#' @export
++#'
++#' @examples
++#' library("macrophage")
++#' library("DESeq2")
++#' library("org.Hs.eg.db")
++#' library("AnnotationDbi")
++#'
++#' # dds object
++#' data("gse", package = "macrophage")
++#' dds_macrophage <- DESeqDataSet(gse, design = ~line + condition)
++#' rownames(dds_macrophage) <- substr(rownames(dds_macrophage), 1, 15)
++#' dds_macrophage <- estimateSizeFactors(dds_macrophage)
++#'
++#'
++#' # annotation object
++#' anno_df <- data.frame(
++#'   gene_id = rownames(dds_macrophage),
++#'   gene_name = mapIds(org.Hs.eg.db,
++#'                      keys = rownames(dds_macrophage),
++#'                      column = "SYMBOL",
++#'                      keytype = "ENSEMBL"),
++#'   stringsAsFactors = FALSE,
++#'   row.names = rownames(dds_macrophage)
++#' )
++#'
++#' # res object
++#' data(res_de_macrophage, package = "GeneTonic")
++#' res_de <- res_macrophage_IFNg_vs_naive
++#'
++#' # res_enrich object
++#' data(res_enrich_macrophage, package = "GeneTonic")
++#' res_enrich <- shake_topGOtableResult(topgoDE_macrophage_IFNg_vs_naive)
++#' res_enrich <- get_aggrscores(res_enrich, res_de, anno_df)
++#'
++#' signature_volcano(res_de,
++#'                   res_enrich,
++#'                   anno_df,
++#'                   geneset_id = res_enrich$gs_id[1]
++#'                   )
++#'
++#' # alternatively
++#'
++#' chemokine_list <- c("ENSG00000108702",
++#'                     "ENSG00000172156",
++#'                     "ENSG00000181374",
++#'                     "ENSG00000276409"
++#'                     )
++#'
++#' signature_volcano(res_de,
++#'                   res_enrich,
++#'                   anno_df,
++#'                   genelist = chemokine_list
++#'                   )
++#'
++signature_volcano <- function(res_de,
++                              res_enrich,
++                              annotation_obj = NULL,
++                              gtl = NULL,
++                              geneset_id = NULL,
++                              genelist = NULL,
++                              FDR = 0.05,
++                              color = "#1a81c2",
++                              volcano_labels = 25,
++                              plot_title = NULL
++) {
++  
++  if (!is.null(gtl)) {
++    checkup_gtl(gtl)
++    dds <- gtl$dds
++    res_de <- gtl$res_de
++    res_enrich <- gtl$res_enrich
++    annotation_obj <- gtl$annotation_obj
++  }
++  
++  # Retrieve information about genes in geneset gs_id
++  if (!is.null(geneset_id)) {
++    if (geneset_id %in% res_enrich[["gs_id"]]) {
++      thisset_name <- res_enrich[geneset_id, "gs_description"]
++      thisset_members <-
++        unlist(strsplit(res_enrich[geneset_id, "gs_genes"], ","))
++      thisset_members_ids <-
++        annotation_obj$gene_id[match(thisset_members, annotation_obj$gene_name)]
++    }
++  } else {
++    # overwritable via a list
++    if (!all(genelist %in% rownames(res_de))) {
++      not_there <- genelist[!(genelist %in% rownames(res_de))]
++      warning(
++        "Some of the provided gene ids were not found in the SummarizedExperiment",
++        "\nNot found: ",
++        not_there
++      )
++    }
++    thisset_members_ids <- intersect(rownames(res_de), genelist)
++    thisset_name <- "Custom list"
++  }
++  
++  
++  # Prepare the data
++  complete_genes_ids <- rownames(res_de)
++  complete_genes <-
++    annotation_obj$gene_name[match(complete_genes_ids, annotation_obj$gene_id)]
++  
++  padj_complete <- res_de[complete_genes_ids, "padj"]
++  filter_info_complete <-sapply(padj_complete, function(x) x <= FDR)
++  padj_complete <- sapply(padj_complete, function(x) -log10(x))
++  
++  log2FoldChange_complete <- res_de[complete_genes_ids, "log2FoldChange"]
++  
++  gene_set_belong <- complete_genes_ids %in% thisset_members_ids
++  filter_info_complete <- filter_info_complete & gene_set_belong
++  
++  
++  thisset_complete_data <- data.frame(
++    complete_genes_ids,
++    padj_complete,
++    log2FoldChange_complete,
++    filter_info_complete,
++    gene_set_belong
++  )
++  
++  colnames(thisset_complete_data) <- c("genes",
++                                       "logTransformedpvalue",
++                                       "log2FoldChange",
++                                       "significant",
++                                       "belonging")
++  
++  
++  # Prepare plotting
++  volcano_df_complete <- thisset_complete_data
++  volcano_df_complete$genes_name <- complete_genes
++  max_x <- max(abs(range(thisset_complete_data["log2FoldChange"])))
++  limit_x <- max_x * c(-1, 1)
++  
++  
++  # Prepare plot title
++  if (is.null(plot_title)) {
++    title <- paste0("Signature Volcano Plot - ", thisset_name, " - ", geneset_id)
++  } else {
++    title <- plot_title
++  }
++  
++  
++  # Plot data
++  p <- ggplot(volcano_df_complete,
++              aes_string(x = "log2FoldChange", y = "logTransformedpvalue")) +
++    geom_point(aes_string(color = "significant",
++                          alpha = "belonging")) +
++    labs(x = "log2Fold Change",
++         y = "-log10 p-value",
++         color = "p-value <= FDR") +
++    scale_x_continuous(limits = limit_x) +
++    scale_color_manual(
++      labels = c("significant", "not significant"),
++      breaks = c("TRUE", "FALSE"),
++      values = c(color, "grey25")) +
++    scale_alpha_manual(breaks = c("TRUE", "FALSE"),
++                       values = c(1, 1 / 10)) +
++    theme_bw() +
++    theme(legend.title = element_text(size = 11, face = "bold"),
++          legend.text = element_text(size = 10))
++  
++  
++  # adding labels to the significant points of the geneset
++  p <- p + geom_text_repel(
++    data = subset(volcano_df_complete, filter_info_complete),
++    aes_string(label = "genes_name"),
++    size = 4,
++    max.overlaps = volcano_labels
++  )
++  
++  
++  # handling the title
++  p <- p + ggtitle(title)
++  p <- p + guides(alpha = FALSE)
++  return(p)
++}
+diff --git a/inst/extdata/tour_ggs.txt b/inst/extdata/tour_ggs.txt
+index 55fc1451..44b3745f 100644
+--- a/inst/extdata/tour_ggs.txt
++++ b/inst/extdata/tour_ggs.txt
+@@ -8,11 +8,13 @@ element;intro
+ #controlbar-toggle;Close back the controlbar.
+ #ggsnetwork;You can interact with the network visualization, either by clicking on a desired node (you can zoom in with the mouse wheel of with the trackpad)...
+ #nodeSelectggsnetwork;... or by selecting one here - first the gene sets are displayed, then the genes. Now select a gene set of interest.
+-#ui_ggs_genesetbox;Whenever you select something, some additional content gets displayed in the boxes on the right side. If you selected a gene set, you should see some summary information on the geneset, referred to the inputs you provided, below a signature heatmap including all the genes annotated to the gene set.
++#ui_ggs_genesetbox;Whenever you select something, some additional content gets displayed in the boxes on the right side. If you selected a gene set, you should see some summary information on the geneset, referred to the inputs you provided, below a signature heatmap and a signature volcano plot including all the genes annotated to the gene set.
+ #ggsnetwork;You can go back to the main network view, and select a gene now.
+ #ui_ggs_genebox;See how some links to the selected gene get automatically generated as action buttons - to the NCBI and the GeneCards databases.
+ #controlbar-toggle;Toggle again the control bar...
+-#exp_condition + .selectize-control;... and select for example 'condition' from the dropdown select input.
++#exp_condition + .selectize-control;... and select for example 'condition' from the dropdown select input...
++#col; ... or you use the <b> Select color for volcano plot </b> option. With this you can change the color and transparency and the genes of the chosen geneset will be displayed accordingly.
++#labels; Also you can decide to check the <b> Display all labels </b> box. This will add the names of all genes in the geneset to the signature volcano plot - otherwise only a small number is displayed to keep a clearly represented plot. 
+ #controlbar-toggle;Close back the control bar.
+ #ui_ggs_genebox;You can see how the gene infobox also added a plot on the selected gene, split by the factor you specified in the select widget.
+ #ggsnetwork;You can be interested in a number of genes and gene sets. <code>GeneTonic</code> supports functions for bookmarking all these entities and combine them together in an HTML report. Select any node now...
+diff --git a/man/GeneTonic.Rd b/man/GeneTonic.Rd
+index d51288cc..1e9a6fc7 100644
+--- a/man/GeneTonic.Rd
++++ b/man/GeneTonic.Rd
+@@ -71,6 +71,7 @@ anno_df <- data.frame(
+   row.names = rownames(dds_macrophage)
+ )
+ 
++
+ # res object
+ data(res_de_macrophage, package = "GeneTonic")
+ res_de <- res_macrophage_IFNg_vs_naive
+diff --git a/man/shake_enrichrResult.Rd b/man/shake_enrichrResult.Rd
+index 7b6b79f8..655b08b1 100644
+--- a/man/shake_enrichrResult.Rd
++++ b/man/shake_enrichrResult.Rd
+@@ -29,7 +29,7 @@ Convert the output of Enrichr for straightforward use in \code{\link[=GeneTonic]
+ #          "Reactome_2016", 
+ #          "WikiPathways_2019_Human")
+ # degenes <- (deseqresult2df(res_macrophage_IFNg_vs_naive, FDR = 0.01)$SYMBOL)
+-# if called directly withín R...
++# if called directly withÃ­n R...
+ # enrichr_output_macrophage <- enrichr(degenes, dbs)
+ # or alternatively, if downloaded from the website in tabular format
+ enrichr_output_file <- system.file("extdata", 
+diff --git a/man/signature_volcano.Rd b/man/signature_volcano.Rd
+new file mode 100644
+index 00000000..c4862b90
+--- /dev/null
++++ b/man/signature_volcano.Rd
+@@ -0,0 +1,112 @@
++% Generated by roxygen2: do not edit by hand
++% Please edit documentation in R/signature_volcano.R
++\name{signature_volcano}
++\alias{signature_volcano}
++\title{Plot a volcano plot of a geneset}
++\usage{
++signature_volcano(
++  res_de,
++  res_enrich,
++  annotation_obj = NULL,
++  gtl = NULL,
++  geneset_id = NULL,
++  genelist = NULL,
++  FDR = 0.05,
++  color = "#1a81c2",
++  volcano_labels = 25,
++  plot_title = NULL
++)
++}
++\arguments{
++\item{res_de}{A \code{DESeqResults} object.}
++
++\item{res_enrich}{A \code{data.frame} object, storing the result of the functional
++enrichment analysis. See more in the main function, \code{\link[=GeneTonic]{GeneTonic()}}, to check the
++formatting requirements (a minimal set of columns should be present).}
++
++\item{annotation_obj}{A \code{data.frame} object with the feature annotation
++information, with at least two columns, \code{gene_id} and \code{gene_name}.}
++
++\item{gtl}{A \code{GeneTonic}-list object, containing in its slots the arguments
++specified above: \code{dds}, \code{res_de}, \code{res_enrich}, and \code{annotation_obj} - the names
++of the list \emph{must} be specified following the content they are expecting.}
++
++\item{geneset_id}{Character specifying the gene set identifier to be plotted.}
++
++\item{genelist}{A vector of character strings, specifying the identifiers
++contained in the \code{rownames} of the \code{res_de} input object.}
++
++\item{FDR}{Numeric value, specifying the significance level for thresholding
++adjusted p-values. Defaults to 0.05.}
++
++\item{color}{Character string to specify color of filtered points in the plot.
++Defaults to #1a81c2 (shade of blue).}
++
++\item{volcano_labels}{Integer, maximum number of labels for the gene sets to be
++plotted as labels on the volcano scatter plot. Defaults to 25.}
++
++\item{plot_title}{Character string, to specify the title of the plot,
++displayed over the volcano plot. If left to \code{NULL} as by default, it tries to use
++the information on the geneset identifier provided.}
++}
++\value{
++A plot returned by the \code{\link[=ggplot]{ggplot()}} function
++}
++\description{
++Plot a volcano plot for the geneset of the provided data, with the remaining
++genes as shaded dots in the background of the plot.
++}
++\examples{
++library("macrophage")
++library("DESeq2")
++library("org.Hs.eg.db")
++library("AnnotationDbi")
++
++# dds object
++data("gse", package = "macrophage")
++dds_macrophage <- DESeqDataSet(gse, design = ~line + condition)
++rownames(dds_macrophage) <- substr(rownames(dds_macrophage), 1, 15)
++dds_macrophage <- estimateSizeFactors(dds_macrophage)
++
++
++# annotation object
++anno_df <- data.frame(
++  gene_id = rownames(dds_macrophage),
++  gene_name = mapIds(org.Hs.eg.db,
++                     keys = rownames(dds_macrophage),
++                     column = "SYMBOL",
++                     keytype = "ENSEMBL"),
++  stringsAsFactors = FALSE,
++  row.names = rownames(dds_macrophage)
++)
++
++# res object
++data(res_de_macrophage, package = "GeneTonic")
++res_de <- res_macrophage_IFNg_vs_naive
++
++# res_enrich object
++data(res_enrich_macrophage, package = "GeneTonic")
++res_enrich <- shake_topGOtableResult(topgoDE_macrophage_IFNg_vs_naive)
++res_enrich <- get_aggrscores(res_enrich, res_de, anno_df)
++
++signature_volcano(res_de,
++                  res_enrich,
++                  anno_df,
++                  geneset_id = res_enrich$gs_id[1]
++                  )
++
++# alternatively
++
++# chemokine_list <- c("ENSG00000108702",
++#                     "ENSG00000172156",
++#                     "ENSG00000181374",
++#                     "ENSG00000276409"
++#                     )
++
++# signature_volcano(res_de,
++#                   res_enrich,
++#                   anno_df,
++#                   genelist = chemokine_list
++#                   )
++
++}
+diff --git a/tests/testthat/test-signature_volcano.R b/tests/testthat/test-signature_volcano.R
+new file mode 100644
+index 00000000..5a8721b1
+--- /dev/null
++++ b/tests/testthat/test-signature_volcano.R
+@@ -0,0 +1,62 @@
++context("Testing gene set signature volcano and related functionality")
++
++test_that("Geneset signature volcano is created", {
++  cur_gsid <- res_enrich_IFNg_vs_naive$gs_id[1]
++  p <- signature_volcano(res_de = res_macrophage_IFNg_vs_naive,
++                         res_enrich = res_enrich_IFNg_vs_naive,
++                         annotation_obj = anno_df,
++                         geneset_id = cur_gsid,
++                         FDR = 0.05,
++  )
++  expect_is(p, "gg")
++  p2 <- signature_volcano(res_de = res_macrophage_IFNg_vs_naive,
++                          res_enrich = res_enrich_IFNg_vs_naive,
++                          annotation_obj = anno_df,
++                          geneset_id = cur_gsid,
++                          color = "red"
++  )
++  expect_is(p2, "gg")
++  p3 <- signature_volcano(res_de = res_macrophage_IFNg_vs_naive,
++                   res_enrich = res_enrich_IFNg_vs_naive,
++                   annotation_obj = anno_df,
++                   geneset_id = cur_gsid,
++                   FDR = 0.05,
++                   plot_title = "Random Title"
++  )
++  expect_is(p3, "gg")
++  
++  gtl_macrophage <- list(dds = dds_macrophage,
++                         res_de = res_macrophage_IFNg_vs_naive,
++                         res_enrich = res_enrich_IFNg_vs_naive,
++                         annotation_obj = anno_df)
++  p4 <- signature_volcano(gtl = gtl_macrophage,
++                          geneset_id = cur_gsid,
++  )
++  expect_is(p4, "gg")
++  
++  p5 <- signature_volcano(res_de = res_macrophage_IFNg_vs_naive,
++                          res_enrich = res_enrich_IFNg_vs_naive,
++                          annotation_obj = anno_df,
++                          geneset_id = cur_gsid,
++                          FDR = 0.05,
++                          volcano_labels = 35
++  )
++  expect_is(p5, "gg")
++
++  # enforcing id not present in the object
++  mycustomlist <- c(
++    rownames(vst_macrophage)[1:10],
++    "ENSmadeUPid"
++  )
++
++  expect_warning(
++    p6 <- signature_volcano(
++      res_de = res_macrophage_IFNg_vs_naive,
++      res_enrich = res_enrich_IFNg_vs_naive,
++      annotation_obj = anno_df,
++      genelist = mycustomlist,
++    )
++  )
++
++  file.remove("Rplots.pdf")
++})
+diff --git a/vignettes/GeneTonic_manual.Rmd b/vignettes/GeneTonic_manual.Rmd
+index 9271f14d..4c154b1e 100644
+--- a/vignettes/GeneTonic_manual.Rmd
++++ b/vignettes/GeneTonic_manual.Rmd
+@@ -777,6 +777,18 @@ go_2_html("GO:0060337",
+           res_enrich = res_enrich_macrophage)
+ ```
+ 
++Plot a signature volcano plot for a gene set, with the genes of the geneset highlighted in color and the remaining genes shown shaded in the background: 
++
++```{r signaturevolcano}
++signature_volcano(res_de = res_macrophage_IFNg_vs_naive,
++                  res_enrich = res_enrich_macrophage,
++                  annotation_obj = anno_df,
++                  geneset_id = "GO:0060337",
++                  FDR = 0.05,
++                  color = "#1a81c2"
++)
++```
++
+ Some functions are just to ensure that the input objects are conform with the format expected by `GeneTonic`:
+ 
+ ```{r shakers, eval=FALSE}

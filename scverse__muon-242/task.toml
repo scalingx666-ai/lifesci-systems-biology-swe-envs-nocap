@@ -1,0 +1,64 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__muon-242"
+description = "Bump astral-sh/setup-uv from 10.2.0 to 10.3.0 in the actions-deps group"
+
+[metadata]
+difficulty = "small"
+category = "bugfix"
+keywords = [
+    "muon",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/muon"
+ref = "7e65510b6d21ee3266f1034d509c9e2ed62de454"
+reference = "https://github.com/scverse/muon/pull/242"
+source_access = "auto"
+built_at = "2026-11-15T16:59:10.733248+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:7e9377b504d8c22df31e0acf998a05062cd2cc19aff20da2c38c7674e1654f90"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-10-27T09:56:24Z"
+diff_format = "unified"
+context_files = [
+    ".github/workflows/build.yaml",
+    ".github/workflows/release.yaml",
+    ".github/workflows/test.yaml",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 6
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

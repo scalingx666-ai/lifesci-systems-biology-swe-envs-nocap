@@ -1,0 +1,67 @@
+version = "1.0"
+
+[task]
+name = "default/aertslab__SCope-455"
+description = "Test client result type"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "SCope",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aertslab/SCope"
+ref = "834d5b2158a9ca98c4d7e92acb9f1fe72aa1a5b2"
+reference = "https://github.com/aertslab/SCope/pull/455"
+source_access = "auto"
+built_at = "2026-11-15T19:37:31.612219+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:7c574d81b9d5c1b2a49e95beedb38f87fc979089afd72c28c3207738fb04cdff"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2021-07-02T12:04:24Z"
+diff_format = "unified"
+context_files = [
+    "client/package.json",
+    "client/src/api/fetch.test.ts",
+    "client/src/components/GProfiler/sagas.test.ts",
+    "client/src/components/GProfiler/sagas.ts",
+    "client/src/result.test.ts",
+    "client/src/result.ts",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 200
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

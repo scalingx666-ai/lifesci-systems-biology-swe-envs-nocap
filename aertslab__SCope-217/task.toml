@@ -1,0 +1,71 @@
+version = "1.0"
+
+[task]
+name = "default/aertslab__SCope-217"
+description = "Feature/216 regulon gene occurrence"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "SCope",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aertslab/SCope"
+ref = "53ea2bfade399aa71c24bf13f042301dfda80d97"
+reference = "https://github.com/aertslab/SCope/pull/217"
+source_access = "auto"
+built_at = "2026-11-15T19:39:35.491000+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:b60b11284b38e714ed031103eb37f7b7bd0aa12a762f4989e007b75cc8782f42"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2019-11-12T01:48:52Z"
+diff_format = "unified"
+context_files = [
+    "README.md",
+    "VERSION",
+    "opt/scopeserver/dataserver/modules/gserver/GServer.py",
+    "opt/scopeserver/dataserver/modules/gserver/s_pb2.py",
+    "opt/scopeserver/dataserver/utils/loom.py",
+    "opt/scopeserver/dataserver/utils/search_space.py",
+    "opt/setup.py",
+    "package.json",
+    "src/components/common/ViewerSidebar.jsx",
+    "src/proto/s.proto",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 1389
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

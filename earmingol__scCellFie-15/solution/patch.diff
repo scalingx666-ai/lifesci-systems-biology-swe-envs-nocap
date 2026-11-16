@@ -1,0 +1,71 @@
+diff --git a/sccellfie/__init__.py b/sccellfie/__init__.py
+index d7d6a62..c285d43 100644
+--- a/sccellfie/__init__.py
++++ b/sccellfie/__init__.py
+@@ -16,4 +16,4 @@
+ from .reaction_activity import (compute_reaction_activity)
+ from .sccellfie_pipeline import (run_sccellfie_pipeline)
+ 
+-__version__ = "0.4.4"
+\ No newline at end of file
++__version__ = "0.4.5"
+\ No newline at end of file
+diff --git a/sccellfie/preprocessing/adata_utils.py b/sccellfie/preprocessing/adata_utils.py
+index 4bf646b..0641c70 100644
+--- a/sccellfie/preprocessing/adata_utils.py
++++ b/sccellfie/preprocessing/adata_utils.py
+@@ -2,6 +2,7 @@
+ import numpy as np
+ import pandas as pd
+ import scanpy as sc
++from pandas.core.algorithms import duplicated
+ from scipy import sparse
+ from scipy.sparse import issparse, csr_matrix, hstack
+ 
+@@ -224,6 +225,12 @@ def transform_adata_gene_names(adata, filename=None, organism='human', copy=True
+     # Assign new gene names
+     adata_mod.var_names = new_var_names
+ 
++    # Drop duplicates
++    duplicated = adata_mod.var_names.duplicated(keep='first').any()
++    if duplicated:
++        print("Duplicated gene names found. Dropping duplicates.")
++        mask = ~adata_mod.var_names.duplicated(keep='first')
++        adata_mod = adata_mod[:, mask]
+     return adata_mod
+ 
+ 
+diff --git a/sccellfie/sccellfie_pipeline.py b/sccellfie/sccellfie_pipeline.py
+index a52a9c1..4c2db13 100644
+--- a/sccellfie/sccellfie_pipeline.py
++++ b/sccellfie/sccellfie_pipeline.py
+@@ -307,7 +307,7 @@ def process_chunk(adata, sccellfie_db, n_counts_col, smooth_cells, alpha, chunk_
+ 
+     # Transform gene names if necessary
+     if ensembl_ids:
+-        transform_adata_gene_names(adata=adata, organism=organism, copy=False, drop_unmapped=True)
++        adata = transform_adata_gene_names(adata=adata, organism=organism, copy=False, drop_unmapped=True)
+ 
+     if first_group:
+         if verbose:
+diff --git a/sccellfie/stats/gam_analysis.py b/sccellfie/stats/gam_analysis.py
+index ca8c971..6ac3c69 100644
+--- a/sccellfie/stats/gam_analysis.py
++++ b/sccellfie/stats/gam_analysis.py
+@@ -1,7 +1,6 @@
+ import math
+ import numpy as np
+ import pandas as pd
+-from scipy import sparse
+ from sklearn.preprocessing import LabelEncoder
+ from statsmodels.stats.multitest import multipletests
+ from tqdm import tqdm
+@@ -288,7 +287,7 @@ def fit_gam_model(adata, cell_type_key, cell_type_order=None, continuous_key=Non
+     for gene in tqdm(genes, desc='Fitting GAMs for each var in adata'):
+         try:
+             y = get_matrix_gene_expression(matrix, var_names, gene, normalize=normalize)
+-            gam = GAM(s(0, n_splines=n_splines, basis='ps'), **kwargs)
++            gam = GAM(s(0, n_splines=n_splines, basis='ps', spline_order=spline_order, lam=lam), **kwargs)
+             gam.fit(X, y)
+ 
+             models[gene] = gam

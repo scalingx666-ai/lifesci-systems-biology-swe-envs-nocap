@@ -1,0 +1,166 @@
+diff --git a/.Rbuildignore b/.Rbuildignore
+index 46c0138..45b942b 100644
+--- a/.Rbuildignore
++++ b/.Rbuildignore
+@@ -6,3 +6,4 @@ MATLAB/*
+ PYTHON/*
+ README.md
+ plotKO_FAQ*
++^\.github$
+diff --git a/.github/workflows/R-CMD-check.yaml b/.github/workflows/R-CMD-check.yaml
+new file mode 100644
+index 0000000..a2c3966
+--- /dev/null
++++ b/.github/workflows/R-CMD-check.yaml
+@@ -0,0 +1,55 @@
++# Continuous integration: R CMD check on Linux, macOS and Windows.
++on:
++  push:
++    branches: [main, master]
++  pull_request:
++  workflow_dispatch:
++
++name: R-CMD-check
++
++permissions: read-all
++
++concurrency:
++  group: ${{ github.workflow }}-${{ github.ref }}
++  cancel-in-progress: true
++
++jobs:
++  R-CMD-check:
++    runs-on: ${{ matrix.config.os }}
++
++    name: ${{ matrix.config.os }} (${{ matrix.config.r }})
++
++    strategy:
++      fail-fast: false
++      matrix:
++        config:
++          - {os: macos-latest,   r: 'release'}
++          - {os: windows-latest, r: 'release'}
++          - {os: ubuntu-latest,  r: 'devel', http-user-agent: 'release'}
++          - {os: ubuntu-latest,  r: 'release'}
++          - {os: ubuntu-latest,  r: 'oldrel-1'}
++
++    env:
++      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
++      R_KEEP_PKG_SOURCE: yes
++
++    steps:
++      - uses: actions/checkout@v4
++
++      - uses: r-lib/actions/setup-pandoc@v2
++
++      - uses: r-lib/actions/setup-r@v2
++        with:
++          r-version: ${{ matrix.config.r }}
++          http-user-agent: ${{ matrix.config.http-user-agent }}
++          use-public-rspm: true
++
++      - uses: r-lib/actions/setup-r-dependencies@v2
++        with:
++          extra-packages: any::rcmdcheck, github::cailab-tamu/scTenifoldNet
++          needs: check
++
++      - uses: r-lib/actions/check-r-package@v2
++        with:
++          upload-snapshots: true
++          build_args: 'c("--no-manual","--compact-vignettes=gs+qpdf")'
+diff --git a/.github/workflows/release.yaml b/.github/workflows/release.yaml
+new file mode 100644
+index 0000000..a85abba
+--- /dev/null
++++ b/.github/workflows/release.yaml
+@@ -0,0 +1,79 @@
++# Continuous delivery: on a version tag, build and check the source
++# tarball, then attach it to a GitHub release.
++on:
++  push:
++    tags: ['v*', '[0-9]*']
++  workflow_dispatch:
++
++name: release
++
++permissions: read-all
++
++jobs:
++  build:
++    runs-on: ubuntu-latest
++    permissions:
++      contents: read
++    env:
++      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
++    steps:
++      - uses: actions/checkout@v4
++
++      - uses: r-lib/actions/setup-pandoc@v2
++
++      - uses: r-lib/actions/setup-r@v2
++        with:
++          use-public-rspm: true
++
++      - uses: r-lib/actions/setup-r-dependencies@v2
++        with:
++          extra-packages: any::rcmdcheck, github::cailab-tamu/scTenifoldNet
++          needs: check
++
++      # Tags may be written as 1.2.3, v1.2.3 or v.1.2.3.
++      - name: Verify tag matches DESCRIPTION version
++        if: startsWith(github.ref, 'refs/tags/')
++        run: |
++          pkg_version=$(grep '^Version:' DESCRIPTION | sed 's/Version:[[:space:]]*//')
++          tag_version=${GITHUB_REF_NAME#v}
++          tag_version=${tag_version#.}
++          if [ "$tag_version" != "$pkg_version" ]; then
++            echo "::error::Tag $GITHUB_REF_NAME does not match DESCRIPTION version $pkg_version"
++            exit 1
++          fi
++
++      - name: Build source tarball
++        run: R CMD build --no-manual .
++
++      - name: Check source tarball
++        shell: Rscript {0}
++        run: |
++          tarball <- Sys.glob("*.tar.gz")
++          stopifnot(length(tarball) == 1)
++          rcmdcheck::rcmdcheck(tarball, args = c("--no-manual", "--as-cran"),
++                               error_on = "warning", check_dir = "check")
++
++      - uses: actions/upload-artifact@v4
++        with:
++          name: source-tarball
++          path: '*.tar.gz'
++          if-no-files-found: error
++
++  publish:
++    needs: build
++    if: startsWith(github.ref, 'refs/tags/')
++    runs-on: ubuntu-latest
++    permissions:
++      contents: write
++    steps:
++      - uses: actions/download-artifact@v4
++        with:
++          name: source-tarball
++
++      - name: Create GitHub release
++        env:
++          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
++        run: |
++          gh release create "$GITHUB_REF_NAME" *.tar.gz \
++            --repo "$GITHUB_REPOSITORY" \
++            --title "$GITHUB_REF_NAME" --generate-notes
+diff --git a/README.md b/README.md
+index 7d9eb38..fcaacd6 100644
+--- a/README.md
++++ b/README.md
+@@ -1,5 +1,6 @@
+ # scTenifoldKnk
+ 
++[![R-CMD-check](https://github.com/cailab-tamu/scTenifoldKnk/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/cailab-tamu/scTenifoldKnk/actions/workflows/R-CMD-check.yaml)
+ [![CRAN](https://www.r-pkg.org/badges/version/scTenifoldKnk)](https://CRAN.R-project.org/package=scTenifoldKnk)
+ [![License: GPL (>=2)](https://img.shields.io/badge/License-GPL%20%28%3E%3D2%29-blue.svg)](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html)
+ 

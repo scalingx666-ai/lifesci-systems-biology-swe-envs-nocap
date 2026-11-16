@@ -1,0 +1,65 @@
+diff --git a/src/app/translations/files/translated/ar.json b/src/app/translations/files/translated/ar.json
+index 6c5a39af..0fab3c10 100644
+--- a/src/app/translations/files/translated/ar.json
++++ b/src/app/translations/files/translated/ar.json
+@@ -94,7 +94,7 @@
+   "views.apps.simon.analysis.components.StartButton.dialogs.confirm.title": "تبدو جيدة! يرجى تأكيد مهمة تقديم",
+   "views.apps.simon.analysis.components.StartButton.dialogs.confirm.header": "استنادا إلى التحديد الحالي ما لدينا البيانات التالية(s)",
+   "views.apps.simon.analysis.components.StartButton.dialogs.confirm.sparsity.title": "البيانات تبعثر",
+-  "views.apps.simon.analysis.components.StartButton.dialogs.confirm.sparsity.description": "",
++  "views.apps.simon.analysis.components.StartButton.dialogs.confirm.sparsity.description": "النسبة المئوية من البيانات المفقودة",
+   "views.apps.simon.analysis.components.StartButton.dialogs.confirm.table.features": "الميزات",
+   "views.apps.simon.analysis.components.StartButton.dialogs.confirm.table.samples": "عينات",
+   "views.apps.simon.analysis.components.StartButton.dialogs.confirm.table.datapoints": "Datapoints",
+diff --git a/src/app/translations/files/translated/de.json b/src/app/translations/files/translated/de.json
+index 27ff6d2e..592555e9 100644
+--- a/src/app/translations/files/translated/de.json
++++ b/src/app/translations/files/translated/de.json
+@@ -94,7 +94,7 @@
+   "views.apps.simon.analysis.components.StartButton.dialogs.confirm.title": "Sieht gut aus! Bitte bestätigen Sie die Einreichung der Aufgabe",
+   "views.apps.simon.analysis.components.StartButton.dialogs.confirm.header": "Basierend auf Ihrer aktuellen Auswahl, was wir erhalten folgende Datensätze(n)",
+   "views.apps.simon.analysis.components.StartButton.dialogs.confirm.sparsity.title": "Datensparsamkeit",
+-  "views.apps.simon.analysis.components.StartButton.dialogs.confirm.sparsity.description": "",
++  "views.apps.simon.analysis.components.StartButton.dialogs.confirm.sparsity.description": "Prozentsatz von fehlenden Daten",
+   "views.apps.simon.analysis.components.StartButton.dialogs.confirm.table.features": "Funktionen",
+   "views.apps.simon.analysis.components.StartButton.dialogs.confirm.table.samples": "Beispiele",
+   "views.apps.simon.analysis.components.StartButton.dialogs.confirm.table.datapoints": "Datenpunkte",
+diff --git a/src/app/translations/files/translated/en.json b/src/app/translations/files/translated/en.json
+index 005a918f..e7f05b10 100644
+--- a/src/app/translations/files/translated/en.json
++++ b/src/app/translations/files/translated/en.json
+@@ -94,7 +94,7 @@
+   "views.apps.simon.analysis.components.StartButton.dialogs.confirm.title": "Looks good! Please confirm task submission",
+   "views.apps.simon.analysis.components.StartButton.dialogs.confirm.header": "Based on your current selection what we got following dataset(s)",
+   "views.apps.simon.analysis.components.StartButton.dialogs.confirm.sparsity.title": "Data sparsity",
+-  "views.apps.simon.analysis.components.StartButton.dialogs.confirm.sparsity.description": "",
++  "views.apps.simon.analysis.components.StartButton.dialogs.confirm.sparsity.description": "Percentage of missing data",
+   "views.apps.simon.analysis.components.StartButton.dialogs.confirm.table.features": "Features",
+   "views.apps.simon.analysis.components.StartButton.dialogs.confirm.table.samples": "Samples",
+   "views.apps.simon.analysis.components.StartButton.dialogs.confirm.table.datapoints": "Datapoints",
+diff --git a/src/app/translations/files/translated/fr.json b/src/app/translations/files/translated/fr.json
+index b852eebc..5a5240fb 100644
+--- a/src/app/translations/files/translated/fr.json
++++ b/src/app/translations/files/translated/fr.json
+@@ -94,7 +94,7 @@
+   "views.apps.simon.analysis.components.StartButton.dialogs.confirm.title": "Il semble bien ! Veuillez confirmer l'envoi de la tâche",
+   "views.apps.simon.analysis.components.StartButton.dialogs.confirm.header": "Basé sur votre sélection actuelle ce que nous avons obtenu les jeux de données suivants (s)",
+   "views.apps.simon.analysis.components.StartButton.dialogs.confirm.sparsity.title": "Épaisseur de données",
+-  "views.apps.simon.analysis.components.StartButton.dialogs.confirm.sparsity.description": "",
++  "views.apps.simon.analysis.components.StartButton.dialogs.confirm.sparsity.description": "Pourcentage de données manquantes",
+   "views.apps.simon.analysis.components.StartButton.dialogs.confirm.table.features": "Fonctionnalités",
+   "views.apps.simon.analysis.components.StartButton.dialogs.confirm.table.samples": "Exemples",
+   "views.apps.simon.analysis.components.StartButton.dialogs.confirm.table.datapoints": "Points de données",
+diff --git a/src/app/translations/files/translated/zh.json b/src/app/translations/files/translated/zh.json
+index 07b45efc..6b61841a 100644
+--- a/src/app/translations/files/translated/zh.json
++++ b/src/app/translations/files/translated/zh.json
+@@ -94,7 +94,7 @@
+   "views.apps.simon.analysis.components.StartButton.dialogs.confirm.title": "看起来不错! 请确认的任务提交",
+   "views.apps.simon.analysis.components.StartButton.dialogs.confirm.header": "基于你的前的选择什么我们得到了以下数据集(s)",
+   "views.apps.simon.analysis.components.StartButton.dialogs.confirm.sparsity.title": "数据稀疏",
+-  "views.apps.simon.analysis.components.StartButton.dialogs.confirm.sparsity.description": "",
++  "views.apps.simon.analysis.components.StartButton.dialogs.confirm.sparsity.description": "百分比的缺失的数据",
+   "views.apps.simon.analysis.components.StartButton.dialogs.confirm.table.features": "功能",
+   "views.apps.simon.analysis.components.StartButton.dialogs.confirm.table.samples": "样本",
+   "views.apps.simon.analysis.components.StartButton.dialogs.confirm.table.datapoints": "数据点",

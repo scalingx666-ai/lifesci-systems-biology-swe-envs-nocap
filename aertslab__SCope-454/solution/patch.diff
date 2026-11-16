@@ -1,0 +1,515 @@
+diff --git a/client/package-lock.json b/client/package-lock.json
+index 982e530c2..fb00595df 100644
+--- a/client/package-lock.json
++++ b/client/package-lock.json
+@@ -12,6 +12,7 @@
+                 "bitly4api": "^1.0.1",
+                 "d3": "^4.12.0",
+                 "grpc-bus-websocket-client": "^0.3.1",
++                "http-status-codes": "^2.1.4",
+                 "immer": "^8.0.1",
+                 "js-file-download": "^0.4.12",
+                 "json2csv": "^4.0.1",
+@@ -9193,6 +9194,11 @@
+                 "npm": ">=1.3.7"
+             }
+         },
++        "node_modules/http-status-codes": {
++            "version": "2.1.4",
++            "resolved": "https://registry.npmjs.org/http-status-codes/-/http-status-codes-2.1.4.tgz",
++            "integrity": "sha512-MZVIsLKGVOVE1KEnldppe6Ij+vmemMuApDfjhVSLzyYP+td0bREEYyAoIw9yFePoBXManCuBqmiNP5FqJS5Xkg=="
++        },
+         "node_modules/https-proxy-agent": {
+             "version": "5.0.0",
+             "resolved": "https://registry.npmjs.org/https-proxy-agent/-/https-proxy-agent-5.0.0.tgz",
+@@ -26264,6 +26270,11 @@
+                 "sshpk": "^1.7.0"
+             }
+         },
++        "http-status-codes": {
++            "version": "2.1.4",
++            "resolved": "https://registry.npmjs.org/http-status-codes/-/http-status-codes-2.1.4.tgz",
++            "integrity": "sha512-MZVIsLKGVOVE1KEnldppe6Ij+vmemMuApDfjhVSLzyYP+td0bREEYyAoIw9yFePoBXManCuBqmiNP5FqJS5Xkg=="
++        },
+         "https-proxy-agent": {
+             "version": "5.0.0",
+             "resolved": "https://registry.npmjs.org/https-proxy-agent/-/https-proxy-agent-5.0.0.tgz",
+diff --git a/client/package.json b/client/package.json
+index 5bce11893..c58fafde1 100644
+--- a/client/package.json
++++ b/client/package.json
+@@ -31,6 +31,7 @@
+         "bitly4api": "^1.0.1",
+         "d3": "^4.12.0",
+         "grpc-bus-websocket-client": "^0.3.1",
++        "http-status-codes": "^2.1.4",
+         "immer": "^8.0.1",
+         "js-file-download": "^0.4.12",
+         "json2csv": "^4.0.1",
+diff --git a/client/src/api/upload.ts b/client/src/api/upload.ts
+new file mode 100644
+index 000000000..8894d5988
+--- /dev/null
++++ b/client/src/api/upload.ts
+@@ -0,0 +1,60 @@
++declare const DEBUG: boolean;
++declare const FRONTEND: any;
++declare const BACKEND: any;
++declare const REVERSEPROXYON: boolean;
++
++export function upload(uuid, type, file, onProgress, onUploaded) {
++    if (file === null) {
++        alert('Please select a file first');
++        return;
++    }
++
++    const form = new FormData();
++    form.append('UUID', uuid);
++    form.append('file-type', type);
++    form.append('file', file);
++
++    const XHRport =
++        document.head
++            .querySelector('[name=scope-xhrport]')
++            ?.getAttribute('port') || BACKEND.XHRport;
++
++    const xhr = new XMLHttpRequest();
++    if (REVERSEPROXYON) {
++        xhr.open(
++            'POST',
++            FRONTEND.httpProtocol + '://' + FRONTEND.host + '/upload/'
++        );
++    } else {
++        xhr.open(
++            'POST',
++            BACKEND.httpProtocol + '://' + BACKEND.host + ':' + XHRport + '/'
++        );
++    }
++    xhr.upload.addEventListener('progress', (event) => {
++        if (DEBUG) {
++            console.log('Data uploaded: ' + event.loaded + '/' + event.total);
++        }
++        const progress = ((event.loaded / event.total) * 100).toPrecision(1);
++        onProgress(progress);
++    });
++
++    xhr.upload.addEventListener('load', (event) => {
++        if (DEBUG) {
++            console.log('file uploaded: ' + file.name);
++        }
++    });
++
++    xhr.onreadystatechange = function () {
++        if (xhr.readyState === 4) {
++            setTimeout(() => {
++                onUploaded(file.name, xhr.status);
++            }, 1000);
++        }
++    };
++    xhr.setRequestHeader(
++        'Content-Disposition',
++        'attachment;filename=' + file.name
++    );
++    xhr.send(form);
++}
+diff --git a/client/src/components/AppSidebar.jsx b/client/src/components/AppSidebar.jsx
+index f227e6507..b63c0129e 100644
+--- a/client/src/components/AppSidebar.jsx
++++ b/client/src/components/AppSidebar.jsx
+@@ -12,7 +12,7 @@ import {
+     Progress,
+ } from 'semantic-ui-react';
+ import { BackendAPI } from './common/API';
+-import UploadModal from './common/UploadModal';
++import { UploadForm } from './UploadForm';
+ import Slider from 'rc-slider';
+ import FileDownloader from '../js/http';
+ import Alert from 'react-popup';
+@@ -496,11 +496,11 @@ class AppSidebar extends Component {
+                     </Menu.Menu>
+                 )}
+                 <Divider />
+-                <UploadModal
++                <UploadForm
+                     title='Import a .loom file'
+                     type='Loom'
+                     uuid={match.params.uuid}
+-                    opened={uploadModalOpened}
++                    open={uploadModalOpened}
+                     onClose={this.toggleUploadModal.bind(this)}
+                     onUploaded={this.onLoomUploaded.bind(this)}
+                 />
+diff --git a/client/src/components/UploadForm.tsx b/client/src/components/UploadForm.tsx
+new file mode 100644
+index 000000000..b760b6b8f
+--- /dev/null
++++ b/client/src/components/UploadForm.tsx
+@@ -0,0 +1,162 @@
++import React, { SyntheticEvent } from 'react';
++import { Button, Modal, Input, Progress } from 'semantic-ui-react';
++import FileReaderInput from 'react-file-reader-input';
++import * as R from 'ramda';
++import { getReasonPhrase } from 'http-status-codes';
++
++import { upload } from '../api/upload';
++
++type UploadFormProps = {
++    title: string;
++    type: string;
++    uuid: string;
++    open: boolean;
++    onClose: (event: SyntheticEvent, data: object) => void;
++    onUploaded: (filename: string) => void;
++};
++
++type UploadState = {
++    files: File[];
++    progress: number;
++};
++
++type UploadFormState =
++    | { tag: 'initialised' }
++    | { tag: 'selected'; files: File[]; progress: number }
++    | { tag: 'completed' }
++    | { tag: 'error'; msg: string };
++
++export class UploadForm extends React.Component<
++    UploadFormProps,
++    UploadFormState
++> {
++    constructor(props: UploadFormProps) {
++        super(props);
++        this.state = { tag: 'initialised' };
++    }
++
++    showPlaceholder(): string {
++        switch (this.state.tag) {
++            case 'selected':
++                return R.join(
++                    ', ',
++                    R.map((f) => f.name, this.state.files)
++                );
++            case 'error':
++                return this.state.msg;
++
++            default:
++                return '';
++        }
++    }
++
++    render() {
++        return (
++            <Modal
++                open={this.props.open}
++                onClose={this.props.onClose}
++                className='upload'
++                closeIcon>
++                <Modal.Header>{this.props.title}</Modal.Header>
++                <Modal.Content>
++                    <Modal.Description>
++                        <div className='scope-row'>
++                            <FileReaderInput
++                                as='binary'
++                                id='my-file-input'
++                                onChange={this.selectFiles.bind(this)}>
++                                <Input
++                                    label='File to be uploaded:'
++                                    labelPosition='left'
++                                    action={{
++                                        color:
++                                            this.state.tag === 'selected'
++                                                ? 'grey'
++                                                : 'orange',
++                                        content: 'Select a file...',
++                                    }}
++                                    fluid
++                                    placeholder={this.showPlaceholder()}
++                                    error={this.state.tag === 'error'}
++                                />
++                            </FileReaderInput>
++                            <Button
++                                className='scope-row-element'
++                                color={
++                                    this.state.tag === 'selected'
++                                        ? 'orange'
++                                        : 'grey'
++                                }
++                                onClick={this.uploadFiles.bind(this)}
++                                disabled={this.state.tag !== 'selected'}>
++                                {' '}
++                                Upload!
++                            </Button>
++                        </div>
++                        <div>
++                            <span>Upload progress:</span>
++                            <span>
++                                <Progress
++                                    percent={
++                                        this.state.tag === 'selected'
++                                            ? this.state.progress
++                                            : 0
++                                    }
++                                    error={this.state.tag === 'error'}
++                                    indicating
++                                    progress
++                                    disabled></Progress>
++                            </span>
++                        </div>
++                    </Modal.Description>
++                </Modal.Content>
++            </Modal>
++        );
++    }
++
++    selectFiles(event, selection: Array<[ProgressEvent, File]>) {
++        this.setState({
++            tag: 'selected',
++            files: selection.map(
++                (selected: [ProgressEvent, File]) => selected[1]
++            ),
++            progress: 0,
++        });
++    }
++
++    updateProgress(progress: number) {
++        if (this.state.tag === 'selected') {
++            this.setState({
++                tag: 'selected',
++                progress: progress / this.state.files.length,
++            });
++        }
++    }
++
++    completed(filename, status) {
++        if (status === 200) {
++            this.setState({ tag: 'completed' });
++            this.props.onUploaded(filename);
++        } else {
++            const reason = getReasonPhrase(status);
++            this.setState({
++                tag: 'error',
++                msg: `Error uploading ${filename}: ${reason}. Please try again later`,
++            });
++        }
++    }
++
++    uploadFiles() {
++        if (this.state.tag === 'selected') {
++            this.state.files.forEach((file) => {
++                upload(
++                    this.props.uuid,
++                    this.props.type,
++                    file,
++                    this.updateProgress.bind(this),
++                    this.completed.bind(this)
++                );
++            });
++        }
++    }
++}
+diff --git a/client/src/components/common/UploadModal.jsx b/client/src/components/common/UploadModal.jsx
+deleted file mode 100644
+index 2e4f3bb71..000000000
+--- a/client/src/components/common/UploadModal.jsx
++++ /dev/null
+@@ -1,125 +0,0 @@
+-import React, { Component } from 'react';
+-import { Button, Modal, Input, Progress } from 'semantic-ui-react';
+-import FileReaderInput from 'react-file-reader-input';
+-import Uploader from '../common/Uploader';
+-
+-export default class UploadModal extends Component {
+-    constructor() {
+-        super();
+-        this.state = {
+-            uploadLoomFile: null,
+-            uploadLoomFileName: null,
+-            uploadLoomProgress: 0,
+-            uploadError: false,
+-        };
+-    }
+-
+-    render() {
+-        return (
+-            <Modal
+-                open={this.props.opened}
+-                onClose={this.props.onClose}
+-                className='upload'
+-                closeIcon>
+-                <Modal.Header>{this.props.title}</Modal.Header>
+-                <Modal.Content>
+-                    <Modal.Description>
+-                        <div className='scope-row'>
+-                            <FileReaderInput
+-                                as='binary'
+-                                id='my-file-input'
+-                                onChange={this.selectLoomFile.bind(this)}>
+-                                <Input
+-                                    label='File to be uploaded:'
+-                                    labelPosition='left'
+-                                    action={{
+-                                        color: this.state.uploadLoomFile
+-                                            ? 'grey'
+-                                            : 'orange',
+-                                        content: 'Select a file...',
+-                                    }}
+-                                    fluid
+-                                    placeholder={this.state.uploadLoomFileName}
+-                                    error={this.state.uploadError}
+-                                />
+-                            </FileReaderInput>
+-                            <Button
+-                                className='scope-row-element'
+-                                color={
+-                                    this.state.uploadLoomFile
+-                                        ? 'orange'
+-                                        : 'grey'
+-                                }
+-                                onClick={this.uploadLoomFile.bind(this)}
+-                                disabled={
+-                                    !this.state.uploadLoomFile ||
+-                                    this.state.uploadLoomProgress > 0
+-                                }>
+-                                {' '}
+-                                Upload!
+-                            </Button>
+-                        </div>
+-                        <div>
+-                            <span>Upload progress:</span>
+-                            <span>
+-                                <Progress
+-                                    percent={this.state.uploadLoomProgress}
+-                                    error={this.state.uploadError}
+-                                    indicating
+-                                    progress
+-                                    disabled></Progress>
+-                            </span>
+-                        </div>
+-                    </Modal.Description>
+-                </Modal.Content>
+-            </Modal>
+-        );
+-    }
+-
+-    selectLoomFile(event, selection) {
+-        selection.forEach((selected) => {
+-            const [event, file] = selected;
+-            this.setState({
+-                uploadLoomFile: file,
+-                uploadLoomFileName: file.name,
+-                uploadError: false,
+-            });
+-        });
+-    }
+-
+-    uploadLoomFile() {
+-        let file = this.state.uploadLoomFile;
+-        let uploader = new Uploader();
+-        uploader.upload(
+-            this.props.uuid,
+-            this.props.type,
+-            file,
+-            (progress) => {
+-                this.setState({ uploadLoomProgress: progress });
+-            },
+-            (filename, status_code) => {
+-                if (status_code === 200) {
+-                    this.setState({
+-                        uploadLoomFile: null,
+-                        uploadLoomProgress: 0,
+-                    });
+-                    this.props.onUploaded(filename);
+-                } else if (status_code === 415) {
+-                    this.setState({
+-                        uploadLoomFile: null,
+-                        uploadLoomFileName:
+-                            'Error with upload. Please try again or another file.',
+-                        uploadLoomProgress: -1,
+-                        uploadError: true,
+-                    });
+-                } else {
+-                    this.setState({
+-                        uploadLoomFile: null,
+-                        uploadLoomProgress: 0,
+-                    });
+-                    this.props.onUploaded(filename);
+-                }
+-            }
+-        );
+-    }
+-}
+diff --git a/client/src/components/common/Uploader.jsx b/client/src/components/common/Uploader.jsx
+deleted file mode 100644
+index 909fd0ec0..000000000
+--- a/client/src/components/common/Uploader.jsx
++++ /dev/null
+@@ -1,69 +0,0 @@
+-export default class Uploader {
+-    upload(uuid, type, file, onProgress, onUploaded) {
+-        if (file === null) {
+-            alert('Please select a file first');
+-            return;
+-        }
+-
+-        let form = new FormData();
+-        form.append('UUID', uuid);
+-        form.append('file-type', type);
+-        form.append('file', file);
+-
+-        try {
+-            this.XHRport = document.head
+-                .querySelector('[name=scope-xhrport]')
+-                .getAttribute('port');
+-            console.log('Using meta XHRport');
+-        } catch (ex) {
+-            console.log('Using config XHRport');
+-            this.XHRport = BACKEND.XHRport;
+-        }
+-
+-        let xhr = new XMLHttpRequest();
+-        if (REVERSEPROXYON) {
+-            xhr.open(
+-                'POST',
+-                FRONTEND.httpProtocol + '://' + FRONTEND.host + '/upload/'
+-            );
+-        } else {
+-            xhr.open(
+-                'POST',
+-                BACKEND.httpProtocol +
+-                    '://' +
+-                    BACKEND.host +
+-                    ':' +
+-                    this.XHRport +
+-                    '/'
+-            );
+-        }
+-        xhr.upload.addEventListener('progress', (event) => {
+-            if (DEBUG) {
+-                console.log(
+-                    'Data uploaded: ' + event.loaded + '/' + event.total
+-                );
+-            }
+-            let progress = ((event.loaded / event.total) * 100).toPrecision(1);
+-            onProgress(progress);
+-        });
+-
+-        xhr.upload.addEventListener('load', (event) => {
+-            if (DEBUG) {
+-                console.log('file uploaded: ' + file.name);
+-            }
+-        });
+-
+-        xhr.onreadystatechange = function () {
+-            if (xhr.readyState === 4) {
+-                setTimeout(() => {
+-                    onUploaded(file.name, xhr.status);
+-                }, 1000);
+-            }
+-        };
+-        xhr.setRequestHeader(
+-            'Content-Disposition',
+-            'attachment;filename=' + file.name
+-        );
+-        xhr.send(form);
+-    }
+-}

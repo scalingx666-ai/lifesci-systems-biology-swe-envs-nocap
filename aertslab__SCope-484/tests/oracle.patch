@@ -1,0 +1,1021 @@
+diff --git a/.github/workflows/continuous-integration-server.yml b/.github/workflows/continuous-integration-server.yml
+index 26bd8e53..a4163f35 100644
+--- a/.github/workflows/continuous-integration-server.yml
++++ b/.github/workflows/continuous-integration-server.yml
+@@ -44,7 +44,7 @@ jobs:
+ 
+             - name: Run pylint
+               run: |
+-                  ${HOME}/.poetry/bin/poetry run pylint-fail-under --fail_under "7.74" --rcfile pyproject.toml scopeserver main.py
++                  ${HOME}/.poetry/bin/poetry run pylint-fail-under --fail_under "7.73" --rcfile pyproject.toml scopeserver main.py
+               working-directory: ${{ env.working-directory }}
+ 
+             - name: Run black
+diff --git a/client/package.json b/client/package.json
+index 23ae54e6..3e50f556 100644
+--- a/client/package.json
++++ b/client/package.json
+@@ -184,6 +184,9 @@
+             "curly": [
+                 "error",
+                 "all"
++            ],
++            "no-bitwise": [
++                "error"
+             ]
+         },
+         "settings": {
+diff --git a/client/src/components/App.jsx b/client/src/components/App.jsx
+index 06ab86c7..7e6f462e 100644
+--- a/client/src/components/App.jsx
++++ b/client/src/components/App.jsx
+@@ -377,7 +377,7 @@ class App extends Component {
+             BackendAPI.importObject(settings);
+             console.log('Restoring session' + uuid + '...');
+             BackendAPI.queryLoomFiles(uuid, () => {
+-                Object.keys(settings.features).map((page) => {
++                Object.keys(settings.features).forEach((page) => {
+                     settings.features[page].map((f, i) => {
+                         BackendAPI.updateFeature(
+                             i,
+diff --git a/client/src/components/RightSidebar/index.tsx b/client/src/components/RightSidebar/index.tsx
+index 204356da..d9f23bca 100644
+--- a/client/src/components/RightSidebar/index.tsx
++++ b/client/src/components/RightSidebar/index.tsx
+@@ -2,19 +2,20 @@ import React, { Component } from 'react';
+ import { connect } from 'react-redux';
+ import { withRouter, RouteComponentProps } from 'react-router-dom';
+ import { Tab } from 'semantic-ui-react';
+-
+-import 'react-table/react-table.css';
++import * as R from 'ramda';
+ 
+ import { BackendAPI } from '../common/API';
+ import Metadata from '../common/Metadata';
+ import LassoControls from '../LassoControls';
+ import QueryFeatureTab from '../QueryFeatureTool/QueryFeatureTab';
+ 
++import { Annotation } from '../pages/compareHelper';
++
+ type RightSidebarProps = {
+     hideFeatures: boolean;
+     activeLegend: any;
+     onActiveFeaturesChange: (_features, _id) => void;
+-    getSelectedAnnotations: () => Object;
++    selectedAnnotations: Annotation;
+     sessionIsRW: boolean;
+ } & RouteComponentProps<{ uuid: string; loom: string }>;
+ 
+@@ -81,47 +82,46 @@ class RightSidebar extends Component<RightSidebarProps, RightSidebarState> {
+     }
+ 
+     render() {
+-        const { history, hideFeatures, activeLegend, getSelectedAnnotations } =
+-            this.props;
++        const { history, hideFeatures, activeLegend } = this.props;
+         const { lassoSelections, activeFeatures, activeTab, activePage } =
+             this.state;
+ 
+-        const panes = [
+-            {
+-                menuItem: 'Cell selections',
+-                render: () => (
+-                    <LassoControls
+-                        selections={lassoSelections}
+-                        setModalID={this.setModalID.bind(this)}
+-                    />
+-                ),
+-            },
+-        ];
+-        if (!hideFeatures) {
+-            [0, 1, 2].map((i) => {
+-                panes.push({
+-                    menuItem:
+-                        activeFeatures[i] && activeFeatures[i].feature
+-                            ? 'F' + (i + 1) + ': ' + activeFeatures[i].feature
+-                            : 'F' + (i + 1),
++        const panes = R.concat(
++            [
++                {
++                    menuItem: 'Cell selections',
+                     render: () => (
+-                        <QueryFeatureTab
+-                            history={history}
+-                            activePage={activePage}
+-                            activeLegend={activeLegend}
+-                            activeFeature={activeFeatures[i]}
+-                            activeFeatureIndex={i}
+-                            sessionIsRW={this.props.sessionIsRW}
++                        <LassoControls
++                            selections={lassoSelections}
++                            setModalID={this.setModalID.bind(this)}
+                         />
+                     ),
+-                });
+-            });
+-        }
+-
+-        let annotations = {};
+-        if (getSelectedAnnotations) {
+-            annotations = getSelectedAnnotations();
+-        }
++                },
++            ],
++            hideFeatures
++                ? []
++                : [0, 1, 2].map((i) => {
++                      return {
++                          menuItem:
++                              activeFeatures[i] && activeFeatures[i].feature
++                                  ? 'F' +
++                                    (i + 1) +
++                                    ': ' +
++                                    activeFeatures[i].feature
++                                  : 'F' + (i + 1),
++                          render: () => (
++                              <QueryFeatureTab
++                                  history={history}
++                                  activePage={activePage}
++                                  activeLegend={activeLegend}
++                                  activeFeature={activeFeatures[i]}
++                                  activeFeatureIndex={i}
++                                  sessionIsRW={this.props.sessionIsRW}
++                              />
++                          ),
++                      };
++                  })
++        );
+ 
+         return (
+             <div className='flexDisplay'>
+@@ -146,7 +146,7 @@ class RightSidebar extends Component<RightSidebarProps, RightSidebarState> {
+                         this.setState({ modalID: null });
+                         this.forceUpdate();
+                     }}
+-                    annotations={Object.keys(annotations)}
++                    annotations={R.keys(this.props.selectedAnnotations)}
+                 />
+             </div>
+         );
+diff --git a/client/src/components/common/API.jsx b/client/src/components/common/API.jsx
+index d67a177b..cce97463 100644
+--- a/client/src/components/common/API.jsx
++++ b/client/src/components/common/API.jsx
+@@ -1,3 +1,5 @@
++import * as R from 'ramda';
++
+ class API {
+     constructor() {
+         if (!__TEST_ONLY__) {
+@@ -399,10 +401,9 @@ class API {
+         if (!update) {
+             this.loomFiles = {};
+         }
+-        Object.keys(files).map((i) => {
+-            let file = files[i];
+-            this.loomFiles[file.loomFilePath] = file;
+-        });
++        R.values(files).forEach(
++            (file) => (this.loomFiles[file.loomFilePath] = file)
++        );
+         // TODO: Hacky implementation. To be refactored/reviewed properly
+         if (!update) {
+             this.activeLoomChangeListeners.forEach((listener) => {
+@@ -975,9 +976,10 @@ class API {
+     }
+ 
+     removeActiveFeaturesChange(page, listener) {
+-        let i = this.featureChangeListeners[page].indexOf(listener);
+-        if (i > -1) {
+-            this.featureChangeListeners[page].splice(i, 1);
++        if (this.featureChangeListeners[page]) {
++            this.featureChangeListeners[page] = this.featureChangeListeners[
++                page
++            ].filter((l) => l !== listener);
+         }
+     }
+ 
+diff --git a/client/src/components/common/CollaborativeAnnotation.jsx b/client/src/components/common/CollaborativeAnnotation.jsx
+index a86bc040..20e3d48c 100644
+--- a/client/src/components/common/CollaborativeAnnotation.jsx
++++ b/client/src/components/common/CollaborativeAnnotation.jsx
+@@ -74,12 +74,13 @@ class CollaborativeAnnotation extends Component {
+             this.OLSAutocomplete.current &&
+             this.OLSAutocomplete.current.state.result
+         ) {
+-            (annoData['obo_id'] =
+-                this.OLSAutocomplete.current.state.result['obo_id']),
+-                (annoData['iri'] =
+-                    this.OLSAutocomplete.current.state.result['iri']),
+-                (annoData['label'] =
+-                    this.OLSAutocomplete.current.state.result['label']);
++            annoData['obo_id'] =
++                this.OLSAutocomplete.current.state.result['obo_id'];
++
++            annoData['iri'] = this.OLSAutocomplete.current.state.result['iri'];
++
++            annoData['label'] =
++                this.OLSAutocomplete.current.state.result['label'];
+         } else if (this.state.freeInput.length > 0) {
+             annoData['obo_id'] = 'Manual Annotation';
+             annoData['iri'] = '';
+diff --git a/client/src/components/common/Viewer.jsx b/client/src/components/common/Viewer.jsx
+index ac140653..915cfaef 100644
+--- a/client/src/components/common/Viewer.jsx
++++ b/client/src/components/common/Viewer.jsx
+@@ -386,7 +386,7 @@ export default class Viewer extends Component {
+         });
+         this.lassoLayer.on('mousemove', (e) => {
+             // Bug in Firefox: this.state.mouse.down = false when left click pressed
+-            if (this.state.mouse.down & this.isLassoActive()) {
++            if (this.state.mouse.down && this.isLassoActive()) {
+                 this.setState({
+                     lassoPoints: [
+                         ...this.state.lassoPoints,
+@@ -829,20 +829,22 @@ export default class Viewer extends Component {
+     }
+ 
+     getPoints(loomFile, coordinates, annotations, superposition, callback) {
+-        let queryAnnotations = [];
++        const queryAnnotations = annotations
++            ? R.keys(annotations).map((name) => {
++                  return {
++                      name,
++                      values: annotations[name],
++                  };
++              })
++            : [];
++
+         if (annotations) {
+             this.setState({
+-                activeAnnotations: Object.assign({}, annotations),
+-            });
+-            Object.keys(annotations).map((name) => {
+-                queryAnnotations.push({
+-                    name: name,
+-                    values: annotations[name],
+-                });
++                activeAnnotations: { ...annotations },
+             });
+         }
+ 
+-        let query = {
++        const query = {
+             loomFilePath: loomFile,
+             coordinatesID: parseInt(coordinates),
+             annotation: queryAnnotations,
+@@ -1011,21 +1013,19 @@ export default class Viewer extends Component {
+ 
+         if (!features || features.length === 0) {
+             // prevent empty requests
+-            //return this.resetDataPoints();
+             return;
+         }
+ 
+-        let settings = BackendAPI.getSettings();
++        const settings = BackendAPI.getSettings();
+ 
+-        let queryAnnotations = [];
+-        if (annotations) {
+-            Object.keys(annotations).map((name) => {
+-                queryAnnotations.push({
+-                    name: name,
+-                    values: annotations[name],
+-                });
+-            });
+-        }
++        const queryAnnotations = annotations
++            ? R.keys(annotations).map((name) => {
++                  return {
++                      name,
++                      values: annotations[name],
++                  };
++              })
++            : [];
+ 
+         let query = {
+             loomFilePath: loomFile,
+diff --git a/client/src/components/pages/Annotations.jsx b/client/src/components/pages/Annotations.jsx
+index f8c1247d..ef3e6d5b 100644
+--- a/client/src/components/pages/Annotations.jsx
++++ b/client/src/components/pages/Annotations.jsx
+@@ -149,7 +149,7 @@ export default class Annotations extends Component {
+                 popupText = '';
+ 
+             if (
+-                props.value.validated &
++                props.value.validated &&
+                 orcidIDRegex.test(props.value.curator_id)
+             ) {
+                 iconName = 'check circle outline';
+diff --git a/client/src/components/pages/Compare.jsx b/client/src/components/pages/Compare.jsx
+index c12ddfe0..28b97f55 100644
+--- a/client/src/components/pages/Compare.jsx
++++ b/client/src/components/pages/Compare.jsx
+@@ -17,6 +17,8 @@ import RightSidebar from '../RightSidebar';
+ import AnnotationDropContainer from '../common/AnnotationDropContainer';
+ import ViewerDropContainer from '../common/ViewerDropContainer';
+ 
++import { getCrossAnnotations, getSelectedAnnotations } from './compareHelper';
++
+ class Compare extends Component {
+     constructor(props) {
+         super(props);
+@@ -366,7 +368,11 @@ class Compare extends Component {
+                                             columns * i + j
+                                         ];
+                                 } else {
+-                                    va = this.getCrossAnnotations(i, j);
++                                    va = getCrossAnnotations(
++                                        this.state.crossAnnotations,
++                                        i,
++                                        j
++                                    );
+                                 }
+                                 return (
+                                     <Grid.Column key={j} className='viewerCell'>
+@@ -496,8 +502,8 @@ class Compare extends Component {
+                                 style={{ width: '100%' }}
+                                 height='200px'></div>
+                             <RightSidebar
+-                                getSelectedAnnotations={this.getSelectedAnnotations.bind(
+-                                    this
++                                selectedAnnotations={getSelectedAnnotations(
++                                    this.state.crossAnnotations
+                                 )}
+                                 onActiveFeaturesChange={(features) => {
+                                     this.setState({ activeFeatures: features });
+@@ -703,53 +709,11 @@ class Compare extends Component {
+         });
+     }
+ 
+-    getCrossAnnotations(i, j) {
+-        let annotations = {},
+-            cross = this.state.crossAnnotations;
+-        if (cross['horizontal'][j]) {
+-            Object.keys(cross['horizontal'][j]).map((a) => {
+-                annotations[a] = annotations[a] || [];
+-                cross['horizontal'][j][a].map((v) => {
+-                    if (annotations[a].indexOf(v) === -1) {
+-                        annotations[a].push(v);
+-                    }
+-                });
+-            });
+-        }
+-        if (cross['vertical'][i]) {
+-            Object.keys(cross['vertical'][i]).map((a) => {
+-                annotations[a] = annotations[a] || [];
+-                cross['vertical'][i][a].map((v) => {
+-                    if (annotations[a].indexOf(v) === -1) {
+-                        annotations[a].push(v);
+-                    }
+-                });
+-            });
+-        }
+-        return annotations;
+-    }
+-
+-    getSelectedAnnotations() {
+-        let annotations = this.state.crossAnnotations;
+-        let selectedAnnotations = {};
+-        Object.keys(annotations).map((orientation) => {
+-            annotations[orientation].map((annotation) => {
+-                Object.keys(annotation).map((a) => {
+-                    selectedAnnotations[a] = selectedAnnotations[a] || [];
+-                    annotation[a].map((v) => {
+-                        if (selectedAnnotations[a].indexOf(v) === -1) {
+-                            selectedAnnotations[a].push(v);
+-                        }
+-                    });
+-                });
+-            });
+-        });
+-        return selectedAnnotations;
+-    }
+-
+     getCellMetadata() {
+         let settings = BackendAPI.getSettings();
+-        let selectedAnnotations = this.getSelectedAnnotations();
++        let selectedAnnotations = getSelectedAnnotations(
++            this.state.crossAnnotations
++        );
+         const { selectedGenes, selectedRegulons } =
+             BackendAPI.getParsedFeatures();
+         let query = {
+@@ -789,13 +753,15 @@ class Compare extends Component {
+         if (selectedGenes.length + selectedRegulons.length === 0) {
+             return;
+         }
+-        let selectedAnnotations = this.getSelectedAnnotations();
++        let selectedAnnotations = getSelectedAnnotations(
++            this.state.crossAnnotations
++        );
+         d3.select('#chart-distro1').select('svg').remove();
+-        Object.keys(selectedAnnotations).map((annotation, ai) => {
++        Object.keys(selectedAnnotations).forEach((annotation, ai) => {
+             let selections = 0;
+             let dataset = [];
+-            selectedGenes.map((gene, gi) => {
+-                data.annotations[ai].annotations.map((av, i) => {
++            selectedGenes.forEach((gene, gi) => {
++                data.annotations[ai].annotations.forEach((av, i) => {
+                     dataset.push({
+                         feature: selections,
+                         annotation: av,
+@@ -804,8 +770,8 @@ class Compare extends Component {
+                 });
+                 selections++;
+             });
+-            selectedRegulons.map((regulon, ri) => {
+-                data.annotations[ai].annotations.map((av, i) => {
++            selectedRegulons.forEach((regulon, ri) => {
++                data.annotations[ai].annotations.forEach((av, i) => {
+                     dataset.push({
+                         feature: selections,
+                         annotation: av,
+@@ -958,7 +924,7 @@ class Compare extends Component {
+     rebuildLoomOptions() {
+         let loomFiles = BackendAPI.getLoomFiles();
+         this.loomConf = [];
+-        Object.keys(loomFiles).map((l) => {
++        Object.keys(loomFiles).forEach((l) => {
+             this.loomConf.push({
+                 text: loomFiles[l].loomDisplayName,
+                 value: l,
+diff --git a/client/src/components/pages/Compare.test.tsx b/client/src/components/pages/Compare.test.tsx
+new file mode 100644
+index 00000000..a7f7329e
+--- /dev/null
++++ b/client/src/components/pages/Compare.test.tsx
+@@ -0,0 +1,367 @@
++/**
++ * This module is intended to test changes and simplifications to the Compare page
++ */
++
++import {
++    CrossAnnotations,
++    getCrossAnnotations,
++    getCrossAnnotationsOld,
++    getSelectedAnnotations,
++    getSelectedAnnotationsOld,
++} from './compareHelper';
++
++describe('Check getCrossAnnotations', () => {
++    it('Handles an empty cross object', () => {
++        const cross: CrossAnnotations = {
++            vertical: [],
++            horizontal: [],
++            both: [],
++            one: [],
++        };
++
++        expect(getCrossAnnotationsOld(cross, 0, 0)).toStrictEqual(
++            getCrossAnnotations(cross, 0, 0)
++        );
++    });
++
++    it('Handles a singleton value in each', () => {
++        const cross: CrossAnnotations = {
++            vertical: [{ a: ['foo'] }],
++            horizontal: [{ b: ['bar'] }],
++            both: [],
++            one: [],
++        };
++
++        expect(getCrossAnnotationsOld(cross, 0, 0)).toStrictEqual(
++            getCrossAnnotations(cross, 0, 0)
++        );
++    });
++
++    it('Handles equal horizontal and vertical', () => {
++        const cross: CrossAnnotations = {
++            vertical: [{ a: ['foo'] }],
++            horizontal: [{ a: ['foo'] }],
++            both: [],
++            one: [],
++        };
++
++        expect(getCrossAnnotationsOld(cross, 0, 0)).toStrictEqual(
++            getCrossAnnotations(cross, 0, 0)
++        );
++    });
++
++    it('Handles equal keys different values', () => {
++        const cross: CrossAnnotations = {
++            vertical: [{ a: ['foo'] }],
++            horizontal: [{ a: ['bar'] }],
++            both: [],
++            one: [],
++        };
++
++        expect(getCrossAnnotationsOld(cross, 0, 0)).toStrictEqual(
++            getCrossAnnotations(cross, 0, 0)
++        );
++    });
++
++    it('Handles equal keys with multiple different values', () => {
++        const cross: CrossAnnotations = {
++            vertical: [{ a: ['foo', 'bar'] }],
++            horizontal: [{ a: ['baz', 'zzz'] }],
++            both: [],
++            one: [],
++        };
++
++        expect(getCrossAnnotationsOld(cross, 0, 0)).toStrictEqual(
++            getCrossAnnotations(cross, 0, 0)
++        );
++    });
++
++    it('Handles equal keys with multiple equal values', () => {
++        const cross: CrossAnnotations = {
++            vertical: [{ a: ['foo', 'bar', 'foo', 'bar'] }],
++            horizontal: [{ a: ['baz', 'zzz', 'zzz'] }],
++            both: [],
++            one: [],
++        };
++
++        expect(getCrossAnnotationsOld(cross, 0, 0)).toStrictEqual(
++            getCrossAnnotations(cross, 0, 0)
++        );
++    });
++
++    it('Handles real data (cross-reference; all 4 grid squares set)', () => {
++        const cross: CrossAnnotations = {
++            both: [],
++            one: [],
++            horizontal: [{ Genotype: ['DGRP-551'] }, { Genotype: ['W1118'] }],
++            vertical: [{ Gender: ['Female'] }, { Gender: ['Male'] }],
++        };
++
++        [
++            [0, 0],
++            [0, 1],
++            [1, 0],
++            [1, 1],
++        ].map(([i, j]) => {
++            expect(getCrossAnnotationsOld(cross, i, j)).toStrictEqual(
++                getCrossAnnotations(cross, i, j)
++            );
++        });
++    });
++
++    it('Handles real data (cross-reference; both columns, top row)', () => {
++        const cross: CrossAnnotations = {
++            both: [],
++            one: [],
++            horizontal: [{ Genotype: ['DGRP-551'] }, { Genotype: ['W1118'] }],
++            vertical: [{ Gender: ['Female'] }, {}],
++        };
++
++        [
++            [0, 0],
++            [0, 1],
++            [1, 0],
++            [1, 1],
++        ].map(([i, j]) => {
++            expect(getCrossAnnotationsOld(cross, i, j)).toStrictEqual(
++                getCrossAnnotations(cross, i, j)
++            );
++        });
++    });
++
++    it('Handles real data (cross-reference; both columns, bottom row)', () => {
++        const cross: CrossAnnotations = {
++            both: [],
++            one: [],
++            horizontal: [{ Genotype: ['DGRP-551'] }, { Genotype: ['W1118'] }],
++            vertical: [{}, { Gender: ['Male'] }],
++        };
++
++        [
++            [0, 0],
++            [0, 1],
++            [1, 0],
++            [1, 1],
++        ].map(([i, j]) => {
++            expect(getCrossAnnotationsOld(cross, i, j)).toStrictEqual(
++                getCrossAnnotations(cross, i, j)
++            );
++        });
++    });
++
++    it('Handles real data (cross-reference; left column, both rows)', () => {
++        const cross: CrossAnnotations = {
++            both: [],
++            one: [],
++            horizontal: [{ Genotype: ['DGRP-551'] }, {}],
++            vertical: [{ Gender: ['Female'] }, { Gender: ['Male'] }],
++        };
++
++        [
++            [0, 0],
++            [0, 1],
++            [1, 0],
++            [1, 1],
++        ].map(([i, j]) => {
++            expect(getCrossAnnotationsOld(cross, i, j)).toStrictEqual(
++                getCrossAnnotations(cross, i, j)
++            );
++        });
++    });
++
++    it('Handles real data (cross-reference; right column, both rows)', () => {
++        const cross: CrossAnnotations = {
++            both: [],
++            one: [],
++            horizontal: [{}, { Genotype: ['W1118'] }],
++            vertical: [{ Gender: ['Female'] }, { Gender: ['Male'] }],
++        };
++
++        [
++            [0, 0],
++            [0, 1],
++            [1, 0],
++            [1, 1],
++        ].map(([i, j]) => {
++            expect(getCrossAnnotationsOld(cross, i, j)).toStrictEqual(
++                getCrossAnnotations(cross, i, j)
++            );
++        });
++    });
++
++    it('Handles real data (cross-reference; 2 displays)', () => {
++        const cross: CrossAnnotations = {
++            both: [],
++            one: [],
++            horizontal: [{ Gender: ['Female'] }, { Gender: ['Male'] }],
++            vertical: [{ Age: ['0'] }],
++        };
++
++        [
++            [0, 0],
++            [0, 1],
++        ].map(([i, j]) => {
++            expect(getCrossAnnotationsOld(cross, i, j)).toStrictEqual(
++                getCrossAnnotations(cross, i, j)
++            );
++        });
++    });
++});
++
++describe('Check getSelectedAnnotations', () => {
++    it('Handles an empty cross object', () => {
++        const cross: CrossAnnotations = {
++            vertical: [],
++            horizontal: [],
++            both: [],
++            one: [],
++        };
++
++        expect(getSelectedAnnotationsOld(cross)).toStrictEqual(
++            getSelectedAnnotations(cross)
++        );
++    });
++
++    it('Handles a singleton value in each', () => {
++        const cross: CrossAnnotations = {
++            vertical: [{ a: ['foo'] }],
++            horizontal: [{ b: ['bar'] }],
++            both: [],
++            one: [],
++        };
++
++        expect(getSelectedAnnotationsOld(cross)).toStrictEqual(
++            getSelectedAnnotations(cross)
++        );
++    });
++
++    it('Handles equal horizontal and vertical', () => {
++        const cross: CrossAnnotations = {
++            vertical: [{ a: ['foo'] }],
++            horizontal: [{ a: ['foo'] }],
++            both: [],
++            one: [],
++        };
++
++        expect(getSelectedAnnotationsOld(cross)).toStrictEqual(
++            getSelectedAnnotations(cross)
++        );
++    });
++
++    it('Handles equal keys different values', () => {
++        const cross: CrossAnnotations = {
++            vertical: [{ a: ['foo'] }],
++            horizontal: [{ a: ['bar'] }],
++            both: [],
++            one: [],
++        };
++
++        expect(getSelectedAnnotationsOld(cross)).toStrictEqual(
++            getSelectedAnnotations(cross)
++        );
++    });
++
++    it('Handles equal keys with multiple different values', () => {
++        const cross: CrossAnnotations = {
++            vertical: [{ a: ['foo', 'bar'] }],
++            horizontal: [{ a: ['baz', 'zzz'] }],
++            both: [],
++            one: [],
++        };
++
++        expect(getSelectedAnnotationsOld(cross)).toStrictEqual(
++            getSelectedAnnotations(cross)
++        );
++    });
++
++    it('Handles equal keys with multiple equal values', () => {
++        const cross: CrossAnnotations = {
++            vertical: [{ a: ['foo', 'bar', 'foo', 'bar'] }],
++            horizontal: [{ a: ['baz', 'zzz', 'zzz'] }],
++            both: [],
++            one: [],
++        };
++
++        expect(getSelectedAnnotationsOld(cross)).toStrictEqual(
++            getSelectedAnnotations(cross)
++        );
++    });
++
++    it('Handles real data (cross-reference; all 4 grid squares set)', () => {
++        const cross: CrossAnnotations = {
++            both: [],
++            one: [],
++            horizontal: [{ Genotype: ['DGRP-551'] }, { Genotype: ['W1118'] }],
++            vertical: [{ Gender: ['Female'] }, { Gender: ['Male'] }],
++        };
++
++        expect(getSelectedAnnotationsOld(cross)).toStrictEqual(
++            getSelectedAnnotations(cross)
++        );
++    });
++
++    it('Handles real data (cross-reference; both columns, top row)', () => {
++        const cross: CrossAnnotations = {
++            both: [],
++            one: [],
++            horizontal: [{ Genotype: ['DGRP-551'] }, { Genotype: ['W1118'] }],
++            vertical: [{ Gender: ['Female'] }, {}],
++        };
++
++        expect(getSelectedAnnotationsOld(cross)).toStrictEqual(
++            getSelectedAnnotations(cross)
++        );
++    });
++
++    it('Handles real data (cross-reference; both columns, bottom row)', () => {
++        const cross: CrossAnnotations = {
++            both: [],
++            one: [],
++            horizontal: [{ Genotype: ['DGRP-551'] }, { Genotype: ['W1118'] }],
++            vertical: [{}, { Gender: ['Male'] }],
++        };
++
++        expect(getSelectedAnnotationsOld(cross)).toStrictEqual(
++            getSelectedAnnotations(cross)
++        );
++    });
++
++    it('Handles real data (cross-reference; left column, both rows)', () => {
++        const cross: CrossAnnotations = {
++            both: [],
++            one: [],
++            horizontal: [{ Genotype: ['DGRP-551'] }, {}],
++            vertical: [{ Gender: ['Female'] }, { Gender: ['Male'] }],
++        };
++
++        expect(getSelectedAnnotationsOld(cross)).toStrictEqual(
++            getSelectedAnnotations(cross)
++        );
++    });
++
++    it('Handles real data (cross-reference; right column, both rows)', () => {
++        const cross: CrossAnnotations = {
++            both: [],
++            one: [],
++            horizontal: [{}, { Genotype: ['W1118'] }],
++            vertical: [{ Gender: ['Female'] }, { Gender: ['Male'] }],
++        };
++
++        expect(getSelectedAnnotationsOld(cross)).toStrictEqual(
++            getSelectedAnnotations(cross)
++        );
++    });
++
++    it('Handles real data (cross-reference; 2 displays)', () => {
++        const cross: CrossAnnotations = {
++            both: [],
++            one: [],
++            horizontal: [{ Gender: ['Female'] }, { Gender: ['Male'] }],
++            vertical: [{ Age: ['0'] }],
++        };
++
++        expect(getSelectedAnnotationsOld(cross)).toStrictEqual(
++            getSelectedAnnotations(cross)
++        );
++    });
++});
+diff --git a/client/src/components/pages/compareHelper.ts b/client/src/components/pages/compareHelper.ts
+new file mode 100644
+index 00000000..07636b56
+--- /dev/null
++++ b/client/src/components/pages/compareHelper.ts
+@@ -0,0 +1,100 @@
++/**
++ * This module is intended to pull functionality out of the Compare page,
++ * test it, and hopefully simplify or remove it
++ */
++
++import * as R from 'ramda';
++
++type Annotation = { [_: string]: Array<string> };
++
++type CrossAnnotations = {
++    horizontal: Array<Annotation>;
++    vertical: Array<Annotation>;
++    both: Array<Annotation>;
++    one: Array<Annotation>;
++};
++
++/**
++ * Makes the values in each key of axis unique.
++ */
++const selectAnnotations = (axis: Annotation): Annotation => {
++    const keys: string[] = R.keys(axis) as string[];
++    return R.fromPairs(keys.map((key) => [key, [...new Set(axis[key])]]));
++};
++
++const mergeAnnotations = (mine: Annotation, yours: Annotation): Annotation => {
++    return R.mergeWith((l, r) => [...new Set([...l, ...r])], mine, yours);
++};
++
++const getCrossAnnotations = (
++    cross: CrossAnnotations,
++    i: number,
++    j: number
++): Annotation => {
++    return mergeAnnotations(
++        selectAnnotations(cross['horizontal'][j]),
++        selectAnnotations(cross['vertical'][i])
++    );
++};
++
++const getCrossAnnotationsOld = (
++    cross: CrossAnnotations,
++    i: number,
++    j: number
++) => {
++    const annotations = {};
++    if (cross['horizontal'][j]) {
++        Object.keys(cross['horizontal'][j]).forEach((a) => {
++            annotations[a] = annotations[a] || [];
++            cross['horizontal'][j][a].forEach((v) => {
++                if (annotations[a].indexOf(v) === -1) {
++                    annotations[a].push(v);
++                }
++            });
++        });
++    }
++    if (cross['vertical'][i]) {
++        Object.keys(cross['vertical'][i]).forEach((a) => {
++            annotations[a] = annotations[a] || [];
++            cross['vertical'][i][a].forEach((v) => {
++                if (annotations[a].indexOf(v) === -1) {
++                    annotations[a].push(v);
++                }
++            });
++        });
++    }
++    return annotations;
++};
++
++const getSelectedAnnotations = (cross: CrossAnnotations): Annotation => {
++    const allAnnotations = R.flatten(R.values(cross)).map(selectAnnotations);
++    return R.reduce(mergeAnnotations, {}, allAnnotations);
++};
++
++const getSelectedAnnotationsOld = (annotations: CrossAnnotations) => {
++    const selectedAnnotations = {};
++    Object.keys(annotations).forEach((orientation) => {
++        annotations[orientation].forEach((annotation) => {
++            Object.keys(annotation).forEach((a) => {
++                selectedAnnotations[a] = selectedAnnotations[a] || [];
++                annotation[a].forEach((v) => {
++                    if (selectedAnnotations[a].indexOf(v) === -1) {
++                        selectedAnnotations[a].push(v);
++                    }
++                });
++            });
++        });
++    });
++    return selectedAnnotations;
++};
++
++export {
++    Annotation,
++    CrossAnnotations,
++    getCrossAnnotations,
++    getCrossAnnotationsOld,
++    getSelectedAnnotations,
++    getSelectedAnnotationsOld,
++    selectAnnotations,
++    mergeAnnotations,
++};
+diff --git a/grpc-proxy-server/server.js b/grpc-proxy-server/server.js
+index c3841cb8..48739970 100755
+--- a/grpc-proxy-server/server.js
++++ b/grpc-proxy-server/server.js
+@@ -1,42 +1,34 @@
+-var util = require('util')
++const util = require('util')
+ 
+ var WebSocketServer = require('ws').Server
+ var wss = new WebSocketServer({ port: process.argv[2] || 55852 });
+ 
+ console.log('Running GRPC Proxy on port ', wss.options.port);
+ 
+-var grpcBus = require('grpc-bus');
+-var protobuf = require("protobufjs");
+-var path = require("path")
++const grpcBus = require('grpc-bus');
++const protobuf = require("protobufjs");
++const path = require("path")
+ 
+ 
+-gbBuilder = protobuf.loadProtoFile(path.join(__dirname,'grpc-bus.proto'));
+-gbTree = gbBuilder.build().grpcbus;
++const gbBuilder = protobuf.loadProtoFile(path.join(__dirname,'grpc-bus.proto'));
++const gbTree = gbBuilder.build().grpcbus;
+ 
+-wss.on('connection', function connection(ws) {
++wss.on('connection', (ws) => {
+   console.log('connected');
+ 
+-  ws.once('message', function incoming(data, flags) {
+-    var message = JSON.parse(data);
+-    var protoFileExt = message.filename.substr(message.filename.lastIndexOf('.') + 1);
+-    if (protoFileExt === "json") {
+-      protoDefs = protobuf.loadJson(message.contents, null, message.filename);
+-    } else {
+-      protoDefs = protobuf.loadProto(message.contents, null, message.filename);
+-    }
+-    var gbServer = new grpcBus.Server(protoDefs, function(message) {
+-      var pbMessage = new gbTree.GBServerMessage(message);
++  ws.once('message', (data, flags) => {
++    const message = JSON.parse(data);
++    const protoDefs = protobuf.loadProto(message.contents, null, message.filename);
++
++    const gbServer = new grpcBus.Server(protoDefs, (message) => {
++      const pbMessage = new gbTree.GBServerMessage(message);
+       if (ws.readyState === ws.OPEN) {
+         ws.send(pbMessage.toBuffer());
+-      } else {
+       }
+     }, require('grpc'));
+ 
+-    ws.on('message', function incoming(data, flags) {
+-
+-      var message = gbTree.GBClientMessage.decode(data);
+-
+-      gbServer.handleMessage(message);
++    ws.on('message', (data, flags) => {
++      gbServer.handleMessage(gbTree.GBClientMessage.decode(data));
+     });
+   });
+ });
+diff --git a/server/test/generate.py b/server/test/generate.py
+index e5e552b4..6d5d4186 100644
+--- a/server/test/generate.py
++++ b/server/test/generate.py
+@@ -234,10 +234,10 @@ def init_metric(self, metric: np.ndarray):
+         )
+ 
+     def __repr__(self):
+-        return f(
+-            "Clustering(self.identifier={self.identifier}, "
+-            "self.clusters={self.clusters}, "
+-            "self.assignment={self.assignment})"
++        return (
++            f"Clustering(self.identifier={self.identifier}, "
++            f"self.clusters={self.clusters}, "
++            f"self.assignment={self.assignment})"
+         )
+ 
+ 
+@@ -418,11 +418,11 @@ def generate_annotations(self, n_cells: int, values: List[str], coords: np.ndarr
+         }
+ 
+     def __repr__(self):
+-        return f(
+-            "LoomData(name={self.name}, "
+-            "{self.n_genes}, {self.n_cells}, "
+-            "matrix={self.matrix}, "
+-            "annotations={self.annotations})"
++        return (
++            f"LoomData(name={self.name}, "
++            f"{self.n_genes}, {self.n_cells}, "
++            f"matrix={self.matrix}, "
++            f"annotations={self.annotations})"
+         )
+ 
+ 

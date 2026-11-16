@@ -1,0 +1,75 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-57"
+description = "Polish scRNA doublet detection methods and gallery"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "6c7b29ac79c59c72a7edcd828e76d2501b04a571"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/57"
+source_access = "auto"
+built_at = "2026-11-15T18:18:26.977668+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:37e40c504289b4aeec31350c4a3f4db5a6d8774e910ee9fbbdd3d416cd75acfe"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-04-07T06:24:13Z"
+diff_format = "unified"
+context_files = [
+    "knowledge_base/knowhows/KH-sc-doublet-detection-guardrails.md",
+    "knowledge_base/skill-guides/singlecell/sc-doublet-detection.md",
+    "omicsclaw/core/r_dependency_manager.py",
+    "omicsclaw/core/registry.py",
+    "omicsclaw/r_scripts/sc_scds.R",
+    "pyproject.toml",
+    "skills/singlecell/_lib/dependency_manager.py",
+    "skills/singlecell/_lib/preflight.py",
+    "skills/singlecell/_lib/viz/__init__.py",
+    "skills/singlecell/_lib/viz/doublet.py",
+    "skills/singlecell/_lib/viz/embedding.py",
+    "skills/singlecell/scrna/sc-doublet-detection/SKILL.md",
+    "skills/singlecell/scrna/sc-doublet-detection/sc_doublet.py",
+    "skills/singlecell/scrna/sc-doublet-detection/tests/test_sc_doublet.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 1592
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

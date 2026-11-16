@@ -1,0 +1,124 @@
+diff --git a/src/app/translations/files/translated/ar.json b/src/app/translations/files/translated/ar.json
+index 9093a4bb..29877f4f 100644
+--- a/src/app/translations/files/translated/ar.json
++++ b/src/app/translations/files/translated/ar.json
+@@ -319,7 +319,7 @@
+   "views.dashboard.admin.components.QueueTable.table.header.created": "خلق",
+   "views.dashboard.admin.components.QueueTable.table.header.queueProcessingTime": "وقت المعالجة",
+   "views.dashboard.admin.components.QueueTable.table.header.status": "حالة",
+-  "views.dashboard.admin.components.QueueTable.table.header.extraction.title": "Extraction",
++  "views.dashboard.admin.components.QueueTable.table.header.extraction.title": "استخراج",
+   "views.dashboard.admin.components.QueueTable.table.header.extraction.options.yes": "نعم",
+   "views.dashboard.admin.components.QueueTable.table.header.extraction.options.no": "لا",
+   "views.dashboard.admin.components.QueueTable.table.header.sparsity": "تبعثر (%)",
+@@ -333,7 +333,7 @@
+   "views.dashboard.admin.components.QueueTable.table.operations.delete.dialog.title": "تحذير",
+   "views.dashboard.admin.components.QueueTable.table.operations.delete.dialog.description": "هذا سيتم حذف كل شيء على النظام الذي تم اختياره على قائمة الانتظار. تستمر ؟",
+   "views.dashboard.admin.components.QueueTable.messages.in_progress": "لا يمكن تحديد قائمة الانتظار المهمة. فإنه لا يزال لم ينته.",
+-  "views.dashboard.admin.components.QueueTable.messages.missing_models": "Cannot select queue task. All analysis algorithms finished with an error.",
++  "views.dashboard.admin.components.QueueTable.messages.missing_models": "لا يمكن تحديد قائمة الانتظار المهمة. كل تحليل الخوارزميات مع الانتهاء من خطأ.",
+   "views.dashboard.admin.components.QueueTable.dialog.no_data": "لا عرض",
+   "views.dashboard.admin.components.QueueTable.dialog.title": "تجهيز إحصائيات انتظار المحدد",
+   "views.dashboard.admin.components.QueueTable.dialog.resamples_table.header.source.title": "المصدر",
+@@ -346,7 +346,7 @@
+   "views.dashboard.admin.components.QueueTable.dialog.resamples_table.header.total_samples_training": "عينات التدريب",
+   "views.dashboard.admin.components.QueueTable.dialog.resamples_table.header.total_samples_testing": "عينات الاختبار",
+   "views.dashboard.admin.components.QueueTable.dialog.resamples_table.header.total_models_processed": "نماذج معالجتها",
+-  "views.dashboard.admin.components.QueueTable.dialog.resamples_table.header.hide_failed": "Hide failed?",
++  "views.dashboard.admin.components.QueueTable.dialog.resamples_table.header.hide_failed": "إخفاء فشل ؟",
+   "views.dashboard.admin.components.QueueTable.dialog.models_table.header.status.options.success": "النجاح",
+   "views.dashboard.admin.components.QueueTable.dialog.models_table.header.status.options.error": "خطأ",
+   "views.dashboard.admin.components.QueueTable.dialog.models_table.header.model_id": "نموذج ID",
+diff --git a/src/app/translations/files/translated/de.json b/src/app/translations/files/translated/de.json
+index b7bf963b..9f07c07f 100644
+--- a/src/app/translations/files/translated/de.json
++++ b/src/app/translations/files/translated/de.json
+@@ -319,7 +319,7 @@
+   "views.dashboard.admin.components.QueueTable.table.header.created": "Erstellt",
+   "views.dashboard.admin.components.QueueTable.table.header.queueProcessingTime": "Bearbeitungszeit",
+   "views.dashboard.admin.components.QueueTable.table.header.status": "Status",
+-  "views.dashboard.admin.components.QueueTable.table.header.extraction.title": "Extraction",
++  "views.dashboard.admin.components.QueueTable.table.header.extraction.title": "Extraktion",
+   "views.dashboard.admin.components.QueueTable.table.header.extraction.options.yes": "Ja",
+   "views.dashboard.admin.components.QueueTable.table.header.extraction.options.no": "Keine",
+   "views.dashboard.admin.components.QueueTable.table.header.sparsity": "Sparsity (%)",
+@@ -333,7 +333,7 @@
+   "views.dashboard.admin.components.QueueTable.table.operations.delete.dialog.title": "Warnung",
+   "views.dashboard.admin.components.QueueTable.table.operations.delete.dialog.description": "Dies wird dauerhaft löschen Sie alles auf das system bezogen auf ausgewählte Warteschlange. Weiter?",
+   "views.dashboard.admin.components.QueueTable.messages.in_progress": "Kann nicht wählen Sie queue-Aufgabe. Es ist immer noch nicht fertig.",
+-  "views.dashboard.admin.components.QueueTable.messages.missing_models": "Cannot select queue task. All analysis algorithms finished with an error.",
++  "views.dashboard.admin.components.QueueTable.messages.missing_models": "Kann nicht wählen Sie queue-Aufgabe. Alle Analyse-algorithmen beendet mit einer Fehlermeldung.",
+   "views.dashboard.admin.components.QueueTable.dialog.no_data": "Nichts zum anzeigen",
+   "views.dashboard.admin.components.QueueTable.dialog.title": "Verarbeitung von Statistiken für die ausgewählte Warteschlange",
+   "views.dashboard.admin.components.QueueTable.dialog.resamples_table.header.source.title": "Quelle",
+@@ -346,7 +346,7 @@
+   "views.dashboard.admin.components.QueueTable.dialog.resamples_table.header.total_samples_training": "Muster Ausbildung",
+   "views.dashboard.admin.components.QueueTable.dialog.resamples_table.header.total_samples_testing": "Proben testen",
+   "views.dashboard.admin.components.QueueTable.dialog.resamples_table.header.total_models_processed": "Modelle verarbeitet",
+-  "views.dashboard.admin.components.QueueTable.dialog.resamples_table.header.hide_failed": "Hide failed?",
++  "views.dashboard.admin.components.QueueTable.dialog.resamples_table.header.hide_failed": "Ausblenden gescheitert?",
+   "views.dashboard.admin.components.QueueTable.dialog.models_table.header.status.options.success": "Erfolg",
+   "views.dashboard.admin.components.QueueTable.dialog.models_table.header.status.options.error": "Fehler",
+   "views.dashboard.admin.components.QueueTable.dialog.models_table.header.model_id": "Modell ID",
+diff --git a/src/app/translations/files/translated/fr.json b/src/app/translations/files/translated/fr.json
+index d36cfb1e..07dd4e7f 100644
+--- a/src/app/translations/files/translated/fr.json
++++ b/src/app/translations/files/translated/fr.json
+@@ -319,7 +319,7 @@
+   "views.dashboard.admin.components.QueueTable.table.header.created": "Créé",
+   "views.dashboard.admin.components.QueueTable.table.header.queueProcessingTime": "Le temps de traitement",
+   "views.dashboard.admin.components.QueueTable.table.header.status": "Statut",
+-  "views.dashboard.admin.components.QueueTable.table.header.extraction.title": "Extraction",
++  "views.dashboard.admin.components.QueueTable.table.header.extraction.title": "L'Extraction",
+   "views.dashboard.admin.components.QueueTable.table.header.extraction.options.yes": "Oui",
+   "views.dashboard.admin.components.QueueTable.table.header.extraction.options.no": "Pas de",
+   "views.dashboard.admin.components.QueueTable.table.header.sparsity": "Densité (%)",
+@@ -333,7 +333,7 @@
+   "views.dashboard.admin.components.QueueTable.table.operations.delete.dialog.title": "Avertissement",
+   "views.dashboard.admin.components.QueueTable.table.operations.delete.dialog.description": "Cela permettra de supprimer définitivement tous les éléments du système liées à la file d'attente sélectionnée. Continuer?",
+   "views.dashboard.admin.components.QueueTable.messages.in_progress": "Impossible de sélectionner la file d'attente des tâches. Il n'est pas encore terminé.",
+-  "views.dashboard.admin.components.QueueTable.messages.missing_models": "Cannot select queue task. All analysis algorithms finished with an error.",
++  "views.dashboard.admin.components.QueueTable.messages.missing_models": "Impossible de sélectionner la file d'attente des tâches. Tous les algorithmes d'analyse terminé avec une erreur.",
+   "views.dashboard.admin.components.QueueTable.dialog.no_data": "Rien à afficher",
+   "views.dashboard.admin.components.QueueTable.dialog.title": "Le traitement des statistiques pour la file d'attente sélectionnée",
+   "views.dashboard.admin.components.QueueTable.dialog.resamples_table.header.source.title": "Source",
+@@ -346,7 +346,7 @@
+   "views.dashboard.admin.components.QueueTable.dialog.resamples_table.header.total_samples_training": "Des échantillons de la formation",
+   "views.dashboard.admin.components.QueueTable.dialog.resamples_table.header.total_samples_testing": "Les échantillons de contrôle",
+   "views.dashboard.admin.components.QueueTable.dialog.resamples_table.header.total_models_processed": "Les modèles traités",
+-  "views.dashboard.admin.components.QueueTable.dialog.resamples_table.header.hide_failed": "Hide failed?",
++  "views.dashboard.admin.components.QueueTable.dialog.resamples_table.header.hide_failed": "Masquer l'échec?",
+   "views.dashboard.admin.components.QueueTable.dialog.models_table.header.status.options.success": "Succès",
+   "views.dashboard.admin.components.QueueTable.dialog.models_table.header.status.options.error": "Erreur",
+   "views.dashboard.admin.components.QueueTable.dialog.models_table.header.model_id": "ID de modèle",
+diff --git a/src/app/translations/files/translated/zh.json b/src/app/translations/files/translated/zh.json
+index 6f330f60..e1e20d08 100644
+--- a/src/app/translations/files/translated/zh.json
++++ b/src/app/translations/files/translated/zh.json
+@@ -319,7 +319,7 @@
+   "views.dashboard.admin.components.QueueTable.table.header.created": "创建",
+   "views.dashboard.admin.components.QueueTable.table.header.queueProcessingTime": "处理时间",
+   "views.dashboard.admin.components.QueueTable.table.header.status": "状态",
+-  "views.dashboard.admin.components.QueueTable.table.header.extraction.title": "Extraction",
++  "views.dashboard.admin.components.QueueTable.table.header.extraction.title": "提取",
+   "views.dashboard.admin.components.QueueTable.table.header.extraction.options.yes": "是的",
+   "views.dashboard.admin.components.QueueTable.table.header.extraction.options.no": "没有",
+   "views.dashboard.admin.components.QueueTable.table.header.sparsity": "稀疏(%)",
+@@ -333,7 +333,7 @@
+   "views.dashboard.admin.components.QueueTable.table.operations.delete.dialog.title": "警告",
+   "views.dashboard.admin.components.QueueTable.table.operations.delete.dialog.description": "这将永久删除一切对系统的有关所选择的队列。 继续吗？",
+   "views.dashboard.admin.components.QueueTable.messages.in_progress": "无法选择排队的任务。 它仍然是没有完成。",
+-  "views.dashboard.admin.components.QueueTable.messages.missing_models": "Cannot select queue task. All analysis algorithms finished with an error.",
++  "views.dashboard.admin.components.QueueTable.messages.missing_models": "无法选择排队的任务。 所有分析算法完成了一个错误。",
+   "views.dashboard.admin.components.QueueTable.dialog.no_data": "没有什么显示的",
+   "views.dashboard.admin.components.QueueTable.dialog.title": "处理统计数据选定的队列",
+   "views.dashboard.admin.components.QueueTable.dialog.resamples_table.header.source.title": "来源",
+@@ -346,7 +346,7 @@
+   "views.dashboard.admin.components.QueueTable.dialog.resamples_table.header.total_samples_training": "样本的培训",
+   "views.dashboard.admin.components.QueueTable.dialog.resamples_table.header.total_samples_testing": "样本测试",
+   "views.dashboard.admin.components.QueueTable.dialog.resamples_table.header.total_models_processed": "模型的处理",
+-  "views.dashboard.admin.components.QueueTable.dialog.resamples_table.header.hide_failed": "Hide failed?",
++  "views.dashboard.admin.components.QueueTable.dialog.resamples_table.header.hide_failed": "隐藏的失败？",
+   "views.dashboard.admin.components.QueueTable.dialog.models_table.header.status.options.success": "成功",
+   "views.dashboard.admin.components.QueueTable.dialog.models_table.header.status.options.error": "错误",
+   "views.dashboard.admin.components.QueueTable.dialog.models_table.header.model_id": "模型ID",

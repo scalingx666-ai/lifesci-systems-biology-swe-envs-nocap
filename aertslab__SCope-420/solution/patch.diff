@@ -1,0 +1,27 @@
+diff --git a/src/components/App.jsx b/src/components/App.jsx
+index bad2e6ccc..b5d4a79a0 100644
+--- a/src/components/App.jsx
++++ b/src/components/App.jsx
+@@ -189,11 +189,6 @@ class App extends Component {
+                         path='/:uuid/:loom?/:page?'
+                         render={({ history }) => (
+                             <Segment className='parentView'>
+-                                <ReactResizeDetector
+-                                    handleHeight
+-                                    skipOnMount
+-                                    onResize={this.onResize.bind(this)}
+-                                />
+                                 <AppHeader
+                                     toggleSidebar={this.toggleSidebar.bind(
+                                         this
+@@ -577,10 +572,6 @@ class App extends Component {
+         });
+     }
+ 
+-    onResize() {
+-        this.forceUpdate();
+-    }
+-
+     restoreSession(ip, uuid, permalink) {
+         const { history } = this.props;
+         try {

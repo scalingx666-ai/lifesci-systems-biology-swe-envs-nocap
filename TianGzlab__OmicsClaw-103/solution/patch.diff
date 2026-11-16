@@ -1,0 +1,794 @@
+diff --git a/.gitignore b/.gitignore
+index 98a4a518..d891c016 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -42,9 +42,15 @@ sessions/
+ superpowers/
+ docs/superpowers/
+ 
+-# Local framework optimization notes
++# Local implementation notes (non-contract scratch notes)
+ docs/engineering/2026-05-07-*.md
+-docs/engineering/domain-input-contracts.md
++!docs/engineering/2026-05-07-framework-optimization-spec.md
++!docs/engineering/2026-05-07-alias-ownership-contract.md
++!docs/engineering/2026-05-07-bot-runner-contract.md
++!docs/engineering/2026-05-07-output-ownership-contract.md
++!docs/engineering/2026-05-07-skill-help-contract.md
++!docs/engineering/2026-05-07-skill-runner-contract.md
++!docs/engineering/domain-input-contracts.md
+ 
+ # User data (large, not committed)
+ data/*
+diff --git a/README.md b/README.md
+index 2e11f55e..42ebcbc7 100644
+--- a/README.md
++++ b/README.md
+@@ -178,6 +178,18 @@ hardcoded registry entries remain compatibility fallbacks. Skill scripts write
+ native artifacts, while the shared runner writes top-level `README.md` and
+ `reproducibility/analysis_notebook.ipynb`. Bot skill execution uses the same
+ shared runner contract as CLI, interactive, agent tools, app, and remote jobs.
++Shared result construction and adapter coercion live in
++`omicsclaw/core/skill_result.py`; new execution surfaces should reuse that
++model instead of rebuilding legacy result dictionaries.
++
++Architecture contract references:
++[framework roadmap](docs/engineering/2026-05-07-framework-optimization-spec.md),
++[skill runner](docs/engineering/2026-05-07-skill-runner-contract.md),
++[output ownership](docs/engineering/2026-05-07-output-ownership-contract.md),
++[alias ownership](docs/engineering/2026-05-07-alias-ownership-contract.md),
++[bot runner](docs/engineering/2026-05-07-bot-runner-contract.md),
++[skill help](docs/engineering/2026-05-07-skill-help-contract.md), and
++[domain input contracts](docs/engineering/domain-input-contracts.md).
+ 
+ Desktop provider changes should preserve the OmicsClaw-App backend contract: `/providers` reports the active provider/model/endpoint, `/providers/test` performs a short live LLM connectivity probe, and `/chat/stream` must reinitialize the provider runtime when a request changes model even if the provider id is unchanged.
+ 
+diff --git a/docs/engineering/2026-05-07-alias-ownership-contract.md b/docs/engineering/2026-05-07-alias-ownership-contract.md
+new file mode 100644
+index 00000000..473d2eac
+--- /dev/null
++++ b/docs/engineering/2026-05-07-alias-ownership-contract.md
+@@ -0,0 +1,56 @@
++# Spec: Alias Ownership Contract
++
++## Objective
++
++Skill aliases need one maintainable source of truth. For every filesystem
++discovered skill with a `SKILL.md`, canonical `name` and `legacy_aliases` are
++owned by that `SKILL.md` frontmatter. The hardcoded registry table is retained
++only as a backward-compatible fallback for skills that cannot be discovered from
++the filesystem metadata.
++
++## Commands
++
++```bash
++python -m pytest tests/test_registry_alias_contract.py -q
++python -m pytest tests/test_registry.py tests/test_keyword_routing.py -q
++```
++
++## Project Structure
++
++- `skills/**/SKILL.md`: canonical alias metadata and declared legacy aliases.
++- `omicsclaw/core/lazy_metadata.py`: lightweight frontmatter reader.
++- `omicsclaw/core/registry.py`: registry discovery and fallback wiring.
++- `tests/test_registry_alias_contract.py`: alias ownership guardrail.
++
++## Code Style
++
++Registry merge logic should be explicit about ownership:
++
++```python
++if lazy and lazy.description:
++    legacy_aliases = list(lazy.legacy_aliases or [])
++else:
++    legacy_aliases = list(hardcoded_info.get("legacy_aliases", []))
++```
++
++## Testing Strategy
++
++- Add a registry-derived contract test that compares each discovered skill's
++  runtime `legacy_aliases` with its `SKILL.md` `metadata.omicsclaw.legacy_aliases`.
++- Preserve lookup behavior for declared aliases and representative old aliases.
++- Keep the test lightweight: no skill execution, no optional analysis imports.
++
++## Boundaries
++
++- Always: preserve documented legacy lookups by moving any needed aliases into
++  `SKILL.md` before removing hardcoded merge behavior.
++- Ask first: deleting public aliases from `SKILL.md`.
++- Never: make hardcoded `_HARDCODED_SKILLS` the source of truth for a skill that
++  has valid filesystem metadata.
++
++## Success Criteria
++
++- For every primary skill with `SKILL.md`, registry `legacy_aliases` exactly
++  match `metadata.omicsclaw.legacy_aliases`.
++- `resolve_skill_alias()` still resolves declared aliases such as `preprocess`.
++- Existing registry and keyword routing tests continue to pass.
+diff --git a/docs/engineering/2026-05-07-bot-runner-contract.md b/docs/engineering/2026-05-07-bot-runner-contract.md
+new file mode 100644
+index 00000000..1978b084
+--- /dev/null
++++ b/docs/engineering/2026-05-07-bot-runner-contract.md
+@@ -0,0 +1,59 @@
++# Spec: Bot Skill Runner Contract
++
++## Objective
++
++Bot skill execution should share the same runner contract as CLI, interactive,
++agent tools, app, and remote default jobs. Bot-specific code may own chat
++preflight, media collection, memory capture, and user-facing formatting, but it
++must not independently assemble `omicsclaw.py run ...` subprocess commands for
++normal skill runs.
++
++## Commands
++
++```bash
++python -m pytest tests/test_bot_runner_contract.py tests/test_bot_batch_key_preflight.py -q
++```
++
++## Project Structure
++
++- `bot/core.py`: bot preflight, execution adapter, output collection, and chat
++  formatting.
++- `omicsclaw/core/skill_runner.py`: canonical skill execution contract.
++- `tests/test_bot_runner_contract.py`: bot runner ownership guardrail.
++
++## Code Style
++
++Bot code should map tool args into `run_skill()` kwargs:
++
++```python
++result = await asyncio.to_thread(
++    skill_runner.run_skill,
++    skill_name,
++    input_path=input_path,
++    output_dir=str(out_dir),
++    demo=mode == "demo",
++    extra_args=extra_args or None,
++)
++```
++
++## Testing Strategy
++
++- Add static tests proving `_run_omics_skill_step()` and `execute_omicsclaw()`
++  do not call `asyncio.create_subprocess_exec`.
++- Add behavior tests proving bot execution invokes the shared runner adapter and
++  still formats successful `report.md` output.
++- Keep replot, upload, and non-skill subprocess helpers out of scope.
++
++## Boundaries
++
++- Always: preserve preflight pause behavior, output media collection, memory
++  capture, and environment error classification.
++- Ask first: changing bot public tool schemas.
++- Never: duplicate CLI argument filtering outside the shared runner path.
++
++## Success Criteria
++
++- Normal bot skill execution routes through a shared-runner adapter.
++- `_run_omics_skill_step()` and `execute_omicsclaw()` no longer start
++  `omicsclaw.py run` subprocesses.
++- Existing bot preflight tests continue to pass.
+diff --git a/docs/engineering/2026-05-07-framework-optimization-spec.md b/docs/engineering/2026-05-07-framework-optimization-spec.md
+new file mode 100644
+index 00000000..31cd3b15
+--- /dev/null
++++ b/docs/engineering/2026-05-07-framework-optimization-spec.md
+@@ -0,0 +1,143 @@
++# Spec: Framework Optimization Roadmap
++
++## Objective
++
++Bring OmicsClaw's framework architecture into a single, testable contract from
++skill discovery through execution and output UX. The optimization route is
++driven by eight concrete outcomes:
++
++1. Public facts stay synchronized with the runtime registry and graphify map.
++2. Skill execution is extracted from the root `omicsclaw.py` into a reusable
++   core runner module.
++3. Skills write native analysis artifacts while the runner owns shared top-level
++   output UX such as `README.md` and notebooks.
++4. Every `SKILL.md` exposes the same minimum OmicsClaw metadata contract.
++5. Each domain has documented input contracts: supported suffixes, real loaders,
++   minimum fields, and downstream data conventions.
++6. Alias ownership converges toward `SKILL.md` metadata instead of duplicated
++   hardcoded legacy tables.
++7. CLI, app, bot, interactive, and remote execution share one executor/runner
++   contract instead of independently assembling command lines.
++8. Lightweight contract tests guard registry counts, skill help, metadata,
++   output structure, README/notebook generation, and documentation facts.
++
++The user is repository maintainers and future agents. Success means a maintainer
++can inspect docs/tests and know exactly which parts are complete, what remains,
++and how a change is verified.
++
++## Tech Stack
++
++- Python 3.11+
++- `pytest` for contract and regression tests
++- OmicsClaw runtime registry: `omicsclaw/core/registry.py`
++- CLI entrypoint: `omicsclaw.py`
++- App/remote execution layer: `omicsclaw/execution/`
++- Bot/interactive surfaces: `bot/`, `omicsclaw/interactive/`
++- Documentation: `README.md`, `AGENTS.md`, `docs/architecture/`,
++  `docs/engineering/`, `docs/superpowers/plans/`
++
++## Commands
++
++Targeted verification:
++
++```bash
++python -m pytest tests/test_documentation_facts.py -q
++python -m pytest tests/test_diagnostics.py tests/test_registry.py -q
++python omicsclaw.py doctor --workspace .
++python omicsclaw.py list
++```
++
++Broader verification before marking a framework slice complete:
++
++```bash
++python -m pytest -q
++python scripts/generate_catalog.py
++python omicsclaw.py doctor --workspace .
++graphify update .
++```
++
++## Project Structure
++
++```text
++omicsclaw.py
++  Temporary root CLI dispatcher. `run_skill()` must move out over time.
++
++omicsclaw/core/
++  Registry and future shared `skill_runner.py`.
++
++omicsclaw/execution/
++  Job/executor abstractions for app and remote execution.
++
++bot/ and omicsclaw/interactive/
++  User-facing surfaces that should call the shared runner contract.
++
++docs/engineering/
++  Durable specs and architecture contracts.
++
++docs/superpowers/plans/
++  Ordered task breakdowns and checkpoints for implementation sessions.
++
++tests/
++  Contract tests that prove registry/docs/runner/output behavior.
++```
++
++## Code Style
++
++Prefer small, explicit contracts over broad framework rewrites. Tests should
++assert observable behavior and avoid depending on optional analysis packages.
++
++Example style for a contract helper:
++
++```python
++def registry_skill_counts() -> tuple[int, dict[str, int]]:
++    reg = OmicsRegistry()
++    reg.load_all()
++    items = reg.iter_primary_skills()
++    counts: dict[str, int] = {}
++    for _, info in items:
++        domain = str(info.get("domain", "")).strip()
++        counts[domain] = counts.get(domain, 0) + 1
++    return len(items), counts
++```
++
++## Testing Strategy
++
++- Use TDD for any behavior or contract change: write the focused failing test,
++  verify RED, implement the smallest change, then verify GREEN.
++- Keep tests lightweight: registry/docs/metadata/output contract tests should
++  not import Scanpy, R bridges, or external CLIs.
++- Prefer dynamic registry-derived expectations for counts so tests catch future
++  documentation drift without hardcoding stale values.
++- Add broader all-skill tests only when they can run quickly or are explicitly
++  marked for slower CI lanes.
++
++## Boundaries
++
++- Always: keep edits scoped to the current roadmap slice, verify with concrete
++  commands, and update durable docs after meaningful milestones.
++- Ask first: adding large dependencies, changing CI topology, deleting legacy
++  aliases, or changing public CLI behavior in a breaking way.
++- Never: remove failing tests to make progress, revert unrelated user changes,
++  upload user data, or make scientific behavior changes without a skill-specific
++  spec.
++
++## Success Criteria
++
++- The first slice makes facts synchronized across README/AGENTS/architecture
++  docs and protects them with a documentation fact test.
++- Later slices are implemented in order from the plan, each with acceptance
++  criteria and verification commands.
++- `oc doctor` remains the quick local health gate for environment,
++  registry/catalog, and graphify-map drift.
++- No slice is considered complete until its tests and manual verification cover
++  the explicit objective for that slice.
++
++## Open Questions
++
++- Whether all top-level output files currently written by individual skills are
++  considered legacy behavior that must remain temporarily during runner
++  extraction.
++- Whether legacy aliases should be removed in one migration or deprecated across
++  multiple releases.
++- Which all-skill `--help` and demo-output tests belong in default CI versus a
++  slower maintenance lane.
+diff --git a/docs/engineering/2026-05-07-output-ownership-contract.md b/docs/engineering/2026-05-07-output-ownership-contract.md
+new file mode 100644
+index 00000000..7913bb9d
+--- /dev/null
++++ b/docs/engineering/2026-05-07-output-ownership-contract.md
+@@ -0,0 +1,65 @@
++# Spec: Output Ownership Contract
++
++## Objective
++
++Separate scientific/native skill artifacts from shared top-level output UX.
++Skill scripts should produce native outputs such as `report.md`, `result.json`,
++tables, figures, h5ad files, and reproducibility command files. The shared
++runner owns user-navigation artifacts that wrap a completed run:
++`README.md` and `reproducibility/analysis_notebook.ipynb`.
++
++## Commands
++
++```bash
++python -m pytest tests/test_output_ownership_contract.py -q
++python -m pytest tests/test_output_ux.py -q
++```
++
++## Project Structure
++
++- `omicsclaw/core/skill_runner.py`: finalizes output directories and writes
++  runner-owned README/notebook artifacts.
++- `omicsclaw/common/report.py`: native report/result helpers plus runner-owned
++  README helper used by the runner.
++- `omicsclaw/common/notebook_export.py`: runner-owned notebook generation.
++- `skills/**`: skill scripts; should not call runner-owned README/notebook
++  helpers directly.
++
++## Code Style
++
++Skill scripts may keep imports for native helpers:
++
++```python
++from omicsclaw.common.report import generate_report_header, write_result_json
++```
++
++Runner-owned UX belongs in the runner finalization path:
++
++```python
++notebook_path = write_analysis_notebook(...)
++readme_path = write_output_readme(..., notebook_path=notebook_path)
++```
++
++## Testing Strategy
++
++- Add a static corpus contract that fails when files under `skills/` import or
++  call `write_output_readme`, `write_analysis_notebook`, or
++  `write_standard_run_artifacts`.
++- Keep existing runner UX tests proving `run_skill()` produces README and
++  notebooks centrally.
++- Avoid executing heavy skills in this contract; direct skill demo migration can
++  be handled by follow-up tests.
++
++## Boundaries
++
++- Always: preserve native `report.md`, `result.json`, tables, figures, h5ad
++  files, and reproducibility command files.
++- Ask first: deleting direct script backward compatibility expectations.
++- Never: remove scientific outputs to satisfy UX ownership.
++
++## Success Criteria
++
++- No skill script directly imports or calls runner-owned README/notebook helpers.
++- `run_skill()` still creates `README.md` and
++  `reproducibility/analysis_notebook.ipynb`.
++- Existing focused output UX tests remain green.
+diff --git a/docs/engineering/2026-05-07-skill-help-contract.md b/docs/engineering/2026-05-07-skill-help-contract.md
+new file mode 100644
+index 00000000..c0219fe9
+--- /dev/null
++++ b/docs/engineering/2026-05-07-skill-help-contract.md
+@@ -0,0 +1,36 @@
++# Spec: Skill Help Contract
++
++## Objective
++
++Every registered primary skill script must support a cheap, deterministic
++`--help` path. Maintainers, agents, the app backend, and bot surfaces need to
++inspect a skill's CLI shape without providing input data, importing unavailable
++runtime-only dependencies unnecessarily, or starting an analysis.
++
++## Commands
++
++```bash
++python -m pytest tests/test_skill_help_contract.py -q
++```
++
++## Contract
++
++- `python <skill_script.py> --help` exits with status `0`.
++- Help output is non-empty and includes either `usage`, `options`, or `--help`.
++- The command runs from the repository root with `PYTHONPATH` pointed at the
++  repository root, matching how local development invokes scripts directly.
++- The command must not require input files, demo data, external bioinformatics
++  CLIs, R packages, or a running app/bot service.
++
++## Boundaries
++
++- Always: treat the runtime registry as the list of primary skill scripts.
++- Ask first: changing public skill flags or removing legacy flags.
++- Never: execute analysis work, mutate output directories, or contact network
++  services during `--help`.
++
++## Success Criteria
++
++- A registry-derived contract test covers every primary skill script.
++- Failures identify the skill alias, script path, command, and captured output.
++- The test stays focused on help introspection, not demo execution.
+diff --git a/docs/engineering/2026-05-07-skill-runner-contract.md b/docs/engineering/2026-05-07-skill-runner-contract.md
+new file mode 100644
+index 00000000..348d37a6
+--- /dev/null
++++ b/docs/engineering/2026-05-07-skill-runner-contract.md
+@@ -0,0 +1,64 @@
++# Spec: Shared Skill Runner Contract
++
++## Objective
++
++Move reusable skill execution behavior out of the root `omicsclaw.py` script so
++CLI, interactive, app, bot, and remote execution can share one implementation.
++The root script should remain a public CLI wrapper, but `run_skill()` must be
++importable from `omicsclaw.core.skill_runner`.
++
++## Contract
++
++`omicsclaw.core.skill_runner` exposes:
++
++```python
++def run_skill(
++    skill_name: str,
++    *,
++    input_path: str | None = None,
++    input_paths: list[str] | None = None,
++    output_dir: str | None = None,
++    demo: bool = False,
++    session_path: str | None = None,
++    extra_args: list[str] | None = None,
++) -> dict:
++    ...
++```
++
++The returned dictionary keeps the existing public shape:
++
++- `skill`
++- `success`
++- `exit_code`
++- `output_dir`
++- `files`
++- `stdout`
++- `stderr`
++- `duration_seconds`
++- `method`
++- `readme_path`
++- `notebook_path`
++
++## Behavior Requirements
++
++- Alias resolution and `domain:skill` shorthand keep current behavior.
++- `spatial-pipeline` keeps current chained execution behavior.
++- Extra args are filtered through per-skill `allowed_extra_flags`.
++- Successful runs still generate runner-owned `README.md` and
++  `reproducibility/analysis_notebook.ipynb`.
++- The root `omicsclaw.py` CLI delegates to this module instead of owning the
++  implementation.
++
++## Verification
++
++```bash
++python -m pytest tests/test_skill_runner_contract.py tests/test_output_ux.py -q
++python omicsclaw.py run literature --demo --output /tmp/omicsclaw_literature_demo
++```
++
++## Boundaries
++
++- Do not change skill script CLI flags in this slice.
++- Do not migrate app/bot/remote call sites until the core importable runner is
++  passing tests.
++- Do not remove legacy aliases during runner extraction.
+diff --git a/docs/engineering/domain-input-contracts.md b/docs/engineering/domain-input-contracts.md
+new file mode 100644
+index 00000000..8069dea7
+--- /dev/null
++++ b/docs/engineering/domain-input-contracts.md
+@@ -0,0 +1,162 @@
++# Domain Input Contracts
++
++This document records the current input contract for each registered OmicsClaw
++domain. It is intentionally factual: when a domain does not yet have one shared
++loader, the contract names the current per-skill entrypoints instead of
++pretending a unified loader exists.
++
++Runtime extension detection lives in `omicsclaw/loaders/__init__.py`. Actual
++analysis loading usually lives under `skills/<domain>/`.
++
++## spatial
++
++**Supported suffixes**: `.h5ad`, `.h5`, `.hdf5`, `.zarr`, 10x Visium
++directories, and spatial raw FASTQ inputs for the raw-processing skill.
++
++**Real loader / entrypoint**: `skills/spatial/_lib/loader.py` exposes
++`load_spatial_data()` for Visium, Xenium, Slide-seq, MERFISH, seqFISH, and
++generic AnnData. Raw FASTQ handoff is described in
++`skills/spatial/_lib/raw_processing_contract.py`.
++
++**Minimum fields**: AnnData must have observations and variables with unique
++`var_names`. Most downstream spatial skills expect `.obsm["spatial"]` when
++spatial coordinates are needed; raw-processing outputs also record QC columns
++such as total counts and detected genes.
++
++**Downstream conventions**: `spatial-preprocess` is the preferred handoff into
++analysis skills. Downstream-ready outputs use `processed.h5ad`, keep counts in a
++stable matrix/layer contract where available, and place runner-owned
++`README.md` plus notebooks at the output root.
++
++## singlecell
++
++**Supported suffixes**: `.h5ad`, `.h5`, `.loom`, `.mtx`, `.csv`, `.tsv`, and
++FASTQ/counting outputs for upstream counting skills.
++
++**Real loader / entrypoint**: `skills/singlecell/_lib/io.py` contains 10x H5,
++10x MTX, and CSV/TSV count import helpers. Runtime validation and user-facing
++preflight checks live in `skills/singlecell/_lib/preflight.py`.
++
++**Minimum fields**: AnnData must have cell observations, gene variables, and a
++matrix whose meaning is declared or inferable. Skills that need clustering,
++batch integration, cell types, perturbation labels, or sample-aware DE require
++the relevant `.obs` columns. Velocity requires spliced/unspliced layers.
++
++**Downstream conventions**: `sc-standardize-input`, `sc-qc`,
++`sc-filter`, and `sc-preprocessing` establish matrix and preprocessing state.
++Shared helpers in `skills/singlecell/_lib/adata_utils.py` record
++`omicsclaw_input_contract` and matrix contracts for downstream checks.
++
++## genomics
++
++**Supported suffixes**: `.fastq`, `.fastq.gz`, `.fq`, `.fq.gz`, `.bam`,
++`.cram`, `.sam`, `.vcf`, `.vcf.gz`, `.bed`, `.fasta`, `.fa`, and tabular CSV
++inputs for demo or summarized workflows.
++
++**Real loader / entrypoint**: There is no unified genomics loader yet.
++Each skill script under `skills/genomics/<skill>/` parses its own input format,
++for example `skills/genomics/genomics-qc/genomics_qc.py`,
++`skills/genomics/genomics-alignment/genomics_alignment.py`, and
++`skills/genomics/genomics-vcf-operations/genomics_vcf_operations.py`.
++
++**Minimum fields**: FASTQ skills require sequence/quality records; alignment
++skills require SAM/BAM-like alignment records or summaries; variant skills
++require VCF-like fields such as chromosome, position, reference, alternate, and
++quality/info when applicable.
++
++**Downstream conventions**: Genomics outputs are tabular summaries, VCF-derived
++tables, figures, `report.md`, and `result.json`. No AnnData/h5ad handoff is
++assumed for this domain.
++
++## proteomics
++
++**Supported suffixes**: `.mzML`, `.mzXML`, `.csv`, `.tsv`, and common search or
++quantification exports from MaxQuant, DIA-NN, Spectronaut, Skyline, or generic
++tables.
++
++**Real loader / entrypoint**: There is no unified proteomics loader yet.
++Per-skill readers live in scripts such as
++`skills/proteomics/proteomics-data-import/proteomics_data_import.py`,
++`skills/proteomics/proteomics-identification/proteomics_identification.py`, and
++`skills/proteomics/proteomics-quantification/proteomics_quantification.py`.
++
++**Minimum fields**: Tabular inputs must include peptide, protein, intensity, or
++sample columns appropriate to the selected skill. Raw MS quality-control paths
++need MS file metadata or compatible tabular summaries.
++
++**Downstream conventions**: Proteomics skills emit native tabular artifacts,
++figures, `report.md`, and `result.json`. They do not produce h5ad handoff
++artifacts.
++
++## metabolomics
++
++**Supported suffixes**: `.mzML`, `.mzXML`, `.cdf`, `.csv`, `.tsv`, and peak or
++feature tables.
++
++**Real loader / entrypoint**: There is no unified metabolomics loader yet.
++Per-skill loading lives in scripts such as
++`skills/metabolomics/metabolomics-peak-detection/peak_detect.py`,
++`skills/metabolomics/metabolomics-annotation/metabolomics_annotation.py`, and
++`skills/metabolomics/metabolomics-statistics/metabolomics_statistics.py`.
++
++**Minimum fields**: Feature-table workflows need metabolite or feature IDs,
++sample intensity columns, and optional group/condition metadata. Annotation and
++pathway skills need mass/feature identifiers or pathway-compatible metabolite
++names where applicable.
++
++**Downstream conventions**: Metabolomics outputs are native tables, figures,
++`report.md`, and `result.json`. No AnnData/h5ad convention is assumed.
++
++## bulkrna
++
++**Supported suffixes**: `.csv`, `.tsv`, `.fastq`, `.fastq.gz`, `.fq`, `.fq.gz`,
++`.bam`, and alignment/count summary files depending on the skill.
++
++**Real loader / entrypoint**: There is no unified Bulk RNA loader yet. Skills
++under `skills/bulkrna/<skill>/` use their own pandas/CLI parsing paths, for
++example `skills/bulkrna/bulkrna-de/bulkrna_de.py`,
++`skills/bulkrna/bulkrna-qc/bulkrna_qc.py`, and
++`skills/bulkrna/bulkrna-survival/bulkrna_survival.py`.
++
++**Minimum fields**: Count-matrix skills expect genes and sample columns.
++Differential expression requires identifiable control/treatment samples or
++explicit prefix flags. Survival requires an expression matrix plus clinical
++metadata when not using demo mode.
++
++**Downstream conventions**: Bulk RNA skills emit CSV/TSV summaries, figures,
++`report.md`, and `result.json`. No h5ad handoff is assumed except for bridge
++skills such as bulk-to-single-cell interpolation when a reference is supplied.
++
++## orchestrator
++
++**Supported suffixes**: `*` for routing queries, plus any input file suffix that
++can be routed to another domain.
++
++**Real loader / entrypoint**: `skills/orchestrator/omics_orchestrator.py`
++accepts `--query`, `--input`, `--routing-mode`, and `--demo`. It relies on
++registry metadata and lightweight extension/domain detection rather than
++loading full analysis matrices.
++
++**Minimum fields**: A natural-language query, an input path, or demo mode is
++required. The orchestrator needs enough intent or file type information to
++select a downstream skill.
++
++**Downstream conventions**: The orchestrator returns routing decisions and
++pipeline plans. Actual data contracts are delegated to the chosen downstream
++domain skill.
++
++## literature
++
++**Supported suffixes**: `.pdf`, `.txt`, DOI strings, PubMed IDs, URLs, and free
++text snippets.
++
++**Real loader / entrypoint**: `skills/literature/literature_parse.py` parses
++text/PDF/URL/identifier inputs and extracts metadata such as GEO accessions.
++
++**Minimum fields**: A readable paper, identifier, URL, or text snippet is
++required. GEO extraction depends on recognizable accession-like text.
++
++**Downstream conventions**: Literature outputs are metadata JSON, a human
++report, and extracted accession summaries. It does not create analysis-ready
++omics matrices by itself; downstream data download/analysis must be routed
++separately.
+diff --git a/tests/test_domain_input_contracts.py b/tests/test_domain_input_contracts.py
+new file mode 100644
+index 00000000..80ca2cd2
+--- /dev/null
++++ b/tests/test_domain_input_contracts.py
+@@ -0,0 +1,55 @@
++from __future__ import annotations
++
++import subprocess
++from pathlib import Path
++
++from omicsclaw.core.registry import OmicsRegistry
++
++
++ROOT = Path(__file__).resolve().parent.parent
++CONTRACT_PATH = ROOT / "docs" / "engineering" / "domain-input-contracts.md"
++
++
++def test_domain_input_contract_document_is_tracked():
++    relative_path = CONTRACT_PATH.relative_to(ROOT)
++    result = subprocess.run(
++        ["git", "ls-files", "--error-unmatch", str(relative_path)],
++        cwd=ROOT,
++        text=True,
++        capture_output=True,
++        check=False,
++    )
++
++    assert result.returncode == 0, (
++        "Domain input contracts must be tracked, not just present in a local "
++        f"ignored workspace: {relative_path}\n{result.stderr}"
++    )
++
++
++def test_domain_input_contract_document_exists_for_all_registered_domains():
++    registry = OmicsRegistry()
++    registry.load_all()
++
++    text = CONTRACT_PATH.read_text(encoding="utf-8")
++    missing: list[str] = []
++    for domain in sorted(registry.domains):
++        heading = f"## {domain}"
++        if heading not in text:
++            missing.append(heading)
++
++    assert not missing, "\n".join(missing)
++
++
++def test_domain_input_contracts_name_required_sections():
++    text = CONTRACT_PATH.read_text(encoding="utf-8")
++
++    required_fragments = [
++        "**Supported suffixes**",
++        "**Real loader / entrypoint**",
++        "**Minimum fields**",
++        "**Downstream conventions**",
++        "omicsclaw/loaders/__init__.py",
++    ]
++    missing = [fragment for fragment in required_fragments if fragment not in text]
++
++    assert not missing, "\n".join(missing)
+diff --git a/tests/test_engineering_contract_docs.py b/tests/test_engineering_contract_docs.py
+new file mode 100644
+index 00000000..63250b1e
+--- /dev/null
++++ b/tests/test_engineering_contract_docs.py
+@@ -0,0 +1,55 @@
++from __future__ import annotations
++
++import subprocess
++from pathlib import Path
++
++
++ROOT = Path(__file__).resolve().parent.parent
++
++ARCHITECTURE_CONTRACT_DOCS = [
++    "docs/engineering/2026-05-07-framework-optimization-spec.md",
++    "docs/engineering/2026-05-07-skill-runner-contract.md",
++    "docs/engineering/2026-05-07-output-ownership-contract.md",
++    "docs/engineering/2026-05-07-alias-ownership-contract.md",
++    "docs/engineering/2026-05-07-bot-runner-contract.md",
++    "docs/engineering/2026-05-07-skill-help-contract.md",
++    "docs/engineering/domain-input-contracts.md",
++]
++
++
++def _is_tracked(relative_path: str) -> bool:
++    result = subprocess.run(
++        ["git", "ls-files", "--error-unmatch", relative_path],
++        cwd=ROOT,
++        text=True,
++        capture_output=True,
++        check=False,
++    )
++    return result.returncode == 0
++
++
++def test_architecture_contract_docs_are_tracked():
++    missing = [path for path in ARCHITECTURE_CONTRACT_DOCS if not _is_tracked(path)]
++
++    assert not missing, (
++        "Architecture contract docs must be tracked, not just present in a "
++        "local ignored workspace:\n" + "\n".join(missing)
++    )
++
++
++def test_readme_links_architecture_contract_docs():
++    readme = (ROOT / "README.md").read_text(encoding="utf-8")
++    missing = [
++        path
++        for path in ARCHITECTURE_CONTRACT_DOCS
++        if path not in readme
++    ]
++
++    assert not missing, "\n".join(missing)
++
++
++def test_readme_records_shared_runner_result_contract():
++    readme = (ROOT / "README.md").read_text(encoding="utf-8")
++
++    assert "omicsclaw/core/skill_result.py" in readme
++    assert "Shared result construction" in readme

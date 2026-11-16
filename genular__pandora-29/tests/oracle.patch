@@ -1,0 +1,75 @@
+diff --git a/src/app/translations/files/translated/ar.json b/src/app/translations/files/translated/ar.json
+index cd14b0dd..e60cd0f3 100644
+--- a/src/app/translations/files/translated/ar.json
++++ b/src/app/translations/files/translated/ar.json
+@@ -22,6 +22,10 @@
+   "components.LangSelect.language.fr": "الفرنسية",
+   "components.LangSelect.language.ar": "العربية",
+   "components.LangSelect.language.zh": "الصينية",
++  "components.LangSelect.language.pt": "Portuguese",
++  "components.LangSelect.language.id": "Indonesian",
++  "components.LangSelect.language.ja": "Japanese",
++  "components.LangSelect.language.fa": "Persian",
+   "components.SelectedFiles.select_file": "يرجى تحديد ملف واحد من مساحة العمل",
+   "views.apps.simon.analysis.components.FileDetails.head.title": "يرجى تحديد المطلوب تحليل خصائص",
+   "views.apps.simon.analysis.components.FileDetails.head.description": "فقط لأول 50 المتغيرات تظهر نوع لتصفية الآخرين أو حدد جميع التبديل",
+diff --git a/src/app/translations/files/translated/de.json b/src/app/translations/files/translated/de.json
+index 6bd59737..e4490585 100644
+--- a/src/app/translations/files/translated/de.json
++++ b/src/app/translations/files/translated/de.json
+@@ -22,6 +22,10 @@
+   "components.LangSelect.language.fr": "Französisch",
+   "components.LangSelect.language.ar": "Arabisch",
+   "components.LangSelect.language.zh": "Chinesisch",
++  "components.LangSelect.language.pt": "Portuguese",
++  "components.LangSelect.language.id": "Indonesian",
++  "components.LangSelect.language.ja": "Japanese",
++  "components.LangSelect.language.fa": "Persian",
+   "components.SelectedFiles.select_file": "Bitte wählen Sie eine Datei aus dem Arbeitsbereich",
+   "views.apps.simon.analysis.components.FileDetails.head.title": "Bitte wählen Sie die gewünschten Analyseneigenschaften",
+   "views.apps.simon.analysis.components.FileDetails.head.description": "nur die ersten 50 Variablen angezeigt werden, tippen, um andere zu filtern oder ALLE Schalter auswählen",
+diff --git a/src/app/translations/files/translated/en.json b/src/app/translations/files/translated/en.json
+index 0d332c2c..2824e50b 100644
+--- a/src/app/translations/files/translated/en.json
++++ b/src/app/translations/files/translated/en.json
+@@ -22,6 +22,10 @@
+   "components.LangSelect.language.fr": "French",
+   "components.LangSelect.language.ar": "Arabic",
+   "components.LangSelect.language.zh": "Chinese",
++  "components.LangSelect.language.pt": "Portuguese",
++  "components.LangSelect.language.id": "Indonesian",
++  "components.LangSelect.language.ja": "Japanese",
++  "components.LangSelect.language.fa": "Persian",
+   "components.SelectedFiles.select_file": "Please select one file from Workspace",
+   "views.apps.simon.analysis.components.FileDetails.head.title": "Please select desired analysis properties",
+   "views.apps.simon.analysis.components.FileDetails.head.description": "only first 50 variables are shown, type to filter others or select ALL switch",
+diff --git a/src/app/translations/files/translated/fr.json b/src/app/translations/files/translated/fr.json
+index 475adea3..474d6c26 100644
+--- a/src/app/translations/files/translated/fr.json
++++ b/src/app/translations/files/translated/fr.json
+@@ -22,6 +22,10 @@
+   "components.LangSelect.language.fr": "Français",
+   "components.LangSelect.language.ar": "Arabe",
+   "components.LangSelect.language.zh": "Chinois",
++  "components.LangSelect.language.pt": "Portuguese",
++  "components.LangSelect.language.id": "Indonesian",
++  "components.LangSelect.language.ja": "Japanese",
++  "components.LangSelect.language.fa": "Persian",
+   "components.SelectedFiles.select_file": "Veuillez sélectionner un fichier à partir de l'espace de travail",
+   "views.apps.simon.analysis.components.FileDetails.head.title": "Veuillez sélectionner les propriétés d'analyse",
+   "views.apps.simon.analysis.components.FileDetails.head.description": "seulement 50 premières variables sont indiqués, le type de filtre à autrui ou de sélectionner TOUS les switch",
+diff --git a/src/app/translations/files/translated/zh.json b/src/app/translations/files/translated/zh.json
+index dd3c8b5a..6b16ff93 100644
+--- a/src/app/translations/files/translated/zh.json
++++ b/src/app/translations/files/translated/zh.json
+@@ -22,6 +22,10 @@
+   "components.LangSelect.language.fr": "法语",
+   "components.LangSelect.language.ar": "阿拉伯文",
+   "components.LangSelect.language.zh": "中国",
++  "components.LangSelect.language.pt": "Portuguese",
++  "components.LangSelect.language.id": "Indonesian",
++  "components.LangSelect.language.ja": "Japanese",
++  "components.LangSelect.language.fa": "Persian",
+   "components.SelectedFiles.select_file": "请选择一个文件从工作区",
+   "views.apps.simon.analysis.components.FileDetails.head.title": "请选择所需的分析性",
+   "views.apps.simon.analysis.components.FileDetails.head.description": "只有第50变量都显示，型过滤的其他人或者选择的所有开关",

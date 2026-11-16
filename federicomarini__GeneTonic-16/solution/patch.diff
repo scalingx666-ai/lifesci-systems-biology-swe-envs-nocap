@@ -1,0 +1,1026 @@
+diff --git a/DESCRIPTION b/DESCRIPTION
+index b58cce47..28f987be 100644
+--- a/DESCRIPTION
++++ b/DESCRIPTION
+@@ -25,6 +25,7 @@ Depends:
+     R (>= 4.0.0)
+ Imports:
+     AnnotationDbi,
++    backbone,
+     bs4Dash,
+     colorspace,
+ 	colourpicker,
+@@ -81,4 +82,4 @@ Roxygen: list(markdown = TRUE)
+ biocViews:
+     GUI, GeneExpression, Software, Transcription, Transcriptomics, Visualization,
+     DifferentialExpression, Pathways, ReportWriting, GeneSetEnrichment, 
+-    Annotation, Pathways, GO
++    Annotation, GO
+diff --git a/NAMESPACE b/NAMESPACE
+index fd4e12ca..f6ef8d0b 100644
+--- a/NAMESPACE
++++ b/NAMESPACE
+@@ -18,6 +18,7 @@ export(gene_plot)
+ export(geneinfo_2_html)
+ export(get_aggrscores)
+ export(get_expression_values)
++export(ggs_backbone)
+ export(ggs_graph)
+ export(go_2_html)
+ export(gs_alluvial)
+@@ -48,6 +49,7 @@ export(shake_gprofilerResult)
+ export(shake_topGOtableResult)
+ export(signature_volcano)
+ export(styleColorBar_divergent)
++export(summarize_ggs_hubgenes)
+ import(GO.db)
+ import(SummarizedExperiment)
+ import(ggplot2)
+@@ -74,6 +76,11 @@ importFrom(DT,formatStyle)
+ importFrom(DT,renderDataTable)
+ importFrom(RColorBrewer,brewer.pal)
+ importFrom(S4Vectors,mcols)
++importFrom(backbone,backbone.extract)
++importFrom(backbone,fdsm)
++importFrom(backbone,hyperg)
++importFrom(backbone,sdsm)
++importFrom(backbone,universal)
+ importFrom(bs4Dash,bs4Card)
+ importFrom(bs4Dash,bs4DashBody)
+ importFrom(bs4Dash,bs4DashControlbar)
+@@ -122,7 +129,11 @@ importFrom(igraph,"V<-")
+ importFrom(igraph,E)
+ importFrom(igraph,V)
+ importFrom(igraph,add_edges)
++importFrom(igraph,as_adjacency_matrix)
++importFrom(igraph,as_incidence_matrix)
++importFrom(igraph,degree)
+ importFrom(igraph,delete.edges)
++importFrom(igraph,delete_vertices)
+ importFrom(igraph,get.edgelist)
+ importFrom(igraph,graph.data.frame)
+ importFrom(igraph,induced_subgraph)
+diff --git a/NEWS.md b/NEWS.md
+index d723c4e7..13819613 100644
+--- a/NEWS.md
++++ b/NEWS.md
+@@ -8,10 +8,14 @@
+   
+ * A new function to perform fuzzy clustering (following the implementation of DAVID) is added - see `gs_fuzzyclustering()`. It returns a table with additional information on the cluster of genesets and the status of each set in the group.  
+ 
+-* A new function, `signature_volcano()`, adds a signature volcano plot to the `Gene-Geneset` panel. This plot displays the genes of a chosen geneset in color, while the remaining genes of the data are shown as shaded dots in the background. 
++* The `ggs_backbone()` function can extract the bipartite graph backbone from the Gene-Geneset graph, this can be further explored below the main element in the Gene-Geneset panel. Once the backbone is created, you are one step away from checking out the genes that act as "hubs" in the Gene-Geneset graph, and possibly identify the nodes playing an essential role based on their connectivity.
++
++* A new function, `signature_volcano()`, adds a signature volcano plot to the Gene-Geneset panel. This plot displays the genes of a chosen geneset in color, while the remaining genes of the data are shown as shaded dots in the background. 
+   The color and transparency of the displayed genes can be chosen by the user, as well as the option to display the gene names of all genes in the geneset.
+ 
+-* `gs_summary_overview()` can also generate bar plots instead of the default segment-dot (lollipop) plots
++* `gs_summary_overview()` can also generate bar plots instead of the default segment-dot (lollipop) plots.
++
++* A new function, `summarize_ggs_hubgenes()`, builds a DT `datatable` for the Gene-Geneset panel. This table lists the individual genes of the input data and their respective degree in the Gene-Geneset graph. Furthermore, `action buttons` linking to the NCBI, Genecards and GTEx databases are included for each gene.
+ 
+ ## Other notes
+ 
+diff --git a/R/GeneTonic-extras.R b/R/GeneTonic-extras.R
+index 8e1260d9..22a76e85 100644
+--- a/R/GeneTonic-extras.R
++++ b/R/GeneTonic-extras.R
+@@ -352,6 +352,38 @@ geneinfo_2_html <- function(gene_id,
+ 
+ 
+ 
++#' Generate set of buttons for the hub genes
++#'
++#' @param x String, gene name
++#'
++#' @return HTML for the action buttons
++#' @noRd
++generate_buttons_hubgenes <- function(x) {
++  mybuttons <- paste(
++    tags$b(x), tags$br(),
++    sprintf(
++      '<a href = "http://www.ncbi.nlm.nih.gov/gene/?term=%s[sym]" target = "_blank" class = "btn btn-primary" style = "%s">%s</a>',
++      x,
++      .actionbutton_biocstyle,
++      "NCBI"),
++    sprintf(
++      '<a href = "https://www.genecards.org/cgi-bin/carddisp.pl?gene=%s" target = "_blank" class = "btn btn-primary" style = "%s">%s</a>',
++      x,
++      .actionbutton_biocstyle,
++      "GeneCards"),
++    sprintf(
++      '<a href = "https://www.gtexportal.org/home/gene/%s" target = "_blank" class = "btn btn-primary" style = "%s">%s</a>',
++      x,
++      .actionbutton_biocstyle,
++      "GTEx"),
++    tags$br(style="display:inline-block"),
++    collapse = "\t")
++  return(mybuttons)
++}
++
++
++
++
+ #' Calculate overlap coefficient
+ #'
+ #' Calculate similarity coefficient between two sets, based on the overlap
+diff --git a/R/GeneTonic-pkg.R b/R/GeneTonic-pkg.R
+index ec47e115..79f656f9 100644
+--- a/R/GeneTonic-pkg.R
++++ b/R/GeneTonic-pkg.R
+@@ -6,6 +6,7 @@
+ #' @author Federico Marini \email{marinif@@uni-mainz.de}
+ #'
+ #' @importFrom AnnotationDbi Definition GOID Ontology Secondary Synonym Term
++#' @importFrom backbone backbone.extract fdsm hyperg sdsm universal
+ #' @importFrom bs4Dash bs4Card bs4DashBody bs4DashControlbar
+ #' bs4DashFooter bs4DashNavbar bs4DashPage bs4DashSidebar
+ #' bs4InfoBox bs4InfoBoxOutput bs4SidebarMenu
+@@ -29,7 +30,8 @@
+ #' @importFrom graphics par plot
+ #' @importFrom grDevices colorRampPalette rgb col2rgb
+ #' @importFrom grid gpar
+-#' @importFrom igraph add_edges delete.edges "%du%" E "E<-" graph.data.frame induced_subgraph
++#' @importFrom igraph add_edges as_adjacency_matrix as_incidence_matrix degree
++#' delete.edges delete_vertices "%du%" E "E<-" graph.data.frame induced_subgraph
+ #' make_full_graph permute.vertices strength V "V<-" vcount get.edgelist
+ #' @importFrom matrixStats rowSds
+ #' @importFrom methods is
+diff --git a/R/GeneTonic.R b/R/GeneTonic.R
+index 90a8d88d..95ca79da 100644
+--- a/R/GeneTonic.R
++++ b/R/GeneTonic.R
+@@ -111,9 +111,10 @@ GeneTonic <- function(dds,
+                     annotation_obj)
+ 
+   # clean up the result object, e.g. removing the NAs in the relevant columns
+-  res_de <- res_de[!is.na(res_de$log2FoldChange), ]
+-  message("Removing ", sum(is.na(res_de$log2FoldChange)), " rows from the result object - logFC detected as NA")
+-
++  removed_genes <- is.na(res_de$log2FoldChange)
++  message("Removing ", sum(removed_genes),
++          "/", nrow(res_de), " rows from the DE `res_de` object - log2FC values detected as NA")
++  res_de <- res_de[!removed_genes, ]
+ 
+   # UI definition -----------------------------------------------------------
+ 
+@@ -392,7 +393,39 @@ GeneTonic <- function(dds,
+                 uiOutput("ui_ggs_genebox")
+               )
+             )
++          ),
++
++          fluidRow(
++            bs4Dash::bs4Card(
++              width = 12,
++              inputId = "card_ggsbackbone",
++              title = "Gene-geneset graph summaries",
++              status = "info",
++              solidHeader = FALSE,
++              collapsible = TRUE,
++              collapsed = TRUE,
++              closable = FALSE,
++              fluidRow(
++                column(
++                  width = 8,
++                  uiOutput("ui_backbone_launch"),
++                  radioButtons(inputId = "backbone_on",
++                               label = "Compute the backbone on",
++                               choices = c("genesets", "features"),
++                               selected = "genesets",
++                               inline = TRUE),
++                  withSpinner(
++                    visNetworkOutput("backbone_graph")
++                  )
++                ),
++                column(
++                  width = 4,
++                  uiOutput("ui_graph_summary")
++                )
++              )
++            )
+           )
++
+         ),
+ 
+         # ui panel enrichment map -------------------------------------------------
+@@ -720,6 +753,7 @@ GeneTonic <- function(dds,
+       )
+     })
+     output$overview_res_de <- DT::renderDataTable({
++      res_de <- res_de[order(res_de$padj), ]
+       DT::datatable(
+         as.data.frame(res_de),
+         options = list(
+@@ -863,6 +897,23 @@ GeneTonic <- function(dds,
+       paste0("I'm selecting ", input$ggsnetwork_selected, ", which has index ", cur_node, " and is of type ", cur_nodetype, "this is from set", cur_gsid)
+     })
+ 
++    output$ui_graph_summary <- renderUI({
++      tagList(
++        # TODO: if other UI elements should be in, we can place them here
++        h4("Highly connected genes"),
++        DT::dataTableOutput("table_graph_summary")
++      )
++
++    })
++
++    output$table_graph_summary <- DT::renderDataTable({
++      g <- reactive_values$ggs_graph()
++
++      node_degrees <- summarize_ggs_hubgenes(g)
++      DT::datatable(node_degrees, escape = FALSE)
++
++    })
++
+     output$ui_ggs_genesetbox <- renderUI({
+       tagList(
+         # verbatimTextOutput("netnode"),
+@@ -1004,6 +1055,40 @@ GeneTonic <- function(dds,
+       )
+     })
+ 
++    reactive_values$backbone_graph <- reactive({
++
++      not_msg <- sprintf("Computing backbone on %s of the current gene-geneset graph, please hold on...", input$backbone_on)
++      showNotification(not_msg)
++
++      bbg <- ggs_backbone(
++        res_enrich = res_enrich,
++        res_de = res_de,
++        annotation_obj = annotation_obj,
++        n_gs = input$n_genesets,
++        bb_on = input$backbone_on
++        # prettify = TRUE,
++        # geneset_graph_color = "gold"
++      )
++      return(bbg)
++    })
++
++    output$backbone_graph <- renderVisNetwork({
++      # minimal example
++      bbg <- reactive_values$backbone_graph()
++      validate(
++        need({igraph::vcount(bbg) > 0}, message = "Graph has no nodes, try increasing the number of sets to include...")
++      )
++
++      visNetwork::visIgraph(bbg) %>%
++        visOptions(highlightNearest = list(enabled = TRUE,
++                                           degree = 1,
++                                           hover = TRUE),
++                   nodesIdSelection = TRUE) %>%
++        visExport(name = "backbone_network",
++                  type = "png",
++                  label = "Save backbone graph")
++
++    })
+ 
+ 
+     # panel EnrichmentMap -----------------------------------------------------
+diff --git a/R/ggs_graph.R b/R/ggs_graph.R
+index fa07c150..d1251647 100644
+--- a/R/ggs_graph.R
++++ b/R/ggs_graph.R
+@@ -15,7 +15,8 @@
+ #' @param n_gs Integer value, corresponding to the maximal number of gene sets to
+ #' be included
+ #' @param gs_ids Character vector, containing a subset of `gs_id` as they are
+-#' available in `res_enrich`. Lists the gene sets to be displayed.
++#' available in `res_enrich`. Lists the gene sets to be included in addition to
++#' the top ones (via `n_gs`)
+ #' @param prettify Logical, controlling the aspect of the returned graph object.
+ #' If TRUE (default value), different shapes of the nodes are returned, based on
+ #' the node type
+@@ -26,7 +27,7 @@
+ #' defaults to a color ramp palette interpolating from blue through yellow to red.
+ #'
+ #' @return An `igraph` object to be further manipulated or processed/plotted (e.g.
+-#' via [igraph::plot.igraph()] or 
++#' via [igraph::plot.igraph()] or
+ #' [visNetwork::visIgraph()][visNetwork::visNetwork-igraph])
+ #' @export
+ #'
+@@ -88,7 +89,7 @@ ggs_graph <- function(res_enrich,
+                       prettify = TRUE,
+                       geneset_graph_color = "gold",
+                       genes_graph_colpal = NULL) {
+-  
++
+   if (!is.null(gtl)) {
+     checkup_gtl(gtl)
+     dds <- gtl$dds
+@@ -97,6 +98,9 @@ ggs_graph <- function(res_enrich,
+     annotation_obj <- gtl$annotation_obj
+   }
+ 
++  stopifnot(is.numeric(n_gs))
++  stopifnot(is.logical(prettify))
++
+   if (!is.null(genes_graph_colpal)) {
+ 
+     if (!is(genes_graph_colpal, "character"))
+@@ -199,3 +203,344 @@ ggs_graph <- function(res_enrich,
+ 
+   return(g)
+ }
++
++
++
++
++
++
++
++#' Extract the backbone for the gene-geneset graph
++#'
++#' Extract the backbone for the gene-geneset graph, either for the genes or for the
++#' genesets
++#'
++#' @param res_enrich A `data.frame` object, storing the result of the functional
++#' enrichment analysis. See more in the main function, [GeneTonic()], to check the
++#' formatting requirements (a minimal set of columns should be present).
++#' @param res_de A `DESeqResults` object.
++#' @param annotation_obj A `data.frame` object with the feature annotation
++#' information, with at least two columns, `gene_id` and `gene_name`.
++#' @param gtl A `GeneTonic`-list object, containing in its slots the arguments
++#' specified above: `dds`, `res_de`, `res_enrich`, and `annotation_obj` - the names
++#' of the list _must_ be specified following the content they are expecting
++#' @param n_gs Integer value, corresponding to the maximal number of gene sets to
++#' be included
++#' @param gs_ids Character vector, containing a subset of `gs_id` as they are
++#' available in `res_enrich`. Lists the gene sets to be included in addition to
++#' the top ones (via `n_gs`)
++#' @param bb_on A character string, either "genesets" or "features", to specify which
++#' entity should be based the backbone graph on.
++#' @param bb_method A character string, referring to the function to be called (
++#' from the `backbone` package) for computing the backbone of the specified
++#' bipartite graph. Defaults to "sdsm", as recommended in the `backbone` package.
++#' @param bb_extract_alpha A numeric value, specifying the significance level to
++#' use when detecting the backbone of the network
++#' @param bb_extract_fwer A character string, defaulting to "none", specifying
++#' which method to use for the multiple testing correction for controlling the
++#' family-wise error rate
++#' @param bb_fullinfo Logical value, determining what will be returned as output:
++#' either a simple `ìgraph` object with the graph backbone (if set to `FALSE`),
++#' or a list object containing also the `backbone` object, and the gene-geneset
++#' graph used for the computation (if `TRUE`)
++#' @param bb_remove_singletons Logical value, defines whether to remove or leave
++#' in the returned graph the nodes that are not connected to other vertices
++#' @param color_graph Logical value, specifies whether to use information about
++#' genesets or features to colorize the nodes, e.g. for this info to be used in
++#' interactive versions of the graph
++#' @param color_by_geneset Character string, corresponding to the column in
++#' `res_enrich` to be used for coloring the nodes if `bb_on` is set to "genesets".
++#' Defaults to the "z_score", which can be obtained via `get_aggrscores()`
++#' @param color_by_feature Character string, corresponding to the column in
++#' `res_de` to be used for coloring the nodes if `bb_on` is set to "features".
++#' Defaults to the "log2FoldChange", which should be normally included in a
++#' DESeqResults object.
++#' @param ... Additional parameters to be passed internally
++#'
++#' @return According to the `bb_fullinfo`, either a simple `ìgraph` object with
++#' the graph backbone, or a named list object containing:
++#' - the `igraph` of the extracted backbone
++#' - the `backbone` object itself
++#' - the gene-geneset graph used for the computation
++#' @export
++#'
++#' @examples
++#' library("macrophage")
++#' library("DESeq2")
++#' library("org.Hs.eg.db")
++#' library("AnnotationDbi")
++#'
++#' # dds object
++#' data("gse", package = "macrophage")
++#' dds_macrophage <- DESeqDataSet(gse, design = ~line + condition)
++#' rownames(dds_macrophage) <- substr(rownames(dds_macrophage), 1, 15)
++#' dds_macrophage <- estimateSizeFactors(dds_macrophage)
++#'
++#' # annotation object
++#' anno_df <- data.frame(
++#'   gene_id = rownames(dds_macrophage),
++#'   gene_name = mapIds(org.Hs.eg.db,
++#'                      keys = rownames(dds_macrophage),
++#'                      column = "SYMBOL",
++#'                      keytype = "ENSEMBL"),
++#'   stringsAsFactors = FALSE,
++#'   row.names = rownames(dds_macrophage)
++#' )
++#'
++#' # res object
++#' data(res_de_macrophage, package = "GeneTonic")
++#' res_de <- res_macrophage_IFNg_vs_naive
++#'
++#' # res_enrich object
++#' data(res_enrich_macrophage, package = "GeneTonic")
++#' res_enrich <- shake_topGOtableResult(topgoDE_macrophage_IFNg_vs_naive)
++#' res_enrich <- get_aggrscores(res_enrich, res_de, anno_df)
++#'
++#' ggs_bbg <- ggs_backbone(res_enrich,
++#'                         res_de,
++#'                         anno_df,
++#'                         n_gs = 50,
++#'                         bb_on = "genesets",
++#'                         color_graph = TRUE,
++#'                         color_by_geneset = "z_score"
++#' )
++#' plot(ggs_bbg)
++#'
++#' # if desired, one can also plot the interactive version
++#' visNetwork::visIgraph(ggs_bbg)
++#'
++ggs_backbone <- function(res_enrich,
++                         res_de,
++                         annotation_obj = NULL,
++                         gtl = NULL,
++                         n_gs = 15,
++                         gs_ids = NULL,
++                         bb_on = c("genesets", "features"),
++                         bb_method = c("sdsm", "fdsm", "hyperg"),
++                         bb_extract_alpha = 0.05,
++                         bb_extract_fwer = c("none","bonferroni","holm"),
++                         bb_fullinfo = FALSE,
++                         bb_remove_singletons = TRUE,
++                         color_graph = TRUE,
++                         color_by_geneset = "z_score",
++                         color_by_feature = "log2FoldChange",
++                         ...) {
++  if (!is.null(gtl)) {
++    checkup_gtl(gtl)
++    dds <- gtl$dds
++    res_de <- gtl$res_de
++    res_enrich <- gtl$res_enrich
++    annotation_obj <- gtl$annotation_obj
++  }
++
++  stopifnot(is.logical(bb_fullinfo))
++  stopifnot(is.logical(bb_remove_singletons))
++  stopifnot(is.logical(color_graph))
++
++  bb_method <- match.arg(bb_method, c("sdsm", "fdsm", "hyperg"))
++  bb_extract_fwer = match.arg(bb_extract_fwer, c("none","bonferroni","holm"))
++  bb_on <- match.arg(bb_on, c("genesets", "features"))
++
++  # check that columns to encode the colors are present
++  if (color_graph) {
++    if (bb_on == "genesets") {
++      if (!color_by_geneset %in% colnames(res_enrich))
++        stop("Your res_enrich object does not contain the ",
++             color_by_geneset,
++             " column.\n",
++             "Compute this first or select another column to use for the color.")
++
++    } else if (bb_on == "features") {
++      if (!color_by_feature %in% colnames(res_de))
++        stop("Your res_de object does not contain the ",
++             color_by_feature,
++             " column.\n",
++             "Compute this first or select another column to use for the color.")
++    }
++  }
++
++  # first, compute the ggs graph object
++  ggs <- ggs_graph(res_enrich = res_enrich,
++                   res_de = res_de,
++                   annotation_obj = annotation_obj,
++                   gtl = gtl,
++                   n_gs = n_gs,
++                   gs_ids = gs_ids)
++
++  # for making this a formal bipartite graph
++  V(ggs)$type <- V(ggs)$nodetype=="GeneSet"
++
++  bpm <- igraph::as_incidence_matrix(ggs)
++
++  if (bb_on =="features") {
++    bpm_for_backbone <- bpm
++  } else if (bb_on == "genesets") {
++    bpm_for_backbone <- t(bpm)
++  }
++
++  if (bb_method == "sdsm") {
++    bbobj <- backbone::sdsm(bpm_for_backbone)
++  } else if (bb_method == "fdsm") {
++    bbobj <- backbone::fdsm(bpm_for_backbone, trials = 1000)
++  } else if (bb_method == "hyperg") {
++    bbobj <- backbone::hyperg(bpm_for_backbone)
++  }
++
++  bbextracted <- backbone::backbone.extract(bbobj,
++                                            alpha = bb_extract_alpha,
++                                            fwer = bb_extract_fwer)
++
++  bbgraph <- igraph::graph_from_adjacency_matrix(bbextracted, mode = "undirected")
++
++  if (bb_remove_singletons) {
++    bbgraph <- igraph::delete_vertices(bbgraph, !(igraph::degree(bbgraph) >= 1 ))
++  }
++
++
++
++  if (igraph::vcount(bbgraph) != 0) {
++
++    if (color_graph) {
++      if (bb_on == "genesets") {
++        # will use the summarized Z-score
++        color_by <- color_by_geneset
++        idx <- match(V(bbgraph)$name, res_enrich$gs_description)
++        col_var <- res_enrich[idx, color_by]
++
++        mypal <- rev(scales::alpha(
++          colorRampPalette(RColorBrewer::brewer.pal(name = "RdYlBu", 11))(50), 0.8))
++        mypal_hover <- rev(scales::alpha(
++          colorRampPalette(RColorBrewer::brewer.pal(name = "RdYlBu", 11))(50), 0.5))
++        mypal_select <- rev(scales::alpha(
++          colorRampPalette(RColorBrewer::brewer.pal(name = "RdYlBu", 11))(50), 1))
++
++        V(bbgraph)$color.background <- map2color(col_var, mypal, limits = range(col_var))
++        V(bbgraph)$color.highlight <- map2color(col_var, mypal_select, limits = range(col_var))
++        V(bbgraph)$color.hover <- map2color(col_var, mypal_hover, limits = range(col_var))
++
++        V(bbgraph)$color.border <- "black"
++
++        # additional specification of edge colors
++        E(bbgraph)$color <- "lightgrey"
++
++      } else if (bb_on == "features") {
++        # will use the logFoldChange
++        color_by <- color_by_feature
++        idx <- annotation_obj$gene_id[match(V(bbgraph)$name, annotation_obj$gene_name)]
++        col_var <- res_de[idx, color_by]
++
++        mypal <- rev(scales::alpha(
++          colorRampPalette(RColorBrewer::brewer.pal(name = "RdYlBu", 11))(50), 0.8))
++        mypal_hover <- rev(scales::alpha(
++          colorRampPalette(RColorBrewer::brewer.pal(name = "RdYlBu", 11))(50), 0.5))
++        mypal_select <- rev(scales::alpha(
++          colorRampPalette(RColorBrewer::brewer.pal(name = "RdYlBu", 11))(50), 1))
++
++        V(bbgraph)$color.background <- map2color(col_var, mypal, limits = range(col_var))
++        V(bbgraph)$color.highlight <- map2color(col_var, mypal_select, limits = range(col_var))
++        V(bbgraph)$color.hover <- map2color(col_var, mypal_hover, limits = range(col_var))
++
++        V(bbgraph)$color.border <- "black"
++
++        # additional specification of edge colors
++        E(bbgraph)$color <- "lightgrey"
++      }
++
++    }
++  }
++
++  if (bb_fullinfo) {
++    return(
++      list(
++        bbgraph = bbgraph,
++        bbobj = bbobj,
++        ggs = ggs
++      )
++    )
++  } else {
++    return(bbgraph)
++  }
++}
++
++
++
++
++
++#' Summarize information on the hub genes
++#'
++#' Summarize information on the hub genes in the Gene-Geneset graph
++#'
++#' @param g An `igraph` object, as generated by the `ggs_graph()` function
++#'
++#' @return A data.frame object, formatted for use in `DT::datatable()`
++#'
++#' @export
++#'
++#' @examples
++#' library("macrophage")
++#' library("DESeq2")
++#' library("org.Hs.eg.db")
++#' library("AnnotationDbi")
++#'
++#' # dds object
++#' data("gse", package = "macrophage")
++#' dds_macrophage <- DESeqDataSet(gse, design = ~line + condition)
++#' rownames(dds_macrophage) <- substr(rownames(dds_macrophage), 1, 15)
++#' dds_macrophage <- estimateSizeFactors(dds_macrophage)
++#'
++#' # annotation object
++#' anno_df <- data.frame(
++#'   gene_id = rownames(dds_macrophage),
++#'   gene_name = mapIds(org.Hs.eg.db,
++#'                      keys = rownames(dds_macrophage),
++#'                      column = "SYMBOL",
++#'                      keytype = "ENSEMBL"),
++#'   stringsAsFactors = FALSE,
++#'   row.names = rownames(dds_macrophage)
++#' )
++#'
++#' # res object
++#' data(res_de_macrophage, package = "GeneTonic")
++#' res_de <- res_macrophage_IFNg_vs_naive
++#'
++#' # res_enrich object
++#' data(res_enrich_macrophage, package = "GeneTonic")
++#' res_enrich <- shake_topGOtableResult(topgoDE_macrophage_IFNg_vs_naive)
++#' res_enrich <- get_aggrscores(res_enrich, res_de, anno_df)
++#'
++#' ggs <- ggs_graph(res_enrich,
++#'                  res_de,
++#'                  anno_df
++#'                 )
++#' dt_df <- summarize_ggs_hubgenes(ggs)
++#' DT::datatable(dt_df, escape = FALSE)
++summarize_ggs_hubgenes <- function(g) {
++  df_nodes <- data.frame(
++    node_name = V(g)$name,
++    node_type = V(g)$nodetype,
++    stringsAsFactors = FALSE
++  )
++
++  # Select nodes belonging to genes from graph
++  genes <- subset(df_nodes, df_nodes$node_type == "Feature")
++  genes <- genes$node_name
++
++
++  # Get degree of gene nodes in the graph
++  node_degrees <- sapply(genes, function(x) degree(g, x))
++  buttons <- sapply(genes, generate_buttons_hubgenes)
++  #print(buttons)
++
++  node_degrees_df <- data.frame(gene = genes,
++                             degree = node_degrees,
++                             buttons = buttons)
++
++
++  # Sort in descending degree order
++  rownames(node_degrees_df) <- NULL
++  node_degrees_df <- arrange(node_degrees_df, desc(.data$degree))
++  colnames(node_degrees_df) <- c("Gene", "Degree", "See more")
++  return(node_degrees_df)
++}
++
++
+diff --git a/R/gs_shaker.R b/R/gs_shaker.R
+index cd93d7eb..1c4fb02f 100644
+--- a/R/gs_shaker.R
++++ b/R/gs_shaker.R
+@@ -421,8 +421,8 @@ shake_fgseaResult <- function(fgsea_output) {
+     stop("fgsea output should be a data.frame!")
+   }
+   exp_colnames <- c("pathway", "pval", "padj", "ES", "NES",
+-                    "nMoreExtreme", "size", "leadingEdge")
+-  if (!all(colnames(fgsea_output) %in% exp_colnames))
++                    "size", "leadingEdge")
++  if (!all(exp_colnames %in% colnames(fgsea_output)))
+     stop("I could not find some of the usual column names from the fgsea output.",
+          " Maybe you performed additional processing/filtering steps?")
+ 
+diff --git a/inst/extdata/tour_ggs.txt b/inst/extdata/tour_ggs.txt
+index 44b3745f..9e212abb 100644
+--- a/inst/extdata/tour_ggs.txt
++++ b/inst/extdata/tour_ggs.txt
+@@ -21,4 +21,5 @@ element;intro
+ #bookmarker;... and click on the Bookmark button in the navbar. You can repeat this action as many times as desired.
+ #ggsnetwork;To simplify the action of bookmarking many entities which might be close to each other, the bookmarking can be triggered also by pressing the <code>left Ctrl</code> key on your keyboard. Try doing so, and keep track of the app notifying you the node has been added to the lists of genes and genesets of interest.
+ #shiny-tab-tab_ggs;You can edit the number of displayed genesets to change the granularity and detail level of the graph, and again bookmark nodes of interest.
++#ui_graph_summary; This table lists the individual genes and their respective degree. In this connection, the degree of a gene is the number of connections of this genes in the above graph. Besides the gene name and the degree, the table also provides more information on the genes. The buttons of the 'See more' column link you directly to the NCBI, Genecards and GTEx databases, where more information of the respective gene is available. 
+ #thanks;Thank you for taking the Gene-Geneset panel tour of <code>GeneTonic</code>!
+diff --git a/man/ggs_backbone.Rd b/man/ggs_backbone.Rd
+new file mode 100644
+index 00000000..24d65aa7
+--- /dev/null
++++ b/man/ggs_backbone.Rd
+@@ -0,0 +1,142 @@
++% Generated by roxygen2: do not edit by hand
++% Please edit documentation in R/ggs_graph.R
++\name{ggs_backbone}
++\alias{ggs_backbone}
++\title{Extract the backbone for the gene-geneset graph}
++\usage{
++ggs_backbone(
++  res_enrich,
++  res_de,
++  annotation_obj = NULL,
++  gtl = NULL,
++  n_gs = 15,
++  gs_ids = NULL,
++  bb_on = c("genesets", "features"),
++  bb_method = c("sdsm", "fdsm", "hyperg"),
++  bb_extract_alpha = 0.05,
++  bb_extract_fwer = c("none", "bonferroni", "holm"),
++  bb_fullinfo = FALSE,
++  bb_remove_singletons = TRUE,
++  color_graph = TRUE,
++  color_by_geneset = "z_score",
++  color_by_feature = "log2FoldChange",
++  ...
++)
++}
++\arguments{
++\item{res_enrich}{A \code{data.frame} object, storing the result of the functional
++enrichment analysis. See more in the main function, \code{\link[=GeneTonic]{GeneTonic()}}, to check the
++formatting requirements (a minimal set of columns should be present).}
++
++\item{res_de}{A \code{DESeqResults} object.}
++
++\item{annotation_obj}{A \code{data.frame} object with the feature annotation
++information, with at least two columns, \code{gene_id} and \code{gene_name}.}
++
++\item{gtl}{A \code{GeneTonic}-list object, containing in its slots the arguments
++specified above: \code{dds}, \code{res_de}, \code{res_enrich}, and \code{annotation_obj} - the names
++of the list \emph{must} be specified following the content they are expecting}
++
++\item{n_gs}{Integer value, corresponding to the maximal number of gene sets to
++be included}
++
++\item{gs_ids}{Character vector, containing a subset of \code{gs_id} as they are
++available in \code{res_enrich}. Lists the gene sets to be included in addition to
++the top ones (via \code{n_gs})}
++
++\item{bb_on}{A character string, either "genesets" or "features", to specify which
++entity should be based the backbone graph on.}
++
++\item{bb_method}{A character string, referring to the function to be called (
++from the \code{backbone} package) for computing the backbone of the specified
++bipartite graph. Defaults to "sdsm", as recommended in the \code{backbone} package.}
++
++\item{bb_extract_alpha}{A numeric value, specifying the significance level to
++use when detecting the backbone of the network}
++
++\item{bb_extract_fwer}{A character string, defaulting to "none", specifying
++which method to use for the multiple testing correction for controlling the
++family-wise error rate}
++
++\item{bb_fullinfo}{Logical value, determining what will be returned as output:
++either a simple \code{ìgraph} object with the graph backbone (if set to \code{FALSE}),
++or a list object containing also the \code{backbone} object, and the gene-geneset
++graph used for the computation (if \code{TRUE})}
++
++\item{bb_remove_singletons}{Logical value, defines whether to remove or leave
++in the returned graph the nodes that are not connected to other vertices}
++
++\item{color_graph}{Logical value, specifies whether to use information about
++genesets or features to colorize the nodes, e.g. for this info to be used in
++interactive versions of the graph}
++
++\item{color_by_geneset}{Character string, corresponding to the column in
++\code{res_enrich} to be used for coloring the nodes if \code{bb_on} is set to "genesets".
++Defaults to the "z_score", which can be obtained via \code{get_aggrscores()}}
++
++\item{color_by_feature}{Character string, corresponding to the column in
++\code{res_de} to be used for coloring the nodes if \code{bb_on} is set to "features".
++Defaults to the "log2FoldChange", which should be normally included in a
++DESeqResults object.}
++
++\item{...}{Additional parameters to be passed internally}
++}
++\value{
++According to the \code{bb_fullinfo}, either a simple \code{ìgraph} object with
++the graph backbone, or a named list object containing:
++\itemize{
++\item the \code{igraph} of the extracted backbone
++\item the \code{backbone} object itself
++\item the gene-geneset graph used for the computation
++}
++}
++\description{
++Extract the backbone for the gene-geneset graph, either for the genes or for the
++genesets
++}
++\examples{
++library("macrophage")
++library("DESeq2")
++library("org.Hs.eg.db")
++library("AnnotationDbi")
++
++# dds object
++data("gse", package = "macrophage")
++dds_macrophage <- DESeqDataSet(gse, design = ~line + condition)
++rownames(dds_macrophage) <- substr(rownames(dds_macrophage), 1, 15)
++dds_macrophage <- estimateSizeFactors(dds_macrophage)
++
++# annotation object
++anno_df <- data.frame(
++  gene_id = rownames(dds_macrophage),
++  gene_name = mapIds(org.Hs.eg.db,
++                     keys = rownames(dds_macrophage),
++                     column = "SYMBOL",
++                     keytype = "ENSEMBL"),
++  stringsAsFactors = FALSE,
++  row.names = rownames(dds_macrophage)
++)
++
++# res object
++data(res_de_macrophage, package = "GeneTonic")
++res_de <- res_macrophage_IFNg_vs_naive
++
++# res_enrich object
++data(res_enrich_macrophage, package = "GeneTonic")
++res_enrich <- shake_topGOtableResult(topgoDE_macrophage_IFNg_vs_naive)
++res_enrich <- get_aggrscores(res_enrich, res_de, anno_df)
++
++ggs_bbg <- ggs_backbone(res_enrich,
++                        res_de,
++                        anno_df,
++                        n_gs = 50,
++                        bb_on = "genesets",
++                        color_graph = TRUE,
++                        color_by_geneset = "z_score"
++)
++plot(ggs_bbg)
++
++# if desired, one can also plot the interactive version
++visNetwork::visIgraph(ggs_bbg)
++
++}
+diff --git a/man/ggs_graph.Rd b/man/ggs_graph.Rd
+index 03608368..f69d6d86 100644
+--- a/man/ggs_graph.Rd
++++ b/man/ggs_graph.Rd
+@@ -34,7 +34,8 @@ of the list \emph{must} be specified following the content they are expecting}
+ be included}
+ 
+ \item{gs_ids}{Character vector, containing a subset of \code{gs_id} as they are
+-available in \code{res_enrich}. Lists the gene sets to be displayed.}
++available in \code{res_enrich}. Lists the gene sets to be included in addition to
++the top ones (via \code{n_gs})}
+ 
+ \item{prettify}{Logical, controlling the aspect of the returned graph object.
+ If TRUE (default value), different shapes of the nodes are returned, based on
+diff --git a/man/summarize_ggs_hubgenes.Rd b/man/summarize_ggs_hubgenes.Rd
+new file mode 100644
+index 00000000..9f41f8df
+--- /dev/null
++++ b/man/summarize_ggs_hubgenes.Rd
+@@ -0,0 +1,56 @@
++% Generated by roxygen2: do not edit by hand
++% Please edit documentation in R/ggs_graph.R
++\name{summarize_ggs_hubgenes}
++\alias{summarize_ggs_hubgenes}
++\title{Summarize information on the hub genes}
++\usage{
++summarize_ggs_hubgenes(g)
++}
++\arguments{
++\item{g}{An \code{igraph} object, as generated by the \code{ggs_graph()} function}
++}
++\value{
++A data.frame object, formatted for use in \code{DT::datatable()}
++}
++\description{
++Summarize information on the hub genes in the Gene-Geneset graph
++}
++\examples{
++library("macrophage")
++library("DESeq2")
++library("org.Hs.eg.db")
++library("AnnotationDbi")
++
++# dds object
++data("gse", package = "macrophage")
++dds_macrophage <- DESeqDataSet(gse, design = ~line + condition)
++rownames(dds_macrophage) <- substr(rownames(dds_macrophage), 1, 15)
++dds_macrophage <- estimateSizeFactors(dds_macrophage)
++
++# annotation object
++anno_df <- data.frame(
++  gene_id = rownames(dds_macrophage),
++  gene_name = mapIds(org.Hs.eg.db,
++                     keys = rownames(dds_macrophage),
++                     column = "SYMBOL",
++                     keytype = "ENSEMBL"),
++  stringsAsFactors = FALSE,
++  row.names = rownames(dds_macrophage)
++)
++
++# res object
++data(res_de_macrophage, package = "GeneTonic")
++res_de <- res_macrophage_IFNg_vs_naive
++
++# res_enrich object
++data(res_enrich_macrophage, package = "GeneTonic")
++res_enrich <- shake_topGOtableResult(topgoDE_macrophage_IFNg_vs_naive)
++res_enrich <- get_aggrscores(res_enrich, res_de, anno_df)
++
++ggs <- ggs_graph(res_enrich,
++                 res_de,
++                 anno_df
++                )
++dt_df <- summarize_ggs_hubgenes(ggs)
++DT::datatable(dt_df, escape = FALSE)
++}
+diff --git a/tests/testthat/test-ggs_graph.R b/tests/testthat/test-ggs_graph.R
+index 3bb30d42..6be50fa7 100644
+--- a/tests/testthat/test-ggs_graph.R
++++ b/tests/testthat/test-ggs_graph.R
+@@ -21,6 +21,9 @@ test_that("Graph is generated", {
+                   n_gs = 20)
+   expect_is(g3, "igraph")
+ 
++  hub_df <- summarize_ggs_hubgenes(g3)
++  expect_is(hub_df, "data.frame")
++
+   expect_true(identical_graphs(g, g3))
+ 
+   alt_pal <- scales::alpha(
+@@ -48,3 +51,75 @@ test_that("Graph is generated", {
+               n_gs = 20)
+   )
+ })
++
++
++test_that("Backbone functionality up and running", {
++  res_enrich_nozscore <- res_enrich_IFNg_vs_naive
++  res_enrich_IFNg_vs_naive <- get_aggrscores(res_enrich_IFNg_vs_naive,
++                                             res_macrophage_IFNg_vs_naive,
++                                             anno_df)
++  bbg <- ggs_backbone(res_enrich = res_enrich_IFNg_vs_naive,
++                      res_de = res_macrophage_IFNg_vs_naive,
++                      annotation_obj = anno_df,
++                      n_gs = 10,
++                      bb_on = "genesets")
++  expect_is(bbg, "igraph")
++  bbg2 <- ggs_backbone(res_enrich = res_enrich_IFNg_vs_naive,
++                       res_de = res_macrophage_IFNg_vs_naive,
++                       annotation_obj = anno_df,
++                       n_gs = 20,
++                       bb_on = "features",
++                       bb_method = "hyperg",
++                       bb_remove_singletons = FALSE,
++                       bb_fullinfo = TRUE)
++  expect_is(bbg2, "list")
++  expect_is(bbg2$bbgraph, "igraph")
++  expect_is(bbg2$ggs, "igraph")
++
++  gtl_macrophage <- list(dds = dds_macrophage,
++                         res_de = res_macrophage_IFNg_vs_naive,
++                         res_enrich = res_enrich_IFNg_vs_naive,
++                         annotation_obj = anno_df)
++  bbg3 <- ggs_backbone(gtl = gtl_macrophage,
++                       n_gs = 10)
++  expect_is(bbg3, "igraph")
++
++  expect_true(identical_graphs(bbg, bbg3))
++
++  # this few genesets, as this method would take quite long to run
++  bbg4 <- ggs_backbone(gtl = gtl_macrophage,
++                       bb_method = "fdsm",
++                       n_gs = 4)
++  expect_is(bbg4, "igraph")
++  expect_equal(vcount(bbg4), 0)
++
++  expect_error(
++    ggs_backbone(res_enrich = res_enrich_nozscore,
++                 res_de = res_macrophage_IFNg_vs_naive,
++                 annotation_obj = anno_df,
++                 n_gs = 10,
++                 bb_on = "genesets")
++  )
++
++  res_de_nolfc <- res_macrophage_IFNg_vs_naive
++  res_de_nolfc$log2FoldChange <- NULL
++
++  expect_error(
++    ggs_backbone(res_enrich = res_enrich_IFNg_vs_naive,
++                 res_de = res_de_nolfc,
++                 annotation_obj = anno_df,
++                 n_gs = 10,
++                 bb_on = "features")
++  )
++
++  expect_error(
++    ggs_backbone(res_enrich = res_enrich_IFNg_vs_naive,
++                 res_de = res_macrophage_IFNg_vs_naive,
++                 annotation_obj = anno_df,
++                 n_gs = 10,
++                 bb_on = "genesets",
++                 color_by_geneset = "some_column_not_there")
++  )
++
++})
++
+diff --git a/tests/testthat/test-gs_mds.R b/tests/testthat/test-gs_mds.R
+index de14c9ab..0ebddfdd 100644
+--- a/tests/testthat/test-gs_mds.R
++++ b/tests/testthat/test-gs_mds.R
+@@ -39,7 +39,7 @@ test_that("mds plot with specified sets works", {
+ })
+ 
+ test_that("Returning the data works as expected", {
+-  df <- gs_mds(res_enrich = res_enrich_IFNg_vs_naive,
++  df <- gs_mds(res_enrich = res_enrich_IFNg_vs_naive[1:50,],
+               res_de = res_macrophage_IFNg_vs_naive,
+               annotation_obj = anno_df,
+               similarity_measure = "kappa_matrix",
+@@ -48,6 +48,6 @@ test_that("Returning the data works as expected", {
+               mds_labels = 10,
+               mds_colorby = "z_score")
+   expect_is(df, "data.frame")
+-  expect_true(nrow(res_enrich_IFNg_vs_naive) == nrow(df))
++  expect_true(nrow(df) == 50)
+ 
+ })

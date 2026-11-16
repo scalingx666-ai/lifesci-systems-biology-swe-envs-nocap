@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__muon-168"
+description = "CLR: add a flavor argument and add flavors stoeckius and standard (closes #144)"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "muon",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/muon"
+ref = "fe40bd0f9688d55646a9b012f97d9d325a4313d2"
+reference = "https://github.com/scverse/muon/pull/168"
+source_access = "auto"
+built_at = "2026-11-15T16:59:47.671778+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:af7c31d35235ad432b2c12d4d41c80cc497174dea63104f23e4431ce0e3774d0"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2025-10-21T13:08:06Z"
+diff_format = "unified"
+context_files = [
+    "muon/_prot/preproc.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 67
+difficulty = "medium"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

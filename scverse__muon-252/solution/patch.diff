@@ -1,0 +1,520 @@
+diff --git a/.panache.toml b/.panache.toml
+new file mode 100644
+index 0000000..cd9509d
+--- /dev/null
++++ b/.panache.toml
+@@ -0,0 +1,14 @@
++#:schema https://panache.bz/panache.schema.json
++flavor = "myst"
++
++[format]
++wrap = "preserve"
++smart-punctuation = "unicode"
++tab-stops = "preserve"
++
++# MyST syntax extensions from `scverse_doc.config.MYST_ENABLE_EXTENSIONS`
++[extensions]
++myst-colon-fence = true  # colon_fence
++definition-lists = true  # deflist
++tex-math-dollars = true  # dollarmath, amsmath
++raw-html = true          # html_image, html_admonition
+diff --git a/.pre-commit-config.yaml b/.pre-commit-config.yaml
+index 33fbfbd..0e95b9c 100644
+--- a/.pre-commit-config.yaml
++++ b/.pre-commit-config.yaml
+@@ -13,6 +13,10 @@ repos:
+     hooks:
+       - id: biome-format
+         exclude: ^\.cruft\.json$ # inconsistent indentation with cruft - file never to be modified manually.
++  - repo: https://github.com/jolars/panache-pre-commit
++    rev: v3.18.0
++    hooks:
++      - id: panache-format
+   - repo: https://github.com/tox-dev/pyproject-fmt
+     rev: 50e0f3aee9dc5747a5f173f79a7417403c18dda6 # frozen: v2.30.3
+     hooks:
+diff --git a/DESIGN.md b/DESIGN.md
+index 3cdb06e..266de12 100644
+--- a/DESIGN.md
++++ b/DESIGN.md
+@@ -1,14 +1,14 @@
+ # Designing `muon`
+ 
+-This document outlines design considerations and some technical details about `muon`'s implementation.
++This document outlines design considerations and some technical details about `muon`’s implementation.
+ 
+ ## Multimodal data containers
+ 
+-`muon` provides an implementation of the data type for storing multimodal measurements. It is embodied in the `MuData` class and represents a particular way of thinking about multimodal objects as _containers_. That means the unimodal measurements are stored in fully functional objects that can be operated independently — those are `AnnData` instances in the case of `MuData`. These containers can also store information that only makes sense when all of its insides are considered together, e.g. embeddings or cell annotation generated on all modalities en masse.
++`muon` provides an implementation of the data type for storing multimodal measurements. It is embodied in the `MuData` class and represents a particular way of thinking about multimodal objects as *containers*. That means the unimodal measurements are stored in fully functional objects that can be operated independently — those are `AnnData` instances in the case of `MuData`. These containers can also store information that only makes sense when all of its insides are considered together, e.g. embeddings or cell annotation generated on all modalities en masse.
+ 
+ Such design is transparent, builds on existing software, which has been widely adopted by some communities (e.g. `scanpy` for single-cell data analysis), as well as data formats (HDF5-based files), and also has potential to grow gaining container-level features without disrupting current code. The latter being particularly important when contrasting it to an alternative approach of extending existing data formats such as `AnnData`. See e.g. [this anndata-related discussion](https://github.com/theislab/anndata/issues/237) where multiple challenges has been raised such as [how to have](https://github.com/theislab/anndata/issues/237#issuecomment-562505701) both modality-specific and cross-modality APIs (e.g. to create and to store respective embeddings).
+ 
+-One of the great side effects of this _container_ approach is that AnnData objects can be directly read from and written to HDF5 files with multimodal data:
++One of the great side effects of this *container* approach is that AnnData objects can be directly read from and written to HDF5 files with multimodal data:
+ 
+ ```py
+ import muon as mu
+@@ -20,7 +20,7 @@ adata = mu.read("pbmc_10k.h5mu/rna")
+ mu.write("pbmc_10k.h5mu/rna", adata)
+ ```
+ 
+-One can verify in their terminal it's stored in the HDF5 file as expected:
++One can verify in their terminal it’s stored in the HDF5 file as expected:
+ 
+ ```sh
+ h5ls pbmc_10k.h5mu/mod/rna
+@@ -30,12 +30,10 @@ h5ls pbmc_10k.h5mu/mod/rna
+ # ...
+ ```
+ 
+-
+ ## Multimodal methods
+ 
+ Multimodal methods do not change AnnData objects inside the container unless stated otherwise. They typically operate under the assumption that all the necessary preparations have been performed, e.g. the count matrix has been normalisation or the neighbours graph has been constructed for each modality. When possible, multimodal methods should throw a warning or an error describing the respective steps to be run first.
+ 
+-
+ ## Omic-specific modules
+ 
+ In order to enable users to perform analysis beyond prominent (sc)RNA-seq methods, which are available e.g. in `scanpy`, `muon` currently encompasses modality-specific modules. A module with functionality related to ATAC-seq is just an example for such a module:
+diff --git a/README.md b/README.md
+index eaccb4f..cc030b4 100644
+--- a/README.md
++++ b/README.md
+@@ -98,7 +98,7 @@ sc.pl.umap(rna)
+ 
+ ### Modules in `muon`
+ 
+-`muon` comes with a set of modules that can be used hand in hand with scanpy's API. These modules are named after respective sequencing protocols and comprise special functions that might come in handy. It is also handy to import them as two letter abbreviations:
++`muon` comes with a set of modules that can be used hand in hand with scanpy’s API. These modules are named after respective sequencing protocols and comprise special functions that might come in handy. It is also handy to import them as two letter abbreviations:
+ 
+ ```py
+ # ATAC module:
+@@ -108,7 +108,7 @@ from muon import atac as ac
+ from muon import prot as pt
+ ```
+ 
+----
++--------------------------------------------------------------------------------
+ 
+ Some implementation details are noted in [DESIGN.md](https://github.com/scverse/muon/blob/main/DESIGN.md).
+ 
+@@ -122,7 +122,7 @@ If you use `muon` in your work, please cite the `muon` publication as follows:
+ >
+ > Danila Bredikhin, Ilia Kats, Oliver Stegle
+ >
+-> _Genome Biology_ 2022 Feb 01. doi: [10.1186/s13059-021-02577-8](https://doi.org/10.1186/s13059-021-02577-8).
++> *Genome Biology* 2022 Feb 01. doi: [10.1186/s13059-021-02577-8](https://doi.org/10.1186/s13059-021-02577-8).
+ 
+ You can cite the scverse publication as follows:
+ 
+@@ -130,8 +130,7 @@ You can cite the scverse publication as follows:
+ >
+ > Isaac Virshup, Danila Bredikhin, Lukas Heumos, Giovanni Palla, Gregor Sturm, Adam Gayoso, Ilia Kats, Mikaela Koutrouli, Scverse Community, Bonnie Berger, Dana Pe’er, Aviv Regev, Sarah A. Teichmann, Francesca Finotello, F. Alexander Wolf, Nir Yosef, Oliver Stegle & Fabian J. Theis
+ >
+-> _Nat Biotechnol._ 2023 Apr 10. doi: [10.1038/s41587-023-01733-8](https://doi.org/10.1038/s41587-023-01733-8).
+-
++> *Nat Biotechnol.* 2023 Apr 10. doi: [10.1038/s41587-023-01733-8](https://doi.org/10.1038/s41587-023-01733-8).
+ 
+ [//]: # "numfocus-fiscal-sponsor-attribution"
+ 
+@@ -143,7 +142,7 @@ If you like scverse® and want to support our mission, please consider making a
+   <img
+     src="https://raw.githubusercontent.com/numfocus/templates/master/images/numfocus-logo.png"
+     width="200"
+-  >
++>
+ </a>
+ </div>
+ 
+diff --git a/biome.jsonc b/biome.jsonc
+index 9f8f220..0464f27 100644
+--- a/biome.jsonc
++++ b/biome.jsonc
+@@ -2,6 +2,7 @@
+     "$schema": "https://biomejs.dev/schemas/2.2.0/schema.json",
+     "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+     "formatter": { "useEditorconfig": true },
++    "markdown": { "formatter": { "enabled": false } }, // handled by panache
+     "overrides": [
+         {
+             "includes": ["./.vscode/*.json", "**/*.jsonc"],
+diff --git a/docs/api.md b/docs/api.md
+index 4880092..b54086a 100644
+--- a/docs/api.md
++++ b/docs/api.md
+@@ -15,10 +15,10 @@ are provided by {doc}`mudata <mudata:index>` and re-exported here; see its docum
+ .. currentmodule:: muon
+ 
+ .. autosummary::
+-    :toctree: generated
++   :toctree: generated
+ 
+-    read_10x_h5
+-    read_10x_mtx
++   read_10x_h5
++   read_10x_mtx
+ ```
+ 
+ ## Preprocessing
+@@ -27,10 +27,10 @@ are provided by {doc}`mudata <mudata:index>` and re-exported here; see its docum
+ .. currentmodule:: muon
+ 
+ .. autosummary::
+-    :toctree: generated
+-    :recursive:
++   :toctree: generated
++   :recursive:
+ 
+-    pp
++   pp
+ ```
+ 
+ ## Tools
+@@ -39,10 +39,10 @@ are provided by {doc}`mudata <mudata:index>` and re-exported here; see its docum
+ .. currentmodule:: muon
+ 
+ .. autosummary::
+-    :toctree: generated
+-    :recursive:
++   :toctree: generated
++   :recursive:
+ 
+-    tl
++   tl
+ ```
+ 
+ ## Plotting
+@@ -51,30 +51,30 @@ are provided by {doc}`mudata <mudata:index>` and re-exported here; see its docum
+ .. currentmodule:: muon
+ 
+ .. autosummary::
+-    :toctree: generated
+-    :recursive:
++   :toctree: generated
++   :recursive:
+ 
+-    pl
++   pl
+ ```
+ 
+ ## ATAC
+ 
+ ```{eval-rst}
+ .. autosummary::
+-    :toctree: generated
+-    :recursive:
++   :toctree: generated
++   :recursive:
+ 
+-    atac.pp
+-    atac.tl
+-    atac.pl
++   atac.pp
++   atac.tl
++   atac.pl
+ ```
+ 
+ ## Protein (CITE-seq)
+ 
+ ```{eval-rst}
+ .. autosummary::
+-    :toctree: generated
+-    :recursive:
++   :toctree: generated
++   :recursive:
+ 
+-    prot.pp
++   prot.pp
+ ```
+diff --git a/docs/changelog.md b/docs/changelog.md
+index d9e79ba..66efc0f 100644
+--- a/docs/changelog.md
++++ b/docs/changelog.md
+@@ -1,3 +1,2 @@
+ ```{include} ../CHANGELOG.md
+-
+ ```
+diff --git a/docs/citation.md b/docs/citation.md
+index 602f704..3a2fe03 100644
+--- a/docs/citation.md
++++ b/docs/citation.md
+@@ -6,7 +6,7 @@ If you use muon in your work, please cite the publication as follows:
+ >
+ > Danila Bredikhin, Ilia Kats, Oliver Stegle
+ >
+-> _Genome Biology_ 2022 Feb 01. doi: [10.1186/s13059-021-02577-8](https://doi.org/10.1186/s13059-021-02577-8).
++> *Genome Biology* 2022 Feb 01. doi: [10.1186/s13059-021-02577-8](https://doi.org/10.1186/s13059-021-02577-8).
+ 
+ You can cite the scverse publication as follows:
+ 
+@@ -14,4 +14,4 @@ You can cite the scverse publication as follows:
+ >
+ > Isaac Virshup, Danila Bredikhin, Lukas Heumos, Giovanni Palla, Gregor Sturm, Adam Gayoso, Ilia Kats, Mikaela Koutrouli, Scverse Community, Bonnie Berger, Dana Pe’er, Aviv Regev, Sarah A. Teichmann, Francesca Finotello, F. Alexander Wolf, Nir Yosef, Oliver Stegle & Fabian J. Theis
+ >
+-> _Nat Biotechnol._ 2023 Apr 10. doi: [10.1038/s41587-023-01733-8](https://doi.org/10.1038/s41587-023-01733-8).
++> *Nat Biotechnol.* 2023 Apr 10. doi: [10.1038/s41587-023-01733-8](https://doi.org/10.1038/s41587-023-01733-8).
+diff --git a/docs/contributing.md b/docs/contributing.md
+index a96c0dd..e1f68b9 100644
+--- a/docs/contributing.md
++++ b/docs/contributing.md
+@@ -12,7 +12,6 @@ the [scientific Python tutorials][], or the [scanpy developer guide][].
+ [scanpy developer guide]: https://scanpy.scverse.org/page/dev/
+ 
+ :::{tip} The _hatch_ project manager
+-
+ We highly recommend to familiarize yourself with [`hatch`][hatch].
+ Hatch is a Python project manager that
+ 
+@@ -23,14 +22,13 @@ Hatch is a Python project manager that
+ 
+ While the project is setup with `hatch` in mind,
+ it is still possible to use different tools to manage dependencies, such as `uv` or `pip`.
+-
+ :::
+ 
+ [hatch]: https://hatch.pypa.io/latest/
+ 
+ ## Installing dev dependencies
+ 
+-In addition to the packages needed to _use_ this package,
++In addition to the packages needed to *use* this package,
+ you need additional python packages to [run tests](#writing-tests) and [build the documentation](#docs-building).
+ 
+ :::::{tab-set}
+@@ -52,9 +50,9 @@ If you are using VS code, install the [hatch-code][] extension.
+ Additionally, make sure that the `vscode-python-environments` extension is installed (should be by default)
+ and `"python.useEnvironmentsExtension": true` is activated in your `settings.json`.
+ 
+-Next, open the "Python Environment Managers" sidebar.
++Next, open the “Python Environment Managers” sidebar.
+ You can do so by opening the command palette (Ctrl+Shift+P) and searching for `Python: Focus on Environment Managers View`.
+-It will show a collapsible list where you can expand "Hatch"
++It will show a collapsible list where you can expand “Hatch”
+ and activate an environment by clicking on the checkmark next to it.
+ As the main development environment, we recommend to use `hatch-test` with the latest supported Python version.
+ 
+@@ -100,8 +98,6 @@ hatch env find hatch-test.py3.14-stable
+ ```
+ 
+ and manually point it to the python binary.
+-
+-
+ ::::
+ 
+ ::::{tab-item} uv
+@@ -121,7 +117,6 @@ uv sync --all-extras
+ ```
+ 
+ The `.venv` directory is typically automatically discovered by IDEs such as VS Code.
+-
+ ::::
+ 
+ ::::{tab-item} Pip
+@@ -138,7 +133,6 @@ pip install -e ".[dev,test,doc]"
+ ```
+ 
+ The `.venv` directory is typically automatically discovered by IDEs such as VS Code.
+-
+ ::::
+ :::::
+ 
+@@ -164,7 +158,7 @@ prek will automatically download all dependencies when it is run for the first t
+ If you didn’t run the checks locally, the `Pre-commit checks` job of the GitHub Actions CI runs them on your pull request and reports any failures.
+ We strongly encourage installing and running the checks locally first to understand their usage.
+ 
+-Finally, most editors have an _autoformat on save_ feature.
++Finally, most editors have an *autoformat on save* feature.
+ Consider enabling this option for [ruff][ruff-editors] and [biome][biome-editors].
+ 
+ [pre-commit]: https://pre-commit.com/
+@@ -194,7 +188,6 @@ hatch test  # test with the highest supported Python version
+ # or
+ hatch test --all  # test with all supported Python versions
+ ```
+-
+ ::::
+ 
+ ::::{tab-item} uv
+@@ -203,7 +196,6 @@ hatch test --all  # test with all supported Python versions
+ ```bash
+ uv run pytest
+ ```
+-
+ ::::
+ 
+ ::::{tab-item} Pip
+@@ -213,7 +205,6 @@ uv run pytest
+ source .venv/bin/activate
+ pytest
+ ```
+-
+ ::::
+ :::::
+ 
+@@ -309,7 +300,6 @@ please check out [this feature request][issue-render-notebooks] in the `cookiecu
+ hatch run docs:build
+ hatch run docs:open
+ ```
+-
+ ::::
+ 
+ ::::{tab-item} uv
+@@ -320,7 +310,6 @@ cd docs
+ uv run sphinx-build -M html . _build -W
+ (xdg-)open _build/html/index.html
+ ```
+-
+ ::::
+ 
+ ::::{tab-item} Pip
+@@ -332,6 +321,5 @@ cd docs
+ sphinx-build -M html . _build -W
+ (xdg-)open _build/html/index.html
+ ```
+-
+ ::::
+ :::::
+diff --git a/docs/index.md b/docs/index.md
+index 70e7634..9a202b6 100644
+--- a/docs/index.md
++++ b/docs/index.md
+@@ -1,7 +1,6 @@
+ # muon
+ 
+ ```{include} ../README.md
+-
+ ```
+ 
+ ```{toctree}
+diff --git a/docs/io/input.md b/docs/io/input.md
+index 5ecf72c..0009173 100644
+--- a/docs/io/input.md
++++ b/docs/io/input.md
+@@ -41,7 +41,7 @@ MuData object can be constructed from a dictionary of existing AnnData objects:
+ mdata = mu.MuData({'rna': adata_rna, 'atac': adata_atac})
+ ```
+ 
+-AnnData objects themselves can be easily constructed from NumPy arrays and/or Pandas DataFrames annotating features (_variables_) and samples/cells (_observations_).
++AnnData objects themselves can be easily constructed from NumPy arrays and/or Pandas DataFrames annotating features (*variables*) and samples/cells (*observations*).
+ This makes it a rather general data format to work with any type of high-dimensional data.
+ 
+ ```python
+diff --git a/docs/io/mudata.md b/docs/io/mudata.md
+index 60d822d..a27d43f 100644
+--- a/docs/io/mudata.md
++++ b/docs/io/mudata.md
+@@ -9,7 +9,7 @@ from muon import MuData
+ `MuData` objects comprise a dictionary with `AnnData` objects, one per modality, in their `.mod` attribute.
+ Just as `AnnData` objects themselves, they also contain attributes like `.obs` with annotation of observations (samples or cells), `.obsm` with their multidimensional annotations such as embeddings, etc.
+ 
+-## Container's attributes
++## Container’s attributes
+ 
+ Key attributes & method of `MuData` objects as well as important concepts are described below.
+ A full list of attributes and methods of multimodal containers can be found in the {class}`~mudata.MuData` documentation.
+@@ -61,9 +61,9 @@ mdata.obsm
+ As another multidimensional embedding, this slot contains boolean vectors, one per modality, indicating if samples (cells) are available in the respective modality.
+ For instance, if all samples (cells) are the same across modalities, all values in those vectors are `True`.
+ 
+-## Container's shape
++## Container’s shape
+ 
+-The `MuData` object's shape is represented by two numbers calculated as a sum of the shapes of individual modalities — one for the number of observations and one for the number of variables.
++The `MuData` object’s shape is represented by two numbers calculated as a sum of the shapes of individual modalities — one for the number of observations and one for the number of variables.
+ 
+ ```python
+ mdata.shape
+@@ -109,7 +109,7 @@ mdata_b.file.filename
+ # => 'filename_copy.h5mu'
+ ```
+ 
+-## Container's views
++## Container’s views
+ 
+ Analogous to the behaviour of `AnnData` objects, slicing `MuData` objects returns views of the original data.
+ 
+diff --git a/docs/omics/atac.md b/docs/omics/atac.md
+index 22a390e..4e485bd 100644
+--- a/docs/omics/atac.md
++++ b/docs/omics/atac.md
+@@ -6,7 +6,7 @@
+ from muon import atac as ac
+ ```
+ 
+-ATAC stands for an _assay for transposase-accessible chromatin_.
++ATAC stands for an *assay for transposase-accessible chromatin*.
+ Count matrices for this data type typically include transposase cuts counts aggregated in peaks as well as bins (windows along the genome) or features such as transcription start sites of genes.
+ 
+ ## Quality control
+@@ -16,9 +16,9 @@ While typical quality control (QC) metrics are still relevant for ATAC-seq data,
+ ### Nucleosome signal
+ 
+ Fragment size distribution typically reflects nucleosome binding pattern showing enrichment around values corresponding to fragments bound to a single nucleosome (between 147 bp and 294 bp) as well as nucleosome-free fragments (shorter than 147 bp).
+-The ratio of mono-nucleosome cut fragments to nucleosome-free fragments can be called _nucleosome signal_, and it can be estimated using a subset of fragments with {func}`muon.atac.tl.nucleosome_signal`.
++The ratio of mono-nucleosome cut fragments to nucleosome-free fragments can be called *nucleosome signal*, and it can be estimated using a subset of fragments with {func}`muon.atac.tl.nucleosome_signal`.
+ 
+-Fragment size distribution can be estimated from a subset of data and plotted with {func}`muon.atac.pl.fragment_histogram`, and the _nucleosome signal_ can visualised with a general function {func}`muon.pl.histogram`:
++Fragment size distribution can be estimated from a subset of data and plotted with {func}`muon.atac.pl.fragment_histogram`, and the *nucleosome signal* can visualised with a general function {func}`muon.pl.histogram`:
+ 
+ ```python
+ # Plot fragment size distribution
+@@ -55,14 +55,14 @@ This is typically followed by singular value decomposition (SVD) — the same te
+ 
+ Note that there are different flavours of computing the term frequency — inverse document frequency (TF-IDF) matrix, optionally log-transforming individual terms (TF, IDF, or both).
+ 
+-TF-IDF transformation is implemented in the muon's ATAC module:
++TF-IDF transformation is implemented in the muon’s ATAC module:
+ 
+ ```python
+ ac.pp.tfidf(atac, scale_factor=1e4)
+ ```
+ 
+ Another option is to use log-normalisation correcting for the total number of counts per cell and log-transforming the values.
+-This is a typical normalisation for many scRNA-seq workflows, and it's typically followed by PCA to generate latent components.
++This is a typical normalisation for many scRNA-seq workflows, and it’s typically followed by PCA to generate latent components.
+ Analysing multimodal scRNA-seq & scATAC-seq datasets we notice this scATAC-seq normalisation yields PC & UMAP spaces similar to the ones generated on scRNA-seq counts.
+ 
+ ```python
+diff --git a/docs/omics/citeseq.md b/docs/omics/citeseq.md
+index 05c0c31..d20e48c 100644
+--- a/docs/omics/citeseq.md
++++ b/docs/omics/citeseq.md
+@@ -7,7 +7,7 @@ from muon import prot as pt
+ ```
+ 
+ CITE-seq is a method for cellular indexing of transcriptomes and epitopes by sequencing.
+-It's single-cell data comprising transcriptome-wide measurements for each cell (gene expression) as well as surface protein level information, typically for a few dozens of proteins.
++It’s single-cell data comprising transcriptome-wide measurements for each cell (gene expression) as well as surface protein level information, typically for a few dozens of proteins.
+ The method is described in [Stoeckius et al., 2017](https://www.nature.com/articles/nmeth.4380) and also [on the cite-seq.com website](https://cite-seq.com/).
+ 
+ ## Normalisation
+@@ -15,7 +15,7 @@ The method is described in [Stoeckius et al., 2017](https://www.nature.com/artic
+ ### dsb
+ 
+ Various methods can be used to normalise protein counts in CITE-seq data.
+-`muon` brings one of the methods developed specifically for CITE-seq — _denoised and scaled by background_ — to Python CITE-seq workflows.
++`muon` brings one of the methods developed specifically for CITE-seq — *denoised and scaled by background* — to Python CITE-seq workflows.
+ This method uses background droplets defined by low RNA content in order to estimate background protein signal and remove it from the data.
+ The method is described in [Korliarov, Sparks et al., 2020](https://www.nature.com/articles/s41591-020-0769-8) and its original implementation [is available on GitHub](https://github.com/niaid/dsb).
+ 
+diff --git a/docs/omics/multi.md b/docs/omics/multi.md
+index cfb4f95..f1e1cbd 100644
+--- a/docs/omics/multi.md
++++ b/docs/omics/multi.md
+@@ -21,12 +21,12 @@ For example, the number of factors to learn can be adjusted with `n_factors`, an
+ ### Feature selection
+ 
+ By default, only highly variable features are used with `use_var='highly_variable'`.
+-If there's no column `.var['highly_variable']`, all features are used.
+-Any other feature selection can be provided with `use_var` as long as it's defined for all the assays as a boolean value.
++If there’s no column `.var['highly_variable']`, all features are used.
++Any other feature selection can be provided with `use_var` as long as it’s defined for all the assays as a boolean value.
+ 
+ ### Grouping observations
+ 
+-If the variability inside groups of observations (samples or cells) is of interest, and _not_ between them, `groups_label` can be provided to account for that during the training.
++If the variability inside groups of observations (samples or cells) is of interest, and *not* between them, `groups_label` can be provided to account for that during the training.
+ For instance, the variability between batches can be accounted for in the MOFA framework.
+ See more details about the multi-group fuctionality [in the MOFA+ FAQ](https://biofam.github.io/MOFA2/faq.html#faq-on-the-multi-group-functionality).
+ 

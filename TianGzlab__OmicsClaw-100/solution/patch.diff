@@ -1,0 +1,1360 @@
+diff --git a/README.md b/README.md
+index 89cde4f3..68057829 100644
+--- a/README.md
++++ b/README.md
+@@ -160,6 +160,10 @@ python scripts/generate_catalog.py
+ 
+ Use a brief plan, targeted tests, and verification evidence for non-trivial repository changes. New skills should follow [CONTRIBUTING.md](CONTRIBUTING.md) and [templates/SKILL-TEMPLATE.md](templates/SKILL-TEMPLATE.md).
+ 
++Desktop provider changes should preserve the OmicsClaw-App backend contract: `/providers` reports the active provider/model/endpoint, `/providers/test` performs a short live LLM connectivity probe, and `/chat/stream` must reinitialize the provider runtime when a request changes model even if the provider id is unchanged.
++
++Interactive CLI provider changes should share the same runtime resolution path: `LLM_PROVIDER=custom` must honor `LLM_BASE_URL`, `OMICSCLAW_MODEL`, and `LLM_API_KEY`; explicit CLI `--provider` / `--model` overrides must win over environment defaults; malformed custom endpoints should return actionable diagnostics instead of `(no response)`.
++
+ TUI helpers under `omicsclaw/interactive/_tui_support.py` stay dependency-light so support tests can run without optional memory or Textual installs. When adding Textual containers, mount the parent widget into the live tree before mounting child widgets.
+ 
+ </details>
+diff --git a/bot/core.py b/bot/core.py
+index a5059774..068b7d5e 100644
+--- a/bot/core.py
++++ b/bot/core.py
+@@ -1377,9 +1377,20 @@ def _oauth_failed(reason: str) -> None:
+ 
+     # Memory initialization — uses the new graph-based memory system
+     # Enabled by default; disable with OMICSCLAW_MEMORY_ENABLED=false
++    memory_store = None
++    session_manager = None
+     if os.getenv("OMICSCLAW_MEMORY_ENABLED", "true").lower() not in ("false", "0", "no"):
+         try:
+             from omicsclaw.memory.compat import CompatMemoryStore
++            from omicsclaw.memory.database import DatabaseManager as _DatabaseManager
++            from omicsclaw.memory.search import SearchIndexer as _SearchIndexer
++            from omicsclaw.memory.glossary import GlossaryService as _GlossaryService
++            from omicsclaw.memory.graph import GraphService as _GraphService
++
++            # Import graph-memory dependencies eagerly during core init so a
++            # lightweight chat install can disable memory once, instead of
++            # surfacing repeated non-fatal warnings during every chat turn.
++            del _DatabaseManager, _SearchIndexer, _GlossaryService, _GraphService
+ 
+             db_url = os.getenv("OMICSCLAW_MEMORY_DB_URL")  # None = use default (~/.config/omicsclaw/memory.db)
+ 
+@@ -4371,6 +4382,38 @@ def __getattr__(name: str):
+ # ---------------------------------------------------------------------------
+ 
+ 
++def _format_llm_api_error_message(exc: Exception) -> str:
++    detail = str(exc).strip() or type(exc).__name__
++    provider = (LLM_PROVIDER_NAME or "").strip().lower()
++    base_url = ""
++    try:
++        from omicsclaw.core.provider_runtime import get_active_provider_runtime
++
++        runtime = get_active_provider_runtime()
++        base_url = str(getattr(runtime, "base_url", "") or "").strip()
++    except Exception:
++        base_url = ""
++    if not base_url:
++        base_url = str(
++            os.getenv("LLM_BASE_URL", "") or os.getenv("OMICSCLAW_BASE_URL", "") or ""
++        ).strip()
++
++    if provider == "custom":
++        endpoint_hint = (
++            f" Custom endpoint base_url is `{base_url}`."
++            if base_url
++            else " Custom endpoint base_url is empty."
++        )
++        return (
++            "LLM provider request failed for the custom endpoint:"
++            f" {detail}.{endpoint_hint} Ensure the base URL is the "
++            "OpenAI-compatible API root, commonly ending in `/v1`, not the "
++            "provider dashboard or homepage."
++        )
++
++    return f"Sorry, I'm having trouble thinking right now -- API error: {detail}"
++
++
+ def _sanitize_tool_history(history: list[dict], warn: bool = True) -> list[dict]:
+     return _runtime_sanitize_tool_history(history, warn=warn)
+ 
+@@ -4610,8 +4653,8 @@ async def after_tool(execution_result, result_record, tool_state):
+             )
+ 
+     def on_llm_error(exc: Exception) -> str:
+-        logger_obj.error(f"LLM API error: {exc}")
+-        return f"Sorry, I'm having trouble thinking right now -- API error: {exc}"
++        logger_obj.debug("LLM API error: %s", exc)
++        return _format_llm_api_error_message(exc)
+ 
+     return QueryEngineCallbacks(
+         accumulate_usage=usage_accumulator,
+diff --git a/omicsclaw/app/server.py b/omicsclaw/app/server.py
+index a29daa5b..1e3a732a 100644
+--- a/omicsclaw/app/server.py
++++ b/omicsclaw/app/server.py
+@@ -28,7 +28,7 @@
+ import time
+ import uuid
+ from collections import deque
+-from contextlib import asynccontextmanager
++from contextlib import asynccontextmanager, suppress
+ from datetime import datetime, timezone
+ from pathlib import Path
+ from typing import Any, Optional
+@@ -36,6 +36,7 @@
+ from fastapi import FastAPI, Header, HTTPException, Query, Request
+ from fastapi.middleware.cors import CORSMiddleware
+ from fastapi.responses import FileResponse, StreamingResponse
++from openai import AsyncOpenAI
+ from pydantic import BaseModel, Field
+ try:
+     from omicsclaw.app.notebook.kernel_manager import get_kernel_manager
+@@ -1086,13 +1087,24 @@ async def chat_stream(req: ChatRequest):
+     try:
+         if req.provider_config and req.provider_config.provider:
+             pc = req.provider_config
++            provider = str(pc.provider or "").strip()
++            model = str(pc.model or "").strip()
++            base_url = str(pc.base_url or "").strip()
++            if provider.lower() == "custom" and not base_url:
++                base_url = _read_first_env("LLM_BASE_URL", "OMICSCLAW_BASE_URL")
++            _validate_custom_provider_input(
++                provider=provider,
++                model=model,
++                base_url=base_url,
++                allow_env_base_url=True,
++            )
+             core.init(
+                 api_key=pc.api_key,
+-                base_url=pc.base_url or None,
+-                model=pc.model,
+-                provider=pc.provider,
++                base_url=base_url or None,
++                model=model,
++                provider=provider,
+             )
+-        elif req.provider_id and req.provider_id.lower() != core.LLM_PROVIDER_NAME.lower():
++        elif _chat_request_requires_provider_reinit(core, req.provider_id, req.model or ""):
+             _apply_chat_provider_switch(core, req.provider_id, req.model or "")
+     except HTTPException:
+         raise
+@@ -3280,13 +3292,24 @@ def provider_supports_oauth(_name: str) -> bool:  # type: ignore[no-redef]
+     for entry in provider_entries:
+         name = str(entry.get("name", "") or "")
+         env_key = str(entry.get("env_key", "") or "")
++        active = name == core.LLM_PROVIDER_NAME
++        entry_payload = dict(entry)
++        base_url_source = _provider_base_url_source(name, core.LLM_PROVIDER_NAME)
++        if base_url_source:
++            entry_payload["base_url"] = (
++                _read_first_env(f"{name.upper()}_BASE_URL")
++                or _read_first_env("LLM_BASE_URL", "OMICSCLAW_BASE_URL")
++                or str(entry_payload.get("base_url", "") or "")
++            )
++        if active and core.OMICSCLAW_MODEL and not str(entry_payload.get("default_model", "") or "").strip():
++            entry_payload["default_model"] = core.OMICSCLAW_MODEL
+         credential_source = _provider_configuration_source(name, env_key, core.LLM_PROVIDER_NAME)
+         oauth_supported = provider_supports_oauth(name)
+         providers.append({
+-            **entry,
++            **entry_payload,
+             "configured": bool(credential_source),
+             "configured_via": credential_source or None,
+-            "active": name == core.LLM_PROVIDER_NAME,
++            "active": active,
+             "oauth_supported": oauth_supported,
+             "oauth_authenticated": (
+                 oauth_statuses.get(name, {}).get("authenticated", False)
+@@ -3354,6 +3377,37 @@ class ProviderSwitchRequest(BaseModel):
+     ccproxy_port: int = 11435
+ 
+ 
++class ProviderTestRequest(BaseModel):
++    provider: str = ""
++    api_key: str = ""
++    base_url: str = ""
++    model: str = ""
++
++
++def _validate_custom_provider_input(
++    *,
++    provider: str,
++    model: str = "",
++    base_url: str = "",
++    allow_env_base_url: bool = False,
++) -> None:
++    if str(provider or "").strip().lower() != "custom":
++        return
++    if not str(model or "").strip():
++        raise HTTPException(
++            400,
++            detail="Custom Endpoint requires an explicit model name.",
++        )
++    if str(base_url or "").strip():
++        return
++    if allow_env_base_url and _read_first_env("LLM_BASE_URL", "OMICSCLAW_BASE_URL"):
++        return
++    raise HTTPException(
++        400,
++        detail="Custom Endpoint requires an explicit Base URL.",
++    )
++
++
+ @app.put("/providers")
+ async def switch_provider(req: ProviderSwitchRequest):
+     """Switch the active LLM provider. Re-initializes the core LLM client.
+@@ -3388,6 +3442,11 @@ def provider_supports_oauth(_name: str) -> bool:  # type: ignore[no-redef]
+                 "Supported: anthropic, openai"
+             ),
+         )
++    _validate_custom_provider_input(
++        provider=req.provider,
++        model=req.model,
++        base_url=req.base_url,
++    )
+ 
+     # Reject ccproxy_port == app-server's own port: ccproxy serve would
+     # fail to bind (the app-server already owns the port), leaving the
+@@ -3438,11 +3497,11 @@ def provider_supports_oauth(_name: str) -> bool:  # type: ignore[no-redef]
+         remove_keys: set[str] = set()
+         if auth_mode == "oauth":
+             updates["CCPROXY_PORT"] = str(requested_port)
+-            remove_keys.add("LLM_BASE_URL")
++            remove_keys.update({"LLM_BASE_URL", "OMICSCLAW_BASE_URL"})
+         else:
+             remove_keys.add("CCPROXY_PORT")
+             if req.provider != "custom" and not req.base_url:
+-                remove_keys.add("LLM_BASE_URL")
++                remove_keys.update({"LLM_BASE_URL", "OMICSCLAW_BASE_URL"})
+         _update_env_file(env_path, updates, remove_keys=remove_keys)
+ 
+     logger.info(
+@@ -3460,6 +3519,92 @@ def provider_supports_oauth(_name: str) -> bool:  # type: ignore[no-redef]
+     }
+ 
+ 
++@app.post("/providers/test")
++async def test_provider(req: ProviderTestRequest):
++    """Run a minimal live test against an OpenAI-compatible provider config."""
++    core = _get_core()
++    provider = str(req.provider or getattr(core, "LLM_PROVIDER_NAME", "") or "").strip()
++    model = str(req.model or getattr(core, "OMICSCLAW_MODEL", "") or "").strip()
++    base_url = str(req.base_url or "").strip()
++    api_key = str(req.api_key or "").strip()
++
++    _validate_custom_provider_input(
++        provider=provider,
++        model=model,
++        base_url=base_url,
++        allow_env_base_url=True,
++    )
++
++    try:
++        from omicsclaw.core.provider_runtime import (
++            provider_requires_api_key,
++            resolve_provider_runtime,
++        )
++    except Exception as exc:
++        raise HTTPException(500, detail=f"Provider runtime unavailable: {exc}") from exc
++
++    runtime = resolve_provider_runtime(
++        provider=provider,
++        base_url=base_url,
++        model=model,
++        api_key=api_key,
++    )
++    if not runtime.model:
++        raise HTTPException(400, detail="No model resolved for provider test.")
++    if provider_requires_api_key(runtime.provider) and not runtime.api_key:
++        raise HTTPException(400, detail="No API key resolved for provider test.")
++
++    start = time.monotonic()
++    client = AsyncOpenAI(
++        api_key=runtime.api_key,
++        base_url=runtime.base_url or None,
++        timeout=15.0,
++    )
++    try:
++        response = await client.chat.completions.create(
++            model=runtime.model,
++            messages=[{"role": "user", "content": "Say OK"}],
++            max_tokens=8,
++        )
++        content = str(response.choices[0].message.content or "").strip()
++    except Exception as exc:
++        duration_ms = int((time.monotonic() - start) * 1000)
++        return {
++            "ok": False,
++            "status": "failed",
++            "provider": runtime.provider,
++            "model": runtime.model,
++            "base_url": runtime.base_url,
++            "message": f"Live provider test failed: {exc}",
++            "duration_ms": duration_ms,
++        }
++    finally:
++        with suppress(Exception):
++            await client.close()
++
++    duration_ms = int((time.monotonic() - start) * 1000)
++    if not content:
++        return {
++            "ok": False,
++            "status": "failed",
++            "provider": runtime.provider,
++            "model": runtime.model,
++            "base_url": runtime.base_url,
++            "message": "Live provider test returned an empty response.",
++            "duration_ms": duration_ms,
++        }
++
++    return {
++        "ok": True,
++        "status": "passed",
++        "provider": runtime.provider,
++        "model": runtime.model,
++        "base_url": runtime.base_url,
++        "message": "Live provider test passed.",
++        "duration_ms": duration_ms,
++    }
++
++
+ # ---------------------------------------------------------------------------
+ # OAuth endpoints — Claude Pro/Max + OpenAI Codex login via ccproxy
+ # ---------------------------------------------------------------------------
+@@ -4316,7 +4461,18 @@ def _apply_chat_provider_switch(core: Any, provider_id: str, model: str) -> None
+     would let the chat run against the old model while the UI reports the
+     requested one.
+     """
+-    core.init(provider=provider_id, model=model)
++    _validate_custom_provider_input(
++        provider=provider_id,
++        model=model,
++        base_url="",
++        allow_env_base_url=True,
++    )
++    base_url = (
++        _read_first_env("LLM_BASE_URL", "OMICSCLAW_BASE_URL")
++        if str(provider_id or "").strip().lower() == "custom"
++        else ""
++    )
++    core.init(provider=provider_id, model=model, base_url=base_url or None)
+ 
+     env_path = _get_omicsclaw_env_path()
+     if env_path:
+@@ -4328,7 +4484,7 @@ def _apply_chat_provider_switch(core: Any, provider_id: str, model: str) -> None
+             updates["OMICSCLAW_MODEL"] = core.OMICSCLAW_MODEL
+         remove_keys: set[str] = {"CCPROXY_PORT"}
+         if provider_id != "custom":
+-            remove_keys.add("LLM_BASE_URL")
++            remove_keys.update({"LLM_BASE_URL", "OMICSCLAW_BASE_URL"})
+         _update_env_file(env_path, updates, remove_keys=remove_keys)
+ 
+     logger.info(
+@@ -4338,6 +4494,23 @@ def _apply_chat_provider_switch(core: Any, provider_id: str, model: str) -> None
+     )
+ 
+ 
++def _chat_request_requires_provider_reinit(core: Any, provider_id: str, model: str) -> bool:
++    requested_provider = str(provider_id or "").strip()
++    if not requested_provider:
++        return False
++
++    current_provider = str(getattr(core, "LLM_PROVIDER_NAME", "") or "").strip()
++    if requested_provider.lower() != current_provider.lower():
++        return True
++
++    requested_model = str(model or "").strip()
++    if not requested_model:
++        return False
++
++    current_model = str(getattr(core, "OMICSCLAW_MODEL", "") or "").strip()
++    return requested_model != current_model
++
++
+ # ---- Pydantic models for bridge endpoints --------------------------------
+ 
+ class BridgeStartRequest(BaseModel):
+diff --git a/omicsclaw/core/provider_registry.py b/omicsclaw/core/provider_registry.py
+index aa271fb6..b1a3ddf8 100644
+--- a/omicsclaw/core/provider_registry.py
++++ b/omicsclaw/core/provider_registry.py
+@@ -397,6 +397,10 @@ def resolve_provider(
+     """
+     source = os.environ if env is None else env
+     provider_key = str(provider or "").strip().lower()
++    requested_provider_key = provider_key
++    env_provider_key = str(
++        source.get("LLM_PROVIDER", "") or source.get("OMICSCLAW_PROVIDER", "") or ""
++    ).strip().lower()
+     resolved_key = str(api_key or "")
+ 
+     if not provider_key and not resolved_key:
+@@ -414,13 +418,38 @@ def resolve_provider(
+         provider_key,
+         ("", "", ""),
+     )
+-    env_base_url = (
++    provider_env_base_url = (
+         str(source.get(f"{provider_key.upper()}_BASE_URL", "") or "")
+         if provider_key
+         else ""
+     )
++    generic_env_applies = (
++        bool(env_provider_key and env_provider_key == provider_key)
++        or (not provider_key and not requested_provider_key)
++        or (requested_provider_key == "custom" and not env_provider_key)
++    )
++    generic_env_base_url = (
++        str(
++            source.get("LLM_BASE_URL", "")
++            or source.get("OMICSCLAW_BASE_URL", "")
++            or ""
++        )
++        if generic_env_applies
++        else ""
++    )
++    env_model = (
++        str(
++            source.get("OMICSCLAW_MODEL", "")
++            or source.get("LLM_MODEL", "")
++            or source.get("SPATIALCLAW_MODEL", "")
++            or ""
++        )
++        if generic_env_applies
++        else ""
++    )
++    env_base_url = provider_env_base_url or generic_env_base_url
+     resolved_url = str(base_url or env_base_url or preset_url or "") or None
+-    resolved_model = str(model or preset_model or "deepseek-v4-flash")
++    resolved_model = str(model or env_model or preset_model or "deepseek-v4-flash")
+     resolved_model, _normalized_from = normalize_model_for_provider(
+         provider_key,
+         resolved_model,
+@@ -431,11 +460,21 @@ def resolve_provider(
+     if not resolved_key and preset_key_env:
+         resolved_key = str(source.get(preset_key_env, "") or "")
+     if not resolved_key:
+-        resolved_key = str(
+-            source.get("LLM_API_KEY", "")
+-            or source.get("OPENAI_API_KEY", "")
+-            or ""
++        generic_key = (
++            str(
++                source.get("LLM_API_KEY", "")
++                or source.get("OMICSCLAW_API_KEY", "")
++                or ""
++            )
++            if generic_env_applies
++            else ""
++        )
++        openai_fallback = (
++            str(source.get("OPENAI_API_KEY", "") or "")
++            if provider_key in {"", "openai"}
++            else ""
+         )
++        resolved_key = str(generic_key or openai_fallback or "")
+ 
+     return resolved_url, resolved_model, resolved_key
+ 
+diff --git a/omicsclaw/interactive/interactive.py b/omicsclaw/interactive/interactive.py
+index 45e6c15b..6fff2f98 100644
+--- a/omicsclaw/interactive/interactive.py
++++ b/omicsclaw/interactive/interactive.py
+@@ -183,6 +183,29 @@
+ _OMICSCLAW_DIR = Path(__file__).resolve().parent.parent.parent
+ 
+ 
++def _configure_cli_loggers() -> None:
++    """Keep chat output focused on user-visible response text."""
++    cli_log_level = os.environ.get("OMICSCLAW_LOG_LEVEL", "ERROR").upper()
++    level = getattr(logging, cli_log_level, None)
++    if not isinstance(level, int):
++        level = logging.ERROR
++    for noisy in (
++        "omicsclaw.bot",
++        "omicsclaw.knowledge",
++        "omicsclaw.knowledge.knowhow",
++        "omicsclaw.core",
++        "omicsclaw.memory",
++        "omicsclaw.memory.snapshot",
++        "omicsclaw.runtime",
++        "omicsclaw.runtime.context",
++        "omicsclaw.runtime.context_layers",
++        "httpx",
++        "httpcore",
++        "openai",
++    ):
++        logging.getLogger(noisy).setLevel(level)
++
++
+ # ---------------------------------------------------------------------------
+ # Banner
+ # ---------------------------------------------------------------------------
+@@ -1346,18 +1369,12 @@ def _init_llm(config: dict) -> tuple[str, str]:
+         import bot.core as core
+         load_project_dotenv(_OMICSCLAW_DIR, override=False)
+ 
+-        provider = os.environ.get("LLM_PROVIDER", config.get("provider", ""))
+-        api_key = os.environ.get("LLM_API_KEY", config.get("api_key", ""))
+-        model = os.environ.get("OMICSCLAW_MODEL", config.get("model", ""))
+-        base_url = os.environ.get("LLM_BASE_URL", config.get("base_url", ""))
++        provider = str(config.get("provider", "") or os.environ.get("LLM_PROVIDER", "") or "")
++        api_key = str(config.get("api_key", "") or os.environ.get("LLM_API_KEY", "") or "")
++        model = str(config.get("model", "") or os.environ.get("OMICSCLAW_MODEL", "") or "")
++        base_url = str(config.get("base_url", "") or os.environ.get("LLM_BASE_URL", "") or "")
+ 
+-        import logging
+-        logging.getLogger("omicsclaw.bot").setLevel(logging.WARNING)
+-        # Suppress verbose loggers in CLI mode to make output cleaner
+-        logging.getLogger("httpx").setLevel(logging.WARNING)
+-        logging.getLogger("httpcore").setLevel(logging.WARNING)
+-        logging.getLogger("omicsclaw.memory").setLevel(logging.WARNING)
+-        logging.getLogger("omicsclaw.memory.snapshot").setLevel(logging.WARNING)
++        _configure_cli_loggers()
+ 
+         core.init(
+             api_key=api_key,
+@@ -1746,22 +1763,18 @@ async def _async_interactive_loop(
+         )
+         return
+ 
+-    # Init LLM
+-    resolved_model, resolved_provider = _init_llm(config)
++    # Quiet noisy loggers in interactive mode to prevent analysis logs from
++    # flooding the terminal.  Override with OMICSCLAW_LOG_LEVEL=INFO.
++    _configure_cli_loggers()
++
++    init_config = {**config}
+     if model:
+-        resolved_model = model
++        init_config["model"] = model
+     if provider:
+-        resolved_provider = provider
++        init_config["provider"] = provider
+ 
+-    # Quiet noisy loggers in interactive mode to prevent analysis logs from
+-    # flooding the terminal.  Override with OMICSCLAW_LOG_LEVEL=INFO.
+-    _cli_log_level = os.environ.get("OMICSCLAW_LOG_LEVEL", "WARNING").upper()
+-    for noisy in (
+-        "omicsclaw.bot", "omicsclaw.knowledge", "omicsclaw.core",
+-        "omicsclaw.memory", "omicsclaw.runtime", "omicsclaw.runtime.context_layers",
+-        "httpx", "httpcore", "openai",
+-    ):
+-        logging.getLogger(noisy).setLevel(getattr(logging, _cli_log_level, logging.WARNING))
++    # Init LLM
++    resolved_model, resolved_provider = _init_llm(init_config)
+ 
+     # Initialise session
+     effective_session_id = session_id or generate_session_id()
+@@ -2240,8 +2253,13 @@ async def _single_shot(
+     config: dict | None = None,
+ ) -> None:
+     """Run a single prompt without entering interactive loop."""
+-    config = config or {}
+-    resolved_model, resolved_provider = _init_llm(config)
++    init_config = dict(config or {})
++    if model:
++        init_config["model"] = model
++    if provider:
++        init_config["provider"] = provider
++    _configure_cli_loggers()
++    resolved_model, _ = _init_llm(init_config)
+ 
+     session_id = generate_session_id()
+     messages: list[dict] = [{"role": "user", "content": prompt}]
+diff --git a/omicsclaw/memory/__init__.py b/omicsclaw/memory/__init__.py
+index c3d64f0b..00636fee 100644
+--- a/omicsclaw/memory/__init__.py
++++ b/omicsclaw/memory/__init__.py
+@@ -22,10 +22,11 @@
+     result = await graph.create_memory("", "Hello", priority=0, title="greeting", domain="core")
+ """
+ 
++from __future__ import annotations
++
+ import os
+ from typing import Optional, TYPE_CHECKING
+ 
+-from .database import DatabaseManager
+ from .scoped_memory import (
+     DEFAULT_SCOPED_MEMORY_SCOPE,
+     SCOPED_MEMORY_DIRNAME,
+@@ -49,17 +50,14 @@
+ )
+ from .scoped_memory_select import ScopedMemoryRecall, load_scoped_memory_context
+ from .snapshot import ChangesetStore, get_changeset_store
+-from .models import (
+-    Base, ROOT_NODE_UUID, Node, Memory, Edge, Path,
+-    GlossaryKeyword, SearchDocument, ChangeCollector,
+-)
+ 
+ if TYPE_CHECKING:
++    from .database import DatabaseManager
+     from .graph import GraphService
+     from .search import SearchIndexer
+     from .glossary import GlossaryService
+ 
+-_db_manager: Optional[DatabaseManager] = None
++_db_manager: Optional["DatabaseManager"] = None
+ _graph_service: Optional["GraphService"] = None
+ _search_indexer: Optional["SearchIndexer"] = None
+ _glossary_service: Optional["GlossaryService"] = None
+@@ -70,6 +68,7 @@ def _ensure_initialized():
+     if _db_manager is not None:
+         return
+ 
++    from .database import DatabaseManager
+     from .search import SearchIndexer
+     from .glossary import GlossaryService
+     from .graph import GraphService
+@@ -103,6 +102,31 @@ def get_glossary_service() -> "GlossaryService":
+     return _glossary_service  # type: ignore[return-value]
+ 
+ 
++def __getattr__(name: str):
++    if name == "DatabaseManager":
++        from .database import DatabaseManager
++
++        return DatabaseManager
++
++    model_exports = {
++        "Base",
++        "ROOT_NODE_UUID",
++        "Node",
++        "Memory",
++        "Edge",
++        "Path",
++        "GlossaryKeyword",
++        "SearchDocument",
++        "ChangeCollector",
++    }
++    if name in model_exports:
++        from . import models
++
++        return getattr(models, name)
++
++    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
++
++
+ async def close_db():
+     """Tear down all services and close the database connection."""
+     global _db_manager, _graph_service, _search_indexer, _glossary_service
+diff --git a/omicsclaw/runtime/query_engine.py b/omicsclaw/runtime/query_engine.py
+index b7977608..80e971e2 100644
+--- a/omicsclaw/runtime/query_engine.py
++++ b/omicsclaw/runtime/query_engine.py
+@@ -178,6 +178,13 @@ def _is_prompt_too_long_error(exc: BaseException) -> bool:
+     return any(pattern in message for pattern in patterns)
+ 
+ 
++_EMPTY_COMPLETION_MESSAGE = (
++    "LLM provider returned an empty completion. Check that the configured "
++    "provider endpoint is OpenAI-compatible, the model name is valid, and for "
++    "custom endpoints include the API base path such as /v1 when required."
++)
++
++
+ def _merge_response_segments(segments: list[str], current: str) -> str:
+     merged = [
+         segment.strip()
+@@ -185,7 +192,7 @@ def _merge_response_segments(segments: list[str], current: str) -> str:
+         if segment and segment.strip()
+     ]
+     if not merged:
+-        return "(no response)"
++        return _EMPTY_COMPLETION_MESSAGE
+     return "\n\n".join(merged)
+ 
+ 
+diff --git a/tests/test_app_server.py b/tests/test_app_server.py
+index aa47fcbd..6fc7e882 100644
+--- a/tests/test_app_server.py
++++ b/tests/test_app_server.py
+@@ -1620,6 +1620,331 @@ def init(self, **kwargs):
+     assert "connection refused" in detail
+ 
+ 
++@pytest.mark.asyncio
++async def test_chat_stream_reapplies_provider_when_model_changes(monkeypatch):
++    """Custom Endpoint keeps the same provider id while users edit model names.
++
++    The chat request must still reinitialise the runtime when the model differs;
++    otherwise the status event claims the requested model while the underlying
++    AsyncOpenAI client still points at the previous model/provider runtime.
++    """
++    pytest.importorskip("fastapi")
++
++    from omicsclaw.app import server
++
++    captured: dict[str, object] = {}
++
++    class FakeCore:
++        LLM_PROVIDER_NAME = "custom"
++        OMICSCLAW_MODEL = "old-model"
++        received_files: list[object] = []
++
++        def init(self, **kwargs):
++            captured["init"] = kwargs
++            self.LLM_PROVIDER_NAME = kwargs.get("provider") or self.LLM_PROVIDER_NAME
++            self.OMICSCLAW_MODEL = kwargs.get("model") or self.OMICSCLAW_MODEL
++
++        _skill_registry = staticmethod(lambda: SimpleNamespace(skills={}))
++        get_tool_executors = staticmethod(lambda: {})
++        _accumulate_usage = staticmethod(lambda response_usage: {})
++
++        async def llm_tool_loop(self, **kwargs):
++            captured["model_override"] = kwargs.get("model_override")
++            return "ok"
++
++    monkeypatch.setattr(server, "_core", FakeCore(), raising=False)
++    monkeypatch.setattr(server, "_mcp_load_fn", None, raising=False)
++    monkeypatch.setattr(server, "_get_omicsclaw_env_path", lambda: None, raising=False)
++    monkeypatch.setenv("LLM_BASE_URL", "https://api.example.com/v1")
++
++    response = await server.chat_stream(
++        server.ChatRequest(
++            session_id="session-custom-model-change",
++            content="hello",
++            provider_id="custom",
++            model="new-model",
++        )
++    )
++    payload = await _read_streaming_response(response)
++
++    assert '"ok"' in payload
++    assert captured["init"] == {
++        "provider": "custom",
++        "model": "new-model",
++        "base_url": "https://api.example.com/v1",
++    }
++    assert captured["model_override"] == "new-model"
++
++
++@pytest.mark.asyncio
++async def test_chat_stream_provider_config_preserves_custom_env_base_url(monkeypatch):
++    pytest.importorskip("fastapi")
++
++    from omicsclaw.app import server
++
++    captured: dict[str, object] = {}
++
++    class FakeCore:
++        LLM_PROVIDER_NAME = "deepseek"
++        OMICSCLAW_MODEL = "deepseek-v4-flash"
++        received_files: list[object] = []
++
++        def init(self, **kwargs):
++            captured["init"] = kwargs
++            self.LLM_PROVIDER_NAME = kwargs.get("provider") or self.LLM_PROVIDER_NAME
++            self.OMICSCLAW_MODEL = kwargs.get("model") or self.OMICSCLAW_MODEL
++
++        _skill_registry = staticmethod(lambda: SimpleNamespace(skills={}))
++        get_tool_executors = staticmethod(lambda: {})
++        _accumulate_usage = staticmethod(lambda response_usage: {})
++
++        async def llm_tool_loop(self, **kwargs):
++            return "ok"
++
++    monkeypatch.setattr(server, "_core", FakeCore(), raising=False)
++    monkeypatch.setattr(server, "_mcp_load_fn", None, raising=False)
++    monkeypatch.setattr(server, "_get_omicsclaw_env_path", lambda: None, raising=False)
++    monkeypatch.setenv("LLM_BASE_URL", "https://api.example.com/v1")
++
++    response = await server.chat_stream(
++        server.ChatRequest(
++            session_id="session-custom-provider-config",
++            content="hello",
++            provider_config=server.ProviderConfig(
++                provider="custom",
++                model="custom-model",
++            ),
++        )
++    )
++    payload = await _read_streaming_response(response)
++
++    assert '"ok"' in payload
++    assert captured["init"] == {
++        "api_key": "",
++        "base_url": "https://api.example.com/v1",
++        "model": "custom-model",
++        "provider": "custom",
++    }
++
++
++@pytest.mark.asyncio
++async def test_chat_stream_provider_config_rejects_incomplete_custom_endpoint(monkeypatch):
++    pytest.importorskip("fastapi")
++
++    from fastapi import HTTPException
++
++    from omicsclaw.app import server
++
++    class FakeCore:
++        LLM_PROVIDER_NAME = "deepseek"
++        OMICSCLAW_MODEL = "deepseek-v4-flash"
++
++        def init(self, **kwargs):
++            raise AssertionError("incomplete custom provider should fail before core.init")
++
++    monkeypatch.setattr(server, "_core", FakeCore(), raising=False)
++    monkeypatch.setattr(server, "_mcp_load_fn", None, raising=False)
++    monkeypatch.setenv("LLM_BASE_URL", "https://api.example.com/v1")
++
++    with pytest.raises(HTTPException) as excinfo:
++        await server.chat_stream(
++            server.ChatRequest(
++                session_id="session-custom-provider-config-invalid",
++                content="hello",
++                provider_config=server.ProviderConfig(provider="custom"),
++            )
++        )
++
++    assert excinfo.value.status_code == 400
++    assert "model" in str(excinfo.value.detail).lower()
++
++
++@pytest.mark.asyncio
++async def test_switch_provider_clears_legacy_base_url_alias(monkeypatch):
++    pytest.importorskip("fastapi")
++
++    from omicsclaw.app import server
++
++    captured_remove_keys: set[str] = set()
++
++    class FakeCore:
++        LLM_PROVIDER_NAME = "openai"
++        OMICSCLAW_MODEL = "gpt-5.5"
++
++        def init(self, **kwargs):
++            self.LLM_PROVIDER_NAME = kwargs.get("provider") or self.LLM_PROVIDER_NAME
++            self.OMICSCLAW_MODEL = kwargs.get("model") or self.OMICSCLAW_MODEL
++
++    def fake_update_env_file(env_path, updates, *, remove_keys=None):
++        captured_remove_keys.update(remove_keys or set())
++
++    monkeypatch.setattr(server, "_get_core", lambda: FakeCore())
++    monkeypatch.setattr(server, "_get_omicsclaw_env_path", lambda: Path("/tmp/.env"))
++    monkeypatch.setattr(server, "_update_env_file", fake_update_env_file)
++
++    await server.switch_provider(
++        server.ProviderSwitchRequest(
++            provider="openai",
++            api_key="sk-test",
++            model="gpt-5.5",
++        )
++    )
++
++    assert "LLM_BASE_URL" in captured_remove_keys
++    assert "OMICSCLAW_BASE_URL" in captured_remove_keys
++
++
++def test_apply_chat_provider_switch_clears_legacy_base_url_alias(monkeypatch):
++    pytest.importorskip("fastapi")
++
++    from omicsclaw.app import server
++
++    captured_remove_keys: set[str] = set()
++
++    class FakeCore:
++        LLM_PROVIDER_NAME = "custom"
++        OMICSCLAW_MODEL = "custom-model"
++
++        def init(self, **kwargs):
++            self.LLM_PROVIDER_NAME = kwargs.get("provider") or self.LLM_PROVIDER_NAME
++            self.OMICSCLAW_MODEL = kwargs.get("model") or self.OMICSCLAW_MODEL
++
++    def fake_update_env_file(env_path, updates, *, remove_keys=None):
++        captured_remove_keys.update(remove_keys or set())
++
++    monkeypatch.setattr(server, "_get_omicsclaw_env_path", lambda: Path("/tmp/.env"))
++    monkeypatch.setattr(server, "_update_env_file", fake_update_env_file)
++
++    server._apply_chat_provider_switch(FakeCore(), "openai", "gpt-5.5")
++
++    assert "LLM_BASE_URL" in captured_remove_keys
++    assert "OMICSCLAW_BASE_URL" in captured_remove_keys
++
++
++@pytest.mark.asyncio
++async def test_switch_provider_rejects_incomplete_custom_endpoint(monkeypatch):
++    pytest.importorskip("fastapi")
++
++    from fastapi import HTTPException
++
++    from omicsclaw.app import server
++
++    class FakeCore:
++        LLM_PROVIDER_NAME = "deepseek"
++        OMICSCLAW_MODEL = "deepseek-v4-flash"
++
++        def init(self, **kwargs):
++            raise AssertionError("incomplete custom provider should fail before core.init")
++
++    monkeypatch.setattr(server, "_get_core", lambda: FakeCore())
++
++    with pytest.raises(HTTPException) as excinfo:
++        await server.switch_provider(
++            server.ProviderSwitchRequest(
++                provider="custom",
++                api_key="sk-test",
++                base_url="https://api.example.com/v1",
++                model="",
++            )
++        )
++
++    assert excinfo.value.status_code == 400
++    assert "model" in str(excinfo.value.detail).lower()
++
++
++@pytest.mark.asyncio
++async def test_list_providers_reflects_active_custom_endpoint(monkeypatch):
++    pytest.importorskip("fastapi")
++
++    from omicsclaw.app import server
++
++    class FakeCore:
++        LLM_PROVIDER_NAME = "custom"
++        OMICSCLAW_MODEL = "qwen-plus"
++
++    monkeypatch.setattr(server, "_core", FakeCore, raising=False)
++    monkeypatch.setenv("LLM_PROVIDER", "custom")
++    monkeypatch.setenv("LLM_BASE_URL", "https://api.example.com/v1")
++    monkeypatch.setenv("LLM_API_KEY", "sk-test")
++
++    payload = await server.list_providers()
++    custom = next(item for item in payload["providers"] if item["name"] == "custom")
++
++    assert custom["active"] is True
++    assert custom["configured"] is True
++    assert custom["base_url"] == "https://api.example.com/v1"
++    assert custom["default_model"] == "qwen-plus"
++    assert payload["current_model"] == "qwen-plus"
++
++
++@pytest.mark.asyncio
++async def test_provider_test_closes_async_openai_client(monkeypatch):
++    pytest.importorskip("fastapi")
++
++    from omicsclaw.app import server
++
++    clients: list[object] = []
++    fail_request = False
++
++    class FakeAsyncOpenAI:
++        def __init__(self, **kwargs):
++            self.kwargs = kwargs
++            self.closed = False
++            self.chat = SimpleNamespace(
++                completions=SimpleNamespace(create=self._create)
++            )
++            clients.append(self)
++
++        async def _create(self, **kwargs):
++            if fail_request:
++                raise RuntimeError("provider unreachable")
++            return SimpleNamespace(
++                choices=[
++                    SimpleNamespace(
++                        message=SimpleNamespace(content="OK"),
++                    )
++                ]
++            )
++
++        async def close(self):
++            self.closed = True
++
++    class FakeCore:
++        LLM_PROVIDER_NAME = ""
++        OMICSCLAW_MODEL = ""
++
++    monkeypatch.setattr(server, "_get_core", lambda: FakeCore())
++    monkeypatch.setattr(server, "AsyncOpenAI", FakeAsyncOpenAI)
++
++    result = await server.test_provider(
++        server.ProviderTestRequest(
++            provider="custom",
++            model="qwen-plus",
++            base_url="https://api.example.com/v1",
++            api_key="sk-test",
++        )
++    )
++
++    assert result["ok"] is True
++    assert len(clients) == 1
++    assert clients[0].closed is True
++
++    fail_request = True
++    result = await server.test_provider(
++        server.ProviderTestRequest(
++            provider="custom",
++            model="qwen-plus",
++            base_url="https://api.example.com/v1",
++            api_key="sk-test",
++        )
++    )
++
++    assert result["ok"] is False
++    assert "provider unreachable" in result["message"]
++    assert len(clients) == 2
++    assert clients[1].closed is True
++
++
+ @pytest.mark.asyncio
+ async def test_chat_stream_omits_adaptive_thinking_for_siliconflow(monkeypatch):
+     """SiliconFlow gateway rejects non-standard thinking types — adaptive must omit."""
+diff --git a/tests/test_bot_core_timeout.py b/tests/test_bot_core_timeout.py
+index 2fca2aaf..16f7617f 100644
+--- a/tests/test_bot_core_timeout.py
++++ b/tests/test_bot_core_timeout.py
+@@ -1,5 +1,9 @@
+ from __future__ import annotations
+ 
++import builtins
++import sys
++from types import SimpleNamespace
++
+ import httpx
+ import pytest
+ from openai import OpenAIError
+@@ -76,6 +80,104 @@ def __init__(self, **kwargs):
+     assert captured["timeout"].read == 30.0
+ 
+ 
++def test_init_uses_generic_custom_env_without_explicit_args(monkeypatch):
++    captured: dict[str, object] = {}
++
++    class _FakeAsyncOpenAI:
++        def __init__(self, **kwargs):
++            captured.update(kwargs)
++
++    _clear_llm_env(monkeypatch)
++    monkeypatch.setattr(core, "AsyncOpenAI", _FakeAsyncOpenAI)
++    monkeypatch.setenv("OMICSCLAW_MEMORY_ENABLED", "false")
++    monkeypatch.setenv("LLM_PROVIDER", "custom")
++    monkeypatch.setenv("LLM_BASE_URL", "https://custom.example.com/v1")
++    monkeypatch.setenv("OMICSCLAW_MODEL", "custom-env-model")
++    monkeypatch.setenv("LLM_API_KEY", "generic-key")
++
++    core.init()
++
++    assert core.LLM_PROVIDER_NAME == "custom"
++    assert core.OMICSCLAW_MODEL == "custom-env-model"
++    assert captured["api_key"] == "generic-key"
++    assert captured["base_url"] == "https://custom.example.com/v1"
++
++
++def test_init_disables_memory_when_graph_dependencies_missing(monkeypatch):
++    captured: dict[str, object] = {}
++    original_import = builtins.__import__
++
++    memory_module = SimpleNamespace()
++    monkeypatch.setitem(sys.modules, "omicsclaw.memory.database", memory_module)
++
++    class _FakeAsyncOpenAI:
++        def __init__(self, **kwargs):
++            captured.update(kwargs)
++
++    def _guarded_import(name, *args, **kwargs):
++        if name == "sqlalchemy" or name.startswith("sqlalchemy."):
++            raise ModuleNotFoundError("No module named 'sqlalchemy'")
++        return original_import(name, *args, **kwargs)
++
++    _clear_llm_env(monkeypatch)
++    for name in list(sys.modules):
++        if name == "omicsclaw.memory" or name.startswith("omicsclaw.memory."):
++            monkeypatch.delitem(sys.modules, name, raising=False)
++    monkeypatch.setattr(core, "AsyncOpenAI", _FakeAsyncOpenAI)
++    monkeypatch.setattr(core, "memory_store", object())
++    monkeypatch.setattr(core, "session_manager", object())
++    monkeypatch.setattr(builtins, "__import__", _guarded_import)
++    monkeypatch.setenv("OMICSCLAW_MEMORY_ENABLED", "true")
++
++    core.init(
++        api_key="test-key",
++        base_url="https://example.com/v1",
++        model="test-model",
++        provider="custom",
++    )
++
++    assert captured["api_key"] == "test-key"
++    assert core.memory_store is None
++    assert core.session_manager is None
++    assert "omicsclaw.memory.database" not in sys.modules
++
++
++def test_format_llm_api_error_mentions_custom_endpoint_base_url(monkeypatch):
++    from omicsclaw.core import provider_runtime
++
++    provider_runtime.clear_active_provider_runtime()
++    monkeypatch.setattr(core, "LLM_PROVIDER_NAME", "custom")
++    monkeypatch.setattr(core, "OMICSCLAW_MODEL", "gpt-5.4")
++    monkeypatch.setenv("LLM_BASE_URL", "https://api.biom.autos")
++
++    message = core._format_llm_api_error_message(Exception("Connection error."))
++
++    assert "https://api.biom.autos" in message
++    assert "/v1" in message
++    assert "Connection error" in message
++
++
++def test_format_llm_api_error_prefers_active_runtime_base_url(monkeypatch):
++    from omicsclaw.core import provider_runtime
++
++    monkeypatch.setattr(core, "LLM_PROVIDER_NAME", "custom")
++    monkeypatch.setenv("LLM_BASE_URL", "https://stale.example.com/v1")
++    provider_runtime.set_active_provider_runtime(
++        provider="custom",
++        base_url="https://active.example.com/v1",
++        model="custom-model",
++        api_key="runtime-key",
++    )
++
++    try:
++        message = core._format_llm_api_error_message(Exception("Connection error."))
++    finally:
++        provider_runtime.clear_active_provider_runtime()
++
++    assert "https://active.example.com/v1" in message
++    assert "https://stale.example.com/v1" not in message
++
++
+ def test_init_allows_missing_credentials_when_requested(monkeypatch):
+     class _UnexpectedAsyncOpenAI:
+         def __init__(self, **kwargs):
+diff --git a/tests/test_interactive_loop.py b/tests/test_interactive_loop.py
+index a2c56a76..1f5d3461 100644
+--- a/tests/test_interactive_loop.py
++++ b/tests/test_interactive_loop.py
+@@ -2,6 +2,9 @@
+ 
+ import inspect
+ import io
++import logging
++import os
++import subprocess
+ import sys
+ from types import ModuleType
+ from types import SimpleNamespace
+@@ -18,6 +21,38 @@
+ )
+ 
+ 
++def test_interactive_import_does_not_require_graph_memory_dependencies():
++    env = dict(os.environ)
++    env["OMICSCLAW_MEMORY_ENABLED"] = "false"
++    code = """
++import builtins
++
++original_import = builtins.__import__
++
++def guarded_import(name, *args, **kwargs):
++    if name == "sqlalchemy" or name.startswith("sqlalchemy."):
++        raise ModuleNotFoundError("No module named 'sqlalchemy'")
++    return original_import(name, *args, **kwargs)
++
++builtins.__import__ = guarded_import
++import omicsclaw.interactive.interactive
++print("ok")
++"""
++    result = subprocess.run(
++        [sys.executable, "-c", code],
++        cwd=str(interactive._OMICSCLAW_DIR),
++        env=env,
++        text=True,
++        stdout=subprocess.PIPE,
++        stderr=subprocess.PIPE,
++        timeout=20,
++        check=False,
++    )
++
++    assert result.returncode == 0, result.stderr
++    assert "ok" in result.stdout
++
++
+ @pytest.mark.asyncio
+ async def test_stream_llm_response_uses_explicit_workspace_context(monkeypatch):
+     captured: dict[str, object] = {}
+@@ -123,6 +158,92 @@ def spy(self, *args, **kwargs):
+     assert calls == []
+ 
+ 
++def test_init_llm_prefers_explicit_config_over_environment(monkeypatch):
++    captured: dict[str, str | None] = {}
++    core_module = ModuleType("bot.core")
++    core_module.OMICSCLAW_MODEL = "config-model"
++    core_module.LLM_PROVIDER_NAME = "custom"
++
++    def _init(**kwargs):
++        captured.update(kwargs)
++        core_module.OMICSCLAW_MODEL = str(kwargs["model"])
++        core_module.LLM_PROVIDER_NAME = str(kwargs["provider"])
++
++    core_module.init = _init
++    bot_package = ModuleType("bot")
++    bot_package.core = core_module
++
++    monkeypatch.setitem(sys.modules, "bot", bot_package)
++    monkeypatch.setitem(sys.modules, "bot.core", core_module)
++    monkeypatch.setenv("LLM_PROVIDER", "openai")
++    monkeypatch.setenv("LLM_API_KEY", "env-key")
++    monkeypatch.setenv("OMICSCLAW_MODEL", "env-model")
++    monkeypatch.setenv("LLM_BASE_URL", "https://env.example/v1")
++
++    model, provider = interactive._init_llm(
++        {
++            "provider": "custom",
++            "api_key": "config-key",
++            "model": "config-model",
++            "base_url": "https://config.example/v1",
++        }
++    )
++
++    assert captured == {
++        "api_key": "config-key",
++        "base_url": "https://config.example/v1",
++        "model": "config-model",
++        "provider": "custom",
++    }
++    assert model == "config-model"
++    assert provider == "custom"
++
++
++def test_configure_cli_loggers_falls_back_to_error_for_invalid_env(monkeypatch):
++    monkeypatch.setenv("OMICSCLAW_LOG_LEVEL", "INF0")
++
++    interactive._configure_cli_loggers()
++
++    assert logging.getLogger("openai").level == logging.ERROR
++
++
++@pytest.mark.asyncio
++async def test_single_shot_passes_cli_model_and_provider_to_init(monkeypatch):
++    captured: dict[str, str] = {}
++
++    def _fake_init(config):
++        captured.update(config)
++        return "cli-model", "custom"
++
++    async def _fake_stream_response(messages, **kwargs):
++        messages.append({"role": "assistant", "content": "OK"})
++        return "OK"
++
++    async def _fake_save_session(*args, **kwargs):
++        return None
++
++    monkeypatch.setattr(interactive, "_init_llm", _fake_init)
++    monkeypatch.setattr(interactive, "_stream_llm_response", _fake_stream_response)
++    monkeypatch.setattr(interactive, "save_session", _fake_save_session)
++    monkeypatch.setattr(
++        interactive,
++        "console",
++        Console(file=io.StringIO(), force_terminal=False),
++    )
++
++    await interactive._single_shot(
++        prompt="Say OK",
++        workspace_dir="/tmp/workspace",
++        model="cli-model",
++        provider="custom",
++        config={"base_url": "https://config.example/v1"},
++    )
++
++    assert captured["model"] == "cli-model"
++    assert captured["provider"] == "custom"
++    assert captured["base_url"] == "https://config.example/v1"
++
++
+ @pytest.mark.asyncio
+ async def test_stream_llm_response_formats_markdown_for_cli(monkeypatch):
+     output = io.StringIO()
+diff --git a/tests/test_provider_registry.py b/tests/test_provider_registry.py
+index 2e0a0b69..2c512f5f 100644
+--- a/tests/test_provider_registry.py
++++ b/tests/test_provider_registry.py
+@@ -148,6 +148,47 @@ def test_resolve_provider_custom_preserves_explicit_endpoint(monkeypatch):
+     assert resolved_key == "generic-key"
+ 
+ 
++def test_resolve_provider_uses_generic_custom_env_when_detected(monkeypatch):
++    monkeypatch.setenv("LLM_PROVIDER", "custom")
++    monkeypatch.setenv("LLM_BASE_URL", "https://custom.example.com/v1")
++    monkeypatch.setenv("OMICSCLAW_MODEL", "custom-env-model")
++    monkeypatch.setenv("LLM_API_KEY", "generic-key")
++
++    resolved_url, resolved_model, resolved_key = resolve_provider()
++
++    assert resolved_url == "https://custom.example.com/v1"
++    assert resolved_model == "custom-env-model"
++    assert resolved_key == "generic-key"
++
++
++def test_resolve_provider_ignores_stale_generic_env_for_explicit_provider(monkeypatch):
++    monkeypatch.setenv("LLM_PROVIDER", "custom")
++    monkeypatch.setenv("LLM_BASE_URL", "https://custom.example.com/v1")
++    monkeypatch.setenv("OMICSCLAW_MODEL", "custom-env-model")
++    monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
++
++    resolved_url, resolved_model, resolved_key = resolve_provider(provider="openai")
++
++    assert resolved_url is None
++    assert resolved_model == "gpt-5.5"
++    assert resolved_key == "openai-key"
++
++
++def test_resolve_provider_does_not_leak_openai_key_to_custom(monkeypatch):
++    monkeypatch.setenv("LLM_PROVIDER", "openai")
++    monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
++
++    resolved_url, resolved_model, resolved_key = resolve_provider(
++        provider="custom",
++        base_url="https://custom.example.com/v1",
++        model="custom-model",
++    )
++
++    assert resolved_url == "https://custom.example.com/v1"
++    assert resolved_model == "custom-model"
++    assert resolved_key == ""
++
++
+ def test_normalize_model_for_provider_rewrites_foreign_default_model():
+     normalized, foreign_provider = normalize_model_for_provider(
+         provider="anthropic",
+diff --git a/tests/test_query_engine.py b/tests/test_query_engine.py
+index 94d40255..1e1ad130 100644
+--- a/tests/test_query_engine.py
++++ b/tests/test_query_engine.py
+@@ -236,6 +236,33 @@ def test_run_query_engine_uses_llm_error_callback(tmp_path):
+     assert result == "handled: boom"
+ 
+ 
++def test_run_query_engine_reports_empty_llm_completion(tmp_path):
++    llm = _FakeLLM(responses=[_FakeResponse(_FakeMessage(content="", tool_calls=None))])
++    transcript_store = TranscriptStore(sanitizer=sanitize_tool_history)
++    result_store = ToolResultStore(storage_dir=tmp_path / "tool_results")
++    runtime = ToolRegistry([]).build_runtime({})
++
++    result = asyncio.run(
++        run_query_engine(
++            llm=llm,
++            context=QueryEngineContext(
++                chat_id="chat-empty",
++                session_id="session-empty",
++                system_prompt="SYSTEM",
++                user_message_content="say something",
++            ),
++            tool_runtime=runtime,
++            transcript_store=transcript_store,
++            tool_result_store=result_store,
++            config=QueryEngineConfig(model="fake-model"),
++        )
++    )
++
++    assert result != "(no response)"
++    assert "empty completion" in result.lower()
++    assert "provider" in result.lower()
++
++
+ def test_run_query_engine_streams_reasoning_and_text(tmp_path):
+     llm = _FakeLLM(
+         events=[

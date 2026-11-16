@@ -1,0 +1,387 @@
+diff --git a/omicsclaw/app/server.py b/omicsclaw/app/server.py
+index 7a566b71..06c6dc36 100644
+--- a/omicsclaw/app/server.py
++++ b/omicsclaw/app/server.py
+@@ -3009,16 +3009,50 @@ async def memory_children(
+ # -- GET /memory/domains ----------------------------------------------------
+ 
+ @app.get("/memory/domains")
+-async def memory_domains():
+-    """List all memory domains with node counts."""
++async def memory_domains(
++    namespace: Optional[str] = Query(
++        None,
++        description=(
++            "Optional override. Omit for the desktop user's own scope "
++            "(its namespace + ``__shared__``). Pass a concrete namespace "
++            "(``app/foo``) to inspect that partition + shared. Pass an "
++            "empty string for the admin view — every partition aggregated."
++        ),
++    ),
++):
++    """List memory domains with node counts.
++
++    Default scope mirrors what the desktop chat user can address. Pass
++    ``namespace=`` (empty) for an admin/debug view that surfaces data
++    written under any partition, including stale launch-id namespaces
++    or other multi-user slots.
++    """
+     if _memory_client is None:
+         raise HTTPException(503, detail="Memory system not available")
+ 
+     try:
+-        all_paths = await _memory_client.list_paths(
+-            domain=None,
+-            include_shared=True,
+-        )
++        from omicsclaw.memory import get_memory_engine
++
++        ns_value = namespace if isinstance(namespace, str) else None
++        if ns_value is None:
++            # Default: desktop user's reachable paths (own ns + shared).
++            all_paths = await _memory_client.list_paths(
++                domain=None,
++                include_shared=True,
++            )
++        elif ns_value == "":
++            # Admin view: aggregate every partition.
++            all_paths = await get_memory_engine().list_paths(
++                namespace=None,
++                domain=None,
++            )
++        else:
++            # Operator inspecting a specific partition.
++            all_paths = await get_memory_engine().list_paths(
++                namespace=ns_value,
++                domain=None,
++                include_shared=True,
++            )
+ 
+         # Group by domain and count
+         domain_counts: dict[str, int] = {}
+@@ -3036,6 +3070,34 @@ async def memory_domains():
+         raise HTTPException(500, detail=str(exc))
+ 
+ 
++# -- GET /memory/namespaces --------------------------------------------------
++
++@app.get("/memory/namespaces")
++async def memory_namespaces():
++    """List every namespace currently holding memory, plus the desktop's
++    own namespace.
++
++    Powers the admin/debug dropdown that lets an operator inspect a
++    specific partition via ``/memory/domains?namespace=<value>``. The
++    ``current`` field is the namespace the running ``_memory_client``
++    is bound to — so the UI can preselect it.
++    """
++    if _memory_client is None:
++        raise HTTPException(503, detail="Memory system not available")
++
++    try:
++        from omicsclaw.memory import desktop_namespace, get_memory_engine
++
++        names = await get_memory_engine().list_namespaces()
++        return {
++            "namespaces": names,
++            "current": desktop_namespace(),
++        }
++    except Exception as exc:
++        logger.exception("Memory namespaces error")
++        raise HTTPException(500, detail=str(exc))
++
++
+ # -- GET /memory/recent ------------------------------------------------------
+ 
+ @app.get("/memory/recent")
+diff --git a/omicsclaw/memory/engine.py b/omicsclaw/memory/engine.py
+index 6bb9fbff..3f1484e8 100644
+--- a/omicsclaw/memory/engine.py
++++ b/omicsclaw/memory/engine.py
+@@ -1475,10 +1475,23 @@ def _decode_legacy(content: str) -> str:
+             pass
+         return content
+ 
++    async def list_namespaces(self) -> list[str]:
++        """Return every distinct namespace that currently holds at least
++        one path, sorted for a stable display order.
++
++        Powers the admin/debug UI dropdown so an operator can find data
++        stranded in a stale partition (e.g. an old ``app/<launch-uuid>``
++        from before the namespace-stability fix).
++        """
++        async with self._db.session() as s:
++            stmt = select(Path.namespace).distinct().order_by(Path.namespace)
++            rows = (await s.execute(stmt)).all()
++            return [r[0] for r in rows]
++
+     async def list_paths(
+         self,
+         *,
+-        namespace: str,
++        namespace: Optional[str],
+         domain: Optional[str] = None,
+         include_shared: bool = False,
+     ) -> list[dict]:
+@@ -1489,11 +1502,19 @@ async def list_paths(
+         ``node_uuid``. Used by ``/memory/domains`` to count nodes per
+         domain and by power-user tooling that wants the full path list.
+ 
+-        ``include_shared=True`` returns rows from ``namespace`` *or*
+-        ``__shared__``, deduped by ``(domain, path)`` so the same URI
+-        never appears twice — the namespace-matched copy wins via
+-        ordering, mirroring ``GraphService.get_all_paths`` scoped-view.
++        ``namespace=None`` is the admin view: every partition's paths
++        are returned, deduped by ``(namespace, domain, path)`` so each
++        row appears once. ``include_shared`` becomes a no-op in this
++        mode (shared rows are already included). Used by
++        ``/memory/domains?namespace=`` (empty value) to expose data
++        written under stale launch-id partitions.
++
++        ``include_shared=True`` (with a concrete ``namespace``) returns
++        rows from ``namespace`` *or* ``__shared__``, deduped by
++        ``(domain, path)`` so the same URI never appears twice — the
++        namespace-matched copy wins via ordering.
+         """
++        admin_view = namespace is None
+         async with self._db.session() as s:
+             stmt = (
+                 select(Path, Edge, Memory)
+@@ -1509,7 +1530,9 @@ async def list_paths(
+             )
+             if domain is not None:
+                 stmt = stmt.where(Path.domain == domain)
+-            if include_shared:
++            if admin_view:
++                pass  # No namespace filter — every partition is in scope.
++            elif include_shared:
+                 stmt = stmt.where(
+                     Path.namespace.in_([namespace, SHARED_NAMESPACE])
+                 )
+@@ -1522,15 +1545,23 @@ async def list_paths(
+             # Within scoped+include_shared, order namespace-matched
+             # first so dedupe keeps the user's copy when the same URI
+             # exists in both partitions.
+-            if include_shared:
++            if include_shared and not admin_view:
+                 rows.sort(
+                     key=lambda triple: 0 if triple[0].namespace == namespace else 1
+                 )
+ 
++            # Admin view dedupes on (namespace, domain, path) so the
++            # same URI can legitimately appear once per namespace.
++            # Scoped view dedupes on (domain, path) — the namespace
++            # filter already restricts which partitions contribute.
+             results: list[dict] = []
+             seen: set[tuple] = set()
+             for path_obj, edge, memory in rows:
+-                key = (path_obj.domain, path_obj.path)
++                key = (
++                    (path_obj.namespace, path_obj.domain, path_obj.path)
++                    if admin_view
++                    else (path_obj.domain, path_obj.path)
++                )
+                 if key in seen:
+                     continue
+                 seen.add(key)
+diff --git a/tests/memory/test_engine_browse.py b/tests/memory/test_engine_browse.py
+index 988a3505..d87acbb2 100644
+--- a/tests/memory/test_engine_browse.py
++++ b/tests/memory/test_engine_browse.py
+@@ -208,3 +208,64 @@ async def test_list_paths_filter_by_domain(env):
+     assert all(p["domain"] == "dataset" for p in paths)
+     assert any(p["uri"] == "dataset://x.h5ad" for p in paths)
+     assert not any(p["domain"] == "analysis" for p in paths)
++
++
++@pytest.mark.asyncio
++async def test_list_paths_admin_view_returns_all_namespaces(env):
++    """``namespace=None`` is the admin view: every namespace's paths show
++    up, deduped by (namespace, domain, path) so each row appears once.
++
++    Used by ``/memory/domains?namespace=`` so an operator can find data
++    written under another desktop user-id or a legacy launch-id partition
++    without spinning up that client.
++    """
++    engine, _ = env
++    a = MemoryClient(engine=engine, namespace="tg/A")
++    b = MemoryClient(engine=engine, namespace="tg/B")
++    await a.remember("dataset://onlyA.h5ad", "A")
++    await b.remember("dataset://onlyB.h5ad", "B")
++
++    paths = await engine.list_paths(namespace=None)
++    uris = {p["uri"] for p in paths}
++    assert "dataset://onlyA.h5ad" in uris
++    assert "dataset://onlyB.h5ad" in uris
++    # Namespaces preserved on each row so the caller can group/filter.
++    by_uri = {p["uri"]: p["namespace"] for p in paths}
++    assert by_uri["dataset://onlyA.h5ad"] == "tg/A"
++    assert by_uri["dataset://onlyB.h5ad"] == "tg/B"
++
++
++@pytest.mark.asyncio
++async def test_list_namespaces_returns_distinct_used_namespaces(env):
++    """``list_namespaces()`` powers the admin UI's namespace dropdown:
++    every partition that currently holds at least one path is returned,
++    deduped, sorted for a stable display order. Empty namespaces are
++    omitted — there's nothing to inspect there."""
++    engine, _ = env
++    a = MemoryClient(engine=engine, namespace="tg/A")
++    b = MemoryClient(engine=engine, namespace="tg/B")
++    await a.remember("dataset://x.h5ad", "x")
++    await b.remember("dataset://y.h5ad", "y")
++    await a.remember_shared("core://agent/style", "shared")
++
++    namespaces = await engine.list_namespaces()
++    assert namespaces == sorted(set(namespaces)), "should be deduped + sorted"
++    assert "tg/A" in namespaces
++    assert "tg/B" in namespaces
++    assert "__shared__" in namespaces
++
++
++@pytest.mark.asyncio
++async def test_list_paths_admin_view_ignores_include_shared(env):
++    """``namespace=None`` already covers every partition, including
++    ``__shared__``; ``include_shared`` becomes a no-op rather than a
++    contradiction. Pin the behavior so the endpoint can accept any
++    combination without surprising the caller."""
++    engine, _ = env
++    a = MemoryClient(engine=engine, namespace="tg/A")
++    await a.remember_shared("core://agent/style", "shared")
++    await a.remember("dataset://x.h5ad", "user")
++
++    with_shared = await engine.list_paths(namespace=None, include_shared=True)
++    without_shared = await engine.list_paths(namespace=None, include_shared=False)
++    assert {p["uri"] for p in with_shared} == {p["uri"] for p in without_shared}
+diff --git a/tests/test_app_server.py b/tests/test_app_server.py
+index d6e618ab..e10cb023 100644
+--- a/tests/test_app_server.py
++++ b/tests/test_app_server.py
+@@ -3054,6 +3054,127 @@ async def test_memory_domains_endpoint_counts_user_plus_shared_only(
+         await memory_pkg.close_db()
+ 
+ 
++@pytest.mark.asyncio
++async def test_memory_domains_endpoint_admin_view_aggregates_all_namespaces(
++    monkeypatch, tmp_path
++):
++    """``/memory/domains?namespace=`` (empty value) is the admin view: it
++    sums every partition's paths, including ones the current desktop
++    user cannot otherwise reach. Used when an operator needs to find
++    data stranded under a legacy namespace."""
++    pytest.importorskip("fastapi")
++
++    from omicsclaw.app import server
++    from omicsclaw.memory.memory_client import MemoryClient
++
++    graph, _, memory_pkg = await _setup_memory_review_runtime(monkeypatch, tmp_path)
++
++    try:
++        engine = memory_pkg.get_memory_engine()
++        desktop = MemoryClient(engine=engine, namespace="app/desktop_user")
++        legacy = MemoryClient(engine=engine, namespace="app/legacy-launch-uuid")
++        monkeypatch.setattr(server, "_memory_client", desktop)
++
++        await desktop.remember("dataset://now.h5ad", "current")
++        await legacy.remember("dataset://stranded.h5ad", "stranded")
++        await legacy.remember("analysis://a/run", "stranded too")
++
++        result = await server.memory_domains(namespace="")
++        counts = {d["domain"]: d["node_count"] for d in result["domains"]}
++
++        # Both partitions visible: 2 datasets, 2 analysis paths (the
++        # parent ``analysis://a`` container is auto-created alongside
++        # the ``analysis://a/run`` leaf).
++        assert counts["dataset"] == 2, (
++            f"Admin view missed a partition's data: {counts}"
++        )
++        assert counts.get("analysis", 0) >= 1
++        # Default-scoped (no namespace param) sees only the desktop's
++        # row — assert the admin view sees strictly more.
++        default = await server.memory_domains()
++        default_total = default["total_nodes"]
++        assert result["total_nodes"] > default_total, (
++            f"Admin view {result['total_nodes']} did not exceed default "
++            f"{default_total} — namespace override is not taking effect."
++        )
++    finally:
++        await memory_pkg.close_db()
++
++
++@pytest.mark.asyncio
++async def test_memory_namespaces_endpoint_lists_partitions_and_current(
++    monkeypatch, tmp_path,
++):
++    """``/memory/namespaces`` powers the admin UI dropdown: every partition
++    holding at least one path is listed, and the response identifies which
++    one the desktop client is currently bound to so the UI can preselect it."""
++    pytest.importorskip("fastapi")
++
++    from omicsclaw.app import server
++    from omicsclaw.memory.memory_client import MemoryClient
++
++    graph, _, memory_pkg = await _setup_memory_review_runtime(monkeypatch, tmp_path)
++
++    try:
++        engine = memory_pkg.get_memory_engine()
++        desktop = MemoryClient(engine=engine, namespace="app/desktop_user")
++        legacy = MemoryClient(engine=engine, namespace="app/old-launch-uuid")
++        monkeypatch.setattr(server, "_memory_client", desktop)
++
++        await desktop.remember("dataset://d.h5ad", "d")
++        await legacy.remember("dataset://stranded.h5ad", "s")
++        await desktop.remember_shared("core://agent/style", "shared")
++
++        result = await server.memory_namespaces()
++        assert "namespaces" in result
++        names = result["namespaces"]
++        assert "app/desktop_user" in names
++        assert "app/old-launch-uuid" in names
++        assert "__shared__" in names
++        # Current namespace is exposed so the UI can preselect it.
++        assert result["current"] == "app/desktop_user"
++    finally:
++        await memory_pkg.close_db()
++
++
++@pytest.mark.asyncio
++async def test_memory_domains_endpoint_explicit_namespace_scopes_query(
++    monkeypatch, tmp_path
++):
++    """``/memory/domains?namespace=app/foo`` lets an operator inspect a
++    specific partition without spinning up that client. Returns just
++    that namespace + shared, dedupe on collision."""
++    pytest.importorskip("fastapi")
++
++    from omicsclaw.app import server
++    from omicsclaw.memory.memory_client import MemoryClient
++
++    graph, _, memory_pkg = await _setup_memory_review_runtime(monkeypatch, tmp_path)
++
++    try:
++        engine = memory_pkg.get_memory_engine()
++        desktop = MemoryClient(engine=engine, namespace="app/desktop_user")
++        target = MemoryClient(engine=engine, namespace="app/target")
++        monkeypatch.setattr(server, "_memory_client", desktop)
++
++        await desktop.remember("dataset://desktop.h5ad", "d")
++        await target.remember("dataset://target.h5ad", "t")
++        await target.remember("dataset://shared.h5ad", "t-collision")
++        await desktop.remember_shared("dataset://shared.h5ad", "shared-copy")
++
++        result = await server.memory_domains(namespace="app/target")
++        uris = {d["domain"] for d in result["domains"]}
++
++        # target sees its own row + shared row (deduped); desktop's
++        # private row is NOT visible.
++        assert result["total_nodes"] == 2, (
++            f"Explicit-namespace query leaked or missed: {result}"
++        )
++        assert "dataset" in uris
++    finally:
++        await memory_pkg.close_db()
++
++
+ # ---------------------------------------------------------------------------
+ # T2 S6 — /memory/delete is namespace-scoped (no cross-namespace blast)
+ # ---------------------------------------------------------------------------

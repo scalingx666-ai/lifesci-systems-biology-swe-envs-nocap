@@ -1,0 +1,1178 @@
+diff --git a/src/muon/atac/pp.py b/src/muon/atac/pp.py
+index a3edb5f2..5ed89b16 100644
+--- a/src/muon/atac/pp.py
++++ b/src/muon/atac/pp.py
+@@ -30,19 +30,19 @@ def tfidf(
+ 
+     Args:
+         data: AnnData object with peak counts or multimodal MuData object with 'atac' modality.
+-        log_idf: Log-transform IDF term (True by default).
+-        log_tf: Log-transform TF term (True by default).
+-        log_tfidf: Log-transform TF*IDF term (False by default).
+-            Can only be used when log_tf and log_idf are False.
+-        scale_factor: Scale factor to multiply the TF-IDF matrix by (1e4 by default).
+-        inplace: If to modify counts in the AnnData object (True by default).
+-        copy: If to return a copy of the AnnData object or the 'atac' modality (False by default).
+-            Not compatible with inplace=False.
+-        from_layer: Layer to use counts (AnnData.layers[from_layer])
+-            instead of AnnData.X used by default.
+-        to_layer: Layer to save transformed counts to (AnnData.layers[to_layer])
+-            instead of AnnData.X used by default.
+-            Not compatible with inplace=False.
++        log_idf: Log-transform IDF term.
++        log_tf: Log-transform TF term.
++        log_tfidf: Log-transform TF*IDF term. Can only be used when log_tf and log_idf are `False`.
++        scale_factor: Scale factor to multiply the TF-IDF matrix by.
++        inplace: Whether to modify counts in the AnnData object.
++        copy: Whether to return a copy of the AnnData object or the 'atac' modality. Not compatible
++            with `inplace=False`.
++        from_layer: Layer to use as input (`AnnData.layers[from_layer]`). Defaults to `AnnData.X`.
++        to_layer: Layer to save transformed counts to (`AnnData.layers[to_layer]`). Defaults to `AnnData.X`.
++            Not compatible with `inplace=False`.
++
++    Returns:
++        A matrix of transformed values if `inplace=False`, otherwise an AnnData object if `copy=True` or `None`.
+     """
+     if isinstance(data, AnnData):
+         adata = data
+diff --git a/src/muon/pp.py b/src/muon/pp.py
+index 094eb250..82dbb209 100644
+--- a/src/muon/pp.py
++++ b/src/muon/pp.py
+@@ -660,7 +660,7 @@ def _filter_attr(
+             the func argument can be omitted.
+     """
+     if data.is_view:
+-        raise ValueError("The provided adata is a view. In-place filtering does not operate on views.")
++        raise ValueError("The provided data is a view. In-place filtering does not operate on views.")
+     if data.isbacked:
+         if isinstance(data, AnnData):
+             warnings.warn(
+diff --git a/src/muon/tl.py b/src/muon/tl.py
+index d1630839..342091e7 100644
+--- a/src/muon/tl.py
++++ b/src/muon/tl.py
+@@ -270,7 +270,7 @@ def _set_mofa_data_from_mudata(
+ 
+ def mofa(
+     data: AnnData | MuData,
+-    groups_label: bool | None = None,
++    groups_label: str | None = None,
+     use_raw: bool = False,
+     use_layer: str | None = None,
+     use_var: str | None = "highly_variable",
+@@ -621,7 +621,7 @@ def mofa(
+ 
+         groups = f["groups"]["groups"][:].astype(str)
+         if len(groups) > 1:
+-            for group in list(variance_per_group.keys()):
++            for group in variance_per_group.keys():
+                 for i, view in enumerate(views):
+                     variance[view][group] = variance_per_group[group][i, :]
+         else:
+diff --git a/src/muon/utils.py b/src/muon/utils.py
+index 30b472d3..60c18bfe 100644
+--- a/src/muon/utils.py
++++ b/src/muon/utils.py
+@@ -17,7 +17,7 @@ def _get_values(
+     layer: str | Mapping[str, str | None] | None = None,
+     gene_symbols: str | Mapping[str, str | None] | None = None,
+     obsmap: np.ndarray | None = None,
+-) -> Iterable | None:
++) -> pd.DataFrame | np.ndarray | pd.api.extensions.ExtensionArray | None:
+     """A helper function to get values for variables or annotations of observations (.obs columns).
+ 
+     Strings like "rna:total_count", unless present in .var_names or .obs.columns,
+diff --git a/tests/__init__.py b/tests/__init__.py
+deleted file mode 100644
+index e69de29b..00000000
+diff --git a/tests/conftest.py b/tests/conftest.py
+index 6c73b881..b20acab1 100644
+--- a/tests/conftest.py
++++ b/tests/conftest.py
+@@ -1,17 +1,19 @@
++import numpy as np
+ import pytest
+ import scanpy as sc
++from anndata import AnnData
+ 
+ 
+ @pytest.fixture(scope="module")
+-def filepath_h5mu(tmp_path_factory):
+-    yield str(tmp_path_factory.mktemp("tmp_test_dir") / "test.h5mu")
++def rng() -> np.random.Generator:
++    return np.random.default_rng(42)
+ 
+ 
+-@pytest.fixture(scope="module")
+-def filepath_hdf5(tmp_path_factory):
+-    yield str(tmp_path_factory.mktemp("tmp_mofa_dir") / "mofa_pytest.hdf5")
++@pytest.fixture
++def filepath_h5mu(tmp_path) -> str:
++    return str(tmp_path / "test.h5mu")
+ 
+ 
+ @pytest.fixture(scope="module")
+-def pbmc3k_processed():
+-    yield sc.datasets.pbmc3k_processed()
++def pbmc3k_processed() -> AnnData:
++    return sc.datasets.pbmc3k_processed()
+diff --git a/tests/data/tfidf.npz b/tests/data/tfidf.npz
+new file mode 100644
+index 00000000..545f93cf
+Binary files /dev/null and b/tests/data/tfidf.npz differ
+diff --git a/tests/test_atac_preproc.py b/tests/test_atac_preproc.py
+index 8c01080d..d6de0d44 100644
+--- a/tests/test_atac_preproc.py
++++ b/tests/test_atac_preproc.py
+@@ -1,68 +1,82 @@
+-import unittest
++from pathlib import Path
+ 
+ import numpy as np
++import pytest
+ from anndata import AnnData
+-from scipy.sparse import rand
++from anndata.tests.helpers import assert_equal
++from scipy.sparse import csr_array
+ 
+ from muon import atac as ac
+ 
+ 
+-class TestTFIDF(unittest.TestCase):
+-    def setUp(self):
+-        np.random.seed(2020)
+-        x = np.abs(np.random.normal(size=(4, 5)))
+-        self.adata = AnnData(x)
+-
+-    def test_tfidf(self):
+-        adata = self.adata.copy()
+-        ac.pp.tfidf(adata, log_tf=True, log_idf=True)
+-        self.assertEqual(str(f"{adata.X[0, 0]:.3f}"), "4.659")
+-        self.assertEqual(str(f"{adata.X[3, 0]:.3f}"), "4.770")
+-
+-    def test_tfidf_view(self):
+-        view = self.adata[:, :]
+-        ac.pp.tfidf(view, log_tf=True, log_idf=True)
+-        self.assertEqual(str(f"{view.X[0, 0]:.3f}"), "4.659")
+-
+-    def test_tfidf_copy(self):
+-        adata = self.adata.copy()
+-        orig_value = adata.X[0, 0]
+-        copy = ac.pp.tfidf(adata, log_tf=True, log_idf=True, copy=True)
+-        self.assertEqual(adata.X[0, 0], orig_value)
+-        self.assertEqual(str(f"{copy.X[0, 0]:.3f}"), "4.659")
+-
+-    def test_tfidf_inplace(self):
+-        orig_value = self.adata.X[0, 0]
+-        res = ac.pp.tfidf(self.adata, log_tf=True, log_idf=True, inplace=False)
+-        self.assertEqual(self.adata.X[0, 0], orig_value)
+-        self.assertEqual(str(f"{res[0, 0]:.3f}"), "4.659")
+-
+-    def test_tfidf_to_layer(self):
+-        adata = self.adata.copy()
+-        orig_value = adata.X[0, 0]
+-        ac.pp.tfidf(adata, log_tf=True, log_idf=True, to_layer="new")
+-        self.assertEqual(adata.X[0, 0], orig_value)
+-        self.assertEqual(str(f"{adata.layers['new'][0, 0]:.3f}"), "4.659")
+-
+-    def test_tfidf_from_layer(self):
+-        adata = self.adata.copy()
+-        adata.layers["counts"] = adata.X.copy() + 1
+-        adata.X = None
+-        ac.pp.tfidf(adata, from_layer="counts")
+-        self.assertEqual(str(f"{adata.X[0, 0]:.3f}"), "2.856")
+-
+-
+-class TestTFIDFSparse(unittest.TestCase):
+-    def setUp(self):
+-        np.random.seed(2020)
+-        x = rand(100, 10, density=0.2, format="csr")
+-        self.adata = AnnData(x)
+-
+-    def test_tfidf(self):
+-        ac.pp.tfidf(self.adata, log_tf=True, log_idf=True)
+-        self.assertEqual(str(f"{self.adata.X[10, 9]:.3f}"), "18.749")
+-        self.assertEqual(str(f"{self.adata.X[50, 5]:.3f}"), "0.000")
+-
+-
+-if __name__ == "__main__":
+-    unittest.main()
++@pytest.fixture(params=[True, False])
++def sparse(request: pytest.FixtureRequest) -> bool:
++    return request.param
++
++
++@pytest.fixture(params=[True, False])
++def log_tf(request: pytest.FixtureRequest) -> bool:
++    return request.param
++
++
++@pytest.fixture(params=[True, False])
++def log_idf(request: pytest.FixtureRequest) -> bool:
++    return request.param
++
++
++@pytest.fixture(scope="session")
++def data() -> np.lib.npyio.NpzFile:
++    return np.load(Path(__file__).parent / "data" / "tfidf.npz")
++
++
++@pytest.fixture
++def adata(data, sparse) -> AnnData:
++    if sparse:
++        x = csr_array(data["x"])
++    else:
++        x = data["x"].copy()
++    return AnnData(x)
++
++
++@pytest.fixture
++def expected_tfidf(data, log_tf, log_idf) -> np.ndarray:
++    return data[f"{log_tf}_{log_idf}"]
++
++
++def test_tfidf(adata, expected_tfidf, log_tf, log_idf):
++    ac.pp.tfidf(adata, log_tf=log_tf, log_idf=log_idf)
++    assert_equal(adata.X, expected_tfidf)
++
++
++def test_tfidf_view(adata, expected_tfidf, log_tf, log_idf):
++    view = adata[:, :]
++    ac.pp.tfidf(view, log_tf=log_tf, log_idf=log_idf)
++    assert_equal(view.X, expected_tfidf)
++
++
++def test_tfidf_copy(adata, expected_tfidf, log_tf, log_idf):
++    orig_value = adata.X.copy()
++    copy = ac.pp.tfidf(adata, log_tf=log_tf, log_idf=log_idf, copy=True)
++    assert_equal(orig_value, adata.X, exact=True)
++    assert_equal(copy.X, expected_tfidf)
++
++
++def test_tfidf_inplace(adata, expected_tfidf, log_tf, log_idf):
++    orig_value = adata.X.copy()
++    res = ac.pp.tfidf(adata, log_tf=log_tf, log_idf=log_idf, inplace=False)
++    assert_equal(orig_value, adata.X, exact=True)
++    assert_equal(res, expected_tfidf)
++
++
++def test_tfidf_to_layer(adata, expected_tfidf, log_tf, log_idf):
++    orig_value = adata.X.copy()
++    ac.pp.tfidf(adata, log_tf=log_tf, log_idf=log_idf, to_layer="new")
++    assert_equal(orig_value, adata.X, exact=True)
++    assert_equal(adata.layers["new"], expected_tfidf)
++
++
++def test_tfidf_from_layer(adata, expected_tfidf, log_tf, log_idf):
++    adata.layers["counts"] = adata.X
++    adata.X = None
++    ac.pp.tfidf(adata, log_tf=log_tf, log_idf=log_idf, from_layer="counts")
++    assert_equal(adata.X, expected_tfidf)
+diff --git a/tests/test_atac_tools.py b/tests/test_atac_tools.py
+index 194d1572..4ab06b98 100644
+--- a/tests/test_atac_tools.py
++++ b/tests/test_atac_tools.py
+@@ -1,52 +1,47 @@
+-import unittest
+ from io import StringIO
+ 
+ import numpy as np
+ import pandas as pd
+ from anndata import AnnData
+ 
+-import muon
+-
+-
+-class TestAddPeakAnnotation(unittest.TestCase):
+-    """Regression tests for add_peak_annotation with empty distance values (#181)."""
+-
+-    def test_empty_distance_values(self):
+-        """Intergenic peaks with empty distance should not raise."""
+-        tsv = StringIO(
+-            "chrom\tstart\tend\tgene\tdistance\tpeak_type\n"
+-            "chr1\t100\t200\t\t\tintergenic\n"
+-            "chr1\t300\t400\tGeneA\t-173268\tdistal\n"
+-        )
+-        pa = pd.read_csv(tsv, sep="\t")
+-        peaks = ["chr1:100-200", "chr1:300-400"]
+-        adata = AnnData(np.zeros((2, 2)))
+-        adata.var_names = peaks
+-
+-        result = muon.atac.tl.add_peak_annotation(adata, pa, return_annotation=True)
+-
+-        assert result.distance.dtype == pd.Int64Dtype()
+-        assert result.distance.iloc[0] is pd.NA
+-        assert result.distance.iloc[1] == -173268
+-        assert (result.peak == peaks).all()
+-
+-    def test_semicolon_separated_distances(self):
+-        """Multi-gene peaks with semicolon-separated distances should work."""
+-        tsv = StringIO(
+-            "chrom\tstart\tend\tgene\tdistance\tpeak_type\n"
+-            "chr1\t100\t200\tGeneA;GeneB\t-100;200\tpromoter;distal\n"
+-        )  # fmt: skip
+-        pa = pd.read_csv(tsv, sep="\t")
+-        adata = AnnData(np.zeros((1, 1)))
+-        adata.var_names = ["chr1:100-200"]
+-
+-        result = muon.atac.tl.add_peak_annotation(adata, pa, return_annotation=True)
+-
+-        assert result.distance.dtype == np.int64
+-        assert result.distance.iloc[0] == -100
+-        assert result.distance.iloc[1] == 200
+-        assert (result.peak.iloc[0] == result.peak.iloc[1] == adata.var_names).all()
+-
+-
+-if __name__ == "__main__":
+-    unittest.main()
++import muon.atac as ac
++
++
++def test_empty_distance_values() -> None:
++    """Intergenic peaks with empty distance should not raise."""
++    tsv = StringIO(
++        "chrom\tstart\tend\tgene\tdistance\tpeak_type\n"
++        "chr1\t100\t200\t\t\tintergenic\n"
++        "chr1\t300\t400\tGeneA\t-173268\tdistal\n"
++    )  # fmt: skip
++    pa = pd.read_csv(tsv, sep="\t")
++    peaks = ["chr1:100-200", "chr1:300-400"]
++    adata = AnnData(np.zeros((2, 2)))
++    adata.var_names = peaks
++
++    result = ac.tl.add_peak_annotation(adata, pa, return_annotation=True)
++    assert result is not None
++
++    assert result.distance.dtype == pd.Int64Dtype()
++    assert result.distance.iloc[0] is pd.NA
++    assert result.distance.iloc[1] == -173268
++    assert (result.peak == peaks).all()
++
++
++def test_semicolon_separated_distances() -> None:
++    """Multi-gene peaks with semicolon-separated distances should work."""
++    tsv = StringIO(
++        "chrom\tstart\tend\tgene\tdistance\tpeak_type\n"
++        "chr1\t100\t200\tGeneA;GeneB\t-100;200\tpromoter;distal\n"
++    )  # fmt: skip
++    pa = pd.read_csv(tsv, sep="\t")
++    adata = AnnData(np.zeros((1, 1)))
++    adata.var_names = ["chr1:100-200"]
++
++    result = ac.tl.add_peak_annotation(adata, pa, return_annotation=True)
++    assert result is not None
++
++    assert result.distance.dtype == np.int64
++    assert result.distance.iloc[0] == -100
++    assert result.distance.iloc[1] == 200
++    assert (result.peak.iloc[0] == result.peak.iloc[1] == adata.var_names).all()
+diff --git a/tests/test_key_parsing.py b/tests/test_key_parsing.py
+index 9cf2c2bc..10ee4280 100644
+--- a/tests/test_key_parsing.py
++++ b/tests/test_key_parsing.py
+@@ -1,5 +1,3 @@
+-import unittest
+-
+ import numpy as np
+ import pandas as pd
+ import pytest
+@@ -9,8 +7,8 @@
+ from muon.utils import _get_values
+ 
+ 
+-@pytest.fixture(params=[{"same_obs": True}, {"same_obs": False}])
+-def mdata(request):
++@pytest.fixture(params=[True, False])
++def mdata(request: pytest.FixtureRequest) -> MuData:
+     mdata = MuData(
+         {
+             "mod1": AnnData(np.arange(0, 100, 0.1).reshape(-1, 10)),
+@@ -22,13 +20,9 @@ def mdata(request):
+     n1, d1 = mdata["mod1"].shape
+     n2, d2 = mdata["mod2"].shape
+ 
+-    # var
+-
+     mdata["mod1"].var_names = [f"var1_{i + 1}" for i in range(d1)]
+     mdata["mod2"].var_names = [f"var2_{i + 1}" for i in range(d2)]
+ 
+-    # obs
+-
+     mdata.obs["global_trait"] = "trait_g"
+ 
+     mdata["mod1"].obs["mod1_trait"] = "trait1"
+@@ -37,8 +31,6 @@ def mdata(request):
+     mdata["mod1"].obs["common_trait"] = "trait_c1"
+     mdata["mod2"].obs["common_trait"] = "trait_c2"
+ 
+-    # obsm
+-
+     mdata.obsm["global_emb"] = np.random.normal(size=(n, 2))
+ 
+     mdata["mod1"].obsm["mod1_emb"] = np.random.normal(size=(n1, 20))
+@@ -46,48 +38,44 @@ def mdata(request):
+ 
+     mdata.update()
+ 
+-    if not request.param["same_obs"]:
++    if not request.param:
+         mdata.mod["mod1"] = mdata["mod1"][np.random.choice(np.arange(n1), size=n1 // 2, replace=False)].copy()
+         mdata.update()
+ 
+-    yield mdata
+-
++    return mdata
+ 
+-class TestTraitParsing:
+-    # Observations
+ 
+-    def test_global_obs(self, mdata):
+-        assert len(_get_values(mdata, "global_trait")) == mdata.n_obs
++def test_global_obs(mdata: MuData) -> None:
++    assert len(_get_values(mdata, "global_trait")) == mdata.n_obs  # type: ignore[arg-type]
+ 
+-    def test_common_obs(self, mdata):
+-        with pytest.raises(ValueError):
+-            assert len(_get_values(mdata, "common_trait")) == mdata.n_obs
+-        assert len(_get_values(mdata, "mod1:common_trait")) == mdata.n_obs
+-        assert len(_get_values(mdata, "mod2:common_trait")) == mdata.n_obs
+ 
+-    def test_mod_obs(self, mdata):
+-        mod1_trait = _get_values(mdata, "mod1:mod1_trait")
+-        assert len(mod1_trait) == mdata.n_obs
++def test_common_obs(mdata: MuData) -> None:
++    with pytest.raises(ValueError):
++        assert len(_get_values(mdata, "common_trait")) == mdata.n_obs  # type: ignore[arg-type]
++    assert len(_get_values(mdata, "mod1:common_trait")) == mdata.n_obs  # type: ignore[arg-type]
++    assert len(_get_values(mdata, "mod2:common_trait")) == mdata.n_obs  # type: ignore[arg-type]
+ 
+-        mod2_trait = _get_values(mdata, "mod2:mod2_trait")
+-        assert len(mod2_trait) == mdata.n_obs
+ 
+-        if mdata["mod1"].n_obs == mdata["mod2"].n_obs:
+-            assert all(mod1_trait == "trait1")
+-            assert all(mod2_trait == "trait2")
+-        else:
+-            print(mod1_trait)
+-            assert all(mod1_trait[~pd.isnull(mod1_trait)] == "trait1")
+-            assert all(mod2_trait[~pd.isnull(mod2_trait)] == "trait2")
++def test_mod_obs(mdata: MuData) -> None:
++    mod1_trait = _get_values(mdata, "mod1:mod1_trait")
++    assert mod1_trait is not None
++    assert len(mod1_trait) == mdata.n_obs
+ 
+-    # Variables
++    mod2_trait = _get_values(mdata, "mod2:mod2_trait")
++    assert mod2_trait is not None
++    assert len(mod2_trait) == mdata.n_obs
+ 
+-    def test_var_name(self, mdata):
+-        var1_0 = mdata["mod1"].var_names[0]
+-        var2_0 = mdata["mod2"].var_names[0]
+-        assert len(_get_values(mdata, var1_0)) == mdata.n_obs
+-        assert len(_get_values(mdata, var2_0)) == mdata.n_obs
++    if mdata["mod1"].n_obs == mdata["mod2"].n_obs:
++        assert all(mod1_trait == "trait1")
++        assert all(mod2_trait == "trait2")
++    else:
++        print(mod1_trait)
++        assert all(mod1_trait[~pd.isnull(mod1_trait)] == "trait1")
++        assert all(mod2_trait[~pd.isnull(mod2_trait)] == "trait2")
+ 
+ 
+-if __name__ == "__main__":
+-    unittest.main()
++def test_var_name(mdata: MuData) -> None:
++    var1_0 = mdata["mod1"].var_names[0]
++    var2_0 = mdata["mod2"].var_names[0]
++    assert len(_get_values(mdata, var1_0)) == mdata.n_obs  # type: ignore[arg-type]
++    assert len(_get_values(mdata, var2_0)) == mdata.n_obs  # type: ignore[arg-type]
+diff --git a/tests/test_muon_plot.py b/tests/test_muon_plot.py
+index 0182ea03..ce459524 100644
+--- a/tests/test_muon_plot.py
++++ b/tests/test_muon_plot.py
+@@ -2,15 +2,15 @@
+ import numpy as np
+ import pytest
+ from anndata import AnnData
++from mudata import MuData
+ 
+ import muon as mu
+-from muon import MuData
+ 
+ matplotlib.use("Agg")
+ 
+ 
+-@pytest.fixture()
+-def mdata():
++@pytest.fixture
++def mdata() -> MuData:
+     mdata = MuData(
+         {
+             "mod1": AnnData(np.arange(0, 100, 0.1).reshape(-1, 10)),
+@@ -18,12 +18,9 @@ def mdata():
+         }
+     )
+     mdata.var_names_make_unique()
+-    yield mdata
++    return mdata
+ 
+ 
+-class TestScatter:
+-    def test_pl_scatter(self, mdata):
+-        mdata = mdata.copy()
+-        np.random.seed(42)
+-        mdata.obs["condition"] = np.random.choice(["a", "b"], mdata.n_obs)
+-        mu.pl.scatter(mdata, x="mod1:0", y="mod2:0", color="condition")
++def test_pl_scatter(mdata: MuData, rng: np.random.Generator) -> None:
++    mdata.obs["condition"] = rng.choice(["a", "b"], mdata.n_obs)
++    mu.pl.scatter(mdata, x="mod1:0", y="mod2:0", color="condition")
+diff --git a/tests/test_muon_preproc.py b/tests/test_muon_preproc.py
+index a75dcd80..619227d2 100644
+--- a/tests/test_muon_preproc.py
++++ b/tests/test_muon_preproc.py
+@@ -1,6 +1,6 @@
+-import unittest
+ from functools import reduce
+ 
++import mudata as md
+ import numpy as np
+ import pytest
+ from anndata import AnnData
+@@ -10,9 +10,9 @@
+ import muon as mu
+ 
+ 
+-@pytest.fixture()
+-def mdata():
+-    yield MuData(
++@pytest.fixture
++def mdata() -> MuData:
++    return MuData(
+         {
+             "mod1": AnnData(np.arange(0, 100, 0.1).reshape(-1, 10)),
+             "mod2": AnnData(np.arange(101, 2101, 1).reshape(-1, 20)),
+@@ -20,208 +20,192 @@ def mdata():
+     )
+ 
+ 
+-@pytest.mark.usefixtures("filepath_h5mu")
+-class TestInPlaceFiltering:
+-    # Observations
+-
+-    def test_filter_obs_adata(self, mdata, filepath_h5mu):
+-        ad = mdata["mod1"].copy()
+-        sub = np.random.binomial(1, 0.5, ad.n_obs).astype(bool)
+-        mu.pp.filter_obs(ad, sub)
+-        assert ad.n_obs == sub.sum()
+-
+-    def test_filter_obs_mdata(self, mdata, filepath_h5mu):
+-        md = mdata.copy()
+-        sub = np.random.binomial(1, 0.5, md.n_obs).astype(bool)
+-        mu.pp.filter_obs(md, sub)
+-        assert md.n_obs == sub.sum()
+-        assert md["mod1"].n_obs == mdata.obsm["mod1"][sub].sum()
+-        assert md["mod2"].n_obs == mdata.obsm["mod2"][sub].sum()
+-
+-    def test_filter_obs_mdata_consecutive(self, mdata, filepath_h5mu):
+-        md = mdata.copy()
+-        md.obs["condition1"] = np.random.normal(size=md.n_obs)
+-        md.obs["condition2"] = np.random.normal(size=md.n_obs, scale=2)
+-        total_sub = np.sum((md.obs["condition1"] > 0) * (md.obs["condition2"] > 0))
+-        mu.pp.filter_obs(md, "condition1", lambda x: x > 0)
+-        mu.pp.filter_obs(md, "condition2", lambda x: x > 0)
+-        assert md.n_obs == total_sub
+-
+-    def test_filter_obs_mdata_consecutive_ragged(self, mdata, filepath_h5mu):
+-        # It should also work if data is missing in some modalities
+-        mod1_discard = np.random.choice(range(mdata["mod1"].n_obs), size=3, replace=False)
+-        mod1_keep = [i for i in range(mdata["mod1"].n_obs) if i not in mod1_discard]
+-        md = MuData({"mod1": mdata["mod1"][mod1_keep, :].copy(), "mod2": mdata["mod2"]})
+-
+-        md.obs["condition1"] = np.random.normal(size=md.n_obs)
+-        md.obs["condition2"] = np.random.normal(size=md.n_obs, scale=2)
+-        total_sub = np.sum((md.obs["condition1"] > 0) * (md.obs["condition2"] > 0))
+-        mu.pp.filter_obs(md, "condition1", lambda x: x > 0)
+-        mu.pp.filter_obs(md, "condition2", lambda x: x > 0)
+-        assert md.n_obs == total_sub
+-
+-    def test_filter_obs_adata_backed(self, mdata, filepath_h5mu):
+-        mdata.write(filepath_h5mu)
+-        mdata_ = mu.read_h5mu(filepath_h5mu, backed="r")
+-        assert list(mdata_.mod.keys()) == ["mod1", "mod2"]
+-
+-        # When backed, in-place filtering should throw a warning
+-        with pytest.warns(UserWarning):
+-            sub = np.random.binomial(1, 0.5, mdata_.mod["mod1"].n_obs).astype(bool)
+-            print("Sub:\t", len(sub))
+-            print("Size:\t", mdata_.mod["mod1"].n_obs)
+-            mu.pp.filter_obs(mdata_.mod["mod1"], sub)
+-
+-        mdata_.file.close()
+-
+-    def test_filter_obs_adata_view(self, mdata, filepath_h5mu):
+-        pov = np.random.binomial(1, 0.4, mdata.mod["mod1"].n_obs).astype(bool)
+-        view = mdata.mod["mod1"][pov, :]
+-        # When backed, in-place filtering should throw an error
+-        with pytest.raises(ValueError):
+-            sub = np.random.binomial(1, 0.5, view.n_obs).astype(bool)
+-            mu.pp.filter_obs(view, sub)
+-
+-    def test_filter_obs_with_obsm_obsp(self, pbmc3k_processed):
+-        A = pbmc3k_processed[:500,].copy()
+-        B = pbmc3k_processed[500:,].copy()
+-        A_subset = A[A.obs["louvain"] == "B cells"].copy()
+-        B_subset = B[B.obs["louvain"] == "B cells"].copy()
+-        mdata = mu.MuData({"A": A, "B": B}, axis=1)
+-        mdata.pull_obs("louvain")
+-        mu.pp.filter_obs(mdata, "louvain", lambda x: x == "B cells")
+-        assert mdata["B"].n_obs == B_subset.n_obs
+-        assert mdata["A"].obs["louvain"].unique() == "B cells"
+-        assert B.n_obs == B_subset.n_obs
+-        assert A.obs["louvain"].unique() == "B cells"
+-        assert_equal(mdata["A"], A_subset)
+-        assert_equal(mdata["B"], B_subset)
+-
+-    def test_filter_obs_with_obsm_obsp_explicit(self, mdata):
+-        mdata = mdata.copy()
+-
+-        # obsm
+-        np.random.seed(42)
+-        mdata["mod1"].obsm["X_normal"] = np.random.normal(size=(mdata["mod1"].n_obs, 10))
+-        mdata["mod2"].obsm["X_normal"] = np.random.normal(size=(mdata["mod2"].n_obs, 10))
+-        mdata.obsm["X_normal"] = np.random.normal(size=(mdata.n_obs, 10))
+-        selection = mdata.obsm["X_normal"].sum(axis=1) > 0
+-
+-        # obsp
+-        mdata["mod1"].obsp["connectivities"] = np.random.normal(size=(mdata["mod1"].n_obs, mdata["mod1"].n_obs))
+-        mdata["mod2"].obsp["connectivities"] = np.random.normal(size=(mdata["mod2"].n_obs, mdata["mod2"].n_obs))
+-        mdata.obsp["connectivities"] = np.random.normal(size=(mdata.n_obs, mdata.n_obs))
+-
+-        mu.pp.filter_obs(mdata, selection)
+-        assert mdata.n_obs == selection.sum()
+-
+-    def test_filter_obs_anndata(self, mdata):
+-        adata = mdata["mod1"].copy()
+-
+-        # layers
+-        adata.layers["X2"] = adata.X**2
+-
+-        # obsm
+-        np.random.seed(42)
+-        adata.obsm["X_normal"] = np.random.normal(size=(adata.n_obs, 10))
+-        selection = adata.obsm["X_normal"].sum(axis=1) > 0
+-
+-        # obsp
+-        adata.obsp["connectivities"] = np.random.normal(size=(adata.n_obs, adata.n_obs))
+-
+-        mu.pp.filter_obs(adata, selection)
+-        assert adata.n_obs == selection.sum()
+-
+-    # Variables
+-
+-    def test_filter_var_adata(self, mdata, filepath_h5mu):
+-        ad = mdata["mod1"].copy()
+-        sub = np.random.binomial(1, 0.5, ad.n_vars).astype(bool)
+-        mu.pp.filter_var(ad, sub)
+-        assert ad.n_vars == sub.sum()
+-
+-    def test_filter_var_mdata(self, mdata, filepath_h5mu):
+-        md = mdata.copy()
+-        sub = np.random.binomial(1, 0.5, md.n_vars).astype(bool)
+-        sub_mod1 = mdata.varm["mod1"][sub].sum()
+-        sub_mod2 = mdata.varm["mod2"][sub].sum()
+-        mu.pp.filter_var(md, sub)
+-        assert md.n_vars == sub.sum()
+-        assert md["mod1"].n_vars == sub_mod1
+-        assert md["mod2"].n_vars == sub_mod2
+-
+-    def test_filter_var_mdata_consecutive(self, mdata, filepath_h5mu):
+-        md = mdata.copy()
+-        md.var["condition1"] = np.random.normal(size=md.n_var)
+-        md.var["condition2"] = np.random.normal(size=md.n_var, scale=2)
+-        total_sub = np.sum((md.var["condition1"] > 0) * (md.var["condition2"] > 0))
+-        mu.pp.filter_var(md, "condition1", lambda x: x > 0)
+-        mu.pp.filter_var(md, "condition2", lambda x: x > 0)
+-        assert md.n_var == total_sub
+-
+-    def test_filter_var_adata_backed(self, mdata, filepath_h5mu):
+-        mdata.write(filepath_h5mu)
+-        mdata_ = mu.read_h5mu(filepath_h5mu, backed="r")
+-        assert list(mdata_.mod.keys()) == ["mod1", "mod2"]
+-
+-        # When backed, in-place filtering should throw a warning
+-        with pytest.warns(UserWarning):
+-            sub = np.random.binomial(1, 0.5, mdata_.mod["mod1"].n_vars).astype(bool)
+-            print("Sub:\t", len(sub))
+-            print("Size:\t", mdata_.mod["mod1"].n_vars)
+-            mu.pp.filter_var(mdata_.mod["mod1"], sub)
+-
+-        mdata_.file.close()
+-
+-    def test_filter_var_adata_view(self, mdata, filepath_h5mu):
+-        pov = np.random.binomial(1, 0.4, mdata.mod["mod1"].n_obs).astype(bool)
+-        view = mdata.mod["mod1"][pov, :]
+-        # When backed, in-place filtering should throw an error
+-        with pytest.raises(ValueError):
+-            sub = np.random.binomial(1, 0.5, view.n_vars).astype(bool)
+-            mu.pp.filter_var(view, sub)
+-
+-    def test_filter_var_with_varm_varp(self, pbmc3k_processed):
+-        A = pbmc3k_processed[:, :500].copy()
+-        B = pbmc3k_processed[:, 500:].copy()
+-        np.random.seed(42)
+-        A_var_sel = np.random.choice(np.array([0, 1]), size=A.n_vars, replace=True)
+-        B_var_sel = np.random.choice(np.array([0, 1]), size=B.n_vars, replace=True)
+-        A.var["sel"] = A_var_sel
+-        B.var["sel"] = B_var_sel
+-        A_subset = A[:, A_var_sel == 1].copy()
+-        B_subset = B[:, B_var_sel == 1].copy()
+-        mdata = mu.MuData({"A": A, "B": B})
+-        mdata.pull_var("sel")
+-        mu.pp.filter_var(mdata, "sel", lambda y: y == 1)
+-        assert mdata.shape[1] == int(np.sum(A_var_sel) + np.sum(B_var_sel))
+-        assert_equal(mdata["A"], A_subset)
+-        assert_equal(mdata["B"], B_subset)
+-
+-
+-@pytest.mark.usefixtures("filepath_h5mu")
+-class TestIntersectObs:
+-    @pytest.mark.parametrize("empty_X", [False, True])
+-    def test_filter_intersect_obs(self, mdata, filepath_h5mu, empty_X):
+-        modalities = {}
+-        for mod, modality in mdata.mod.items():
+-            mod_obs_names = [f"obs{i + 1}" for i in range(modality.n_obs)]
+-            for obs in np.random.choice(range(modality.n_obs), size=modality.n_obs // 10, replace=False):
+-                mod_obs_names[obs] = f"{mod}_" + str(mod_obs_names[obs])
+-
+-            modalities[mod] = modality.copy()
+-            if empty_X:
+-                modalities[mod].X = None
+-            modalities[mod].obs_names = mod_obs_names
+-
+-        mdata_ = MuData(modalities)
+-
+-        common_obs = reduce(lambda a, b: [i for i in a if i in b], [adata.obs_names for adata in mdata_.mod.values()])
+-
+-        mu.pp.intersect_obs(mdata_)
+-        assert mdata_.n_obs == len(common_obs)
+-        assert all(mdata_.obs_names == common_obs)
+-
+-
+-if __name__ == "__main__":
+-    unittest.main()
++def test_filter_obs_adata(mdata: MuData, rng: np.random.Generator) -> None:
++    ad = mdata["mod1"]
++    sub = rng.binomial(1, 0.5, ad.n_obs).astype(bool)
++    mu.pp.filter_obs(ad, sub)
++    assert ad.n_obs == sub.sum()
++
++
++def test_filter_obs_mdata(mdata: MuData, rng: np.random.Generator) -> None:
++    md = mdata.copy()
++    sub = rng.binomial(1, 0.5, md.n_obs).astype(bool)
++    mu.pp.filter_obs(md, sub)
++    assert md.n_obs == sub.sum()
++    assert md["mod1"].n_obs == mdata.obsm["mod1"][sub].sum()
++    assert md["mod2"].n_obs == mdata.obsm["mod2"][sub].sum()
++
++
++def test_filter_obs_mdata_consecutive(mdata: MuData, rng: np.random.Generator) -> None:
++    mdata.obs["condition1"] = rng.normal(size=mdata.n_obs)
++    mdata.obs["condition2"] = rng.normal(size=mdata.n_obs, scale=2)
++    total_sub = np.sum((mdata.obs["condition1"] > 0) * (mdata.obs["condition2"] > 0))
++    mu.pp.filter_obs(mdata, "condition1", lambda x: x > 0)
++    mu.pp.filter_obs(mdata, "condition2", lambda x: x > 0)
++    assert mdata.n_obs == total_sub
++
++
++def test_filter_obs_mdata_consecutive_ragged(mdata: MuData, rng: np.random.Generator) -> None:
++    # It should also work if data is missing in some modalities
++    mod1_discard = rng.choice(range(mdata["mod1"].n_obs), size=3, replace=False)
++    mod1_keep = [i for i in range(mdata["mod1"].n_obs) if i not in mod1_discard]
++    md = MuData({"mod1": mdata["mod1"][mod1_keep, :].copy(), "mod2": mdata["mod2"]})
++
++    md.obs["condition1"] = rng.normal(size=md.n_obs)
++    md.obs["condition2"] = rng.normal(size=md.n_obs, scale=2)
++    total_sub = np.sum((md.obs["condition1"] > 0) * (md.obs["condition2"] > 0))
++    mu.pp.filter_obs(md, "condition1", lambda x: x > 0)
++    mu.pp.filter_obs(md, "condition2", lambda x: x > 0)
++    assert md.n_obs == total_sub
++
++
++def test_filter_obs_adata_backed(mdata: MuData, rng: np.random.Generator, filepath_h5mu: str) -> None:
++    mdata.write(filepath_h5mu)
++    mdata_ = md.read_h5mu(filepath_h5mu, backed="r")
++    assert list(mdata_.mod.keys()) == ["mod1", "mod2"]
++
++    # When backed, in-place filtering should throw a warning
++    with pytest.warns(UserWarning, match="object is backed."):
++        sub = rng.binomial(1, 0.5, mdata_.mod["mod1"].n_obs).astype(bool)
++        print("Sub:\t", len(sub))
++        print("Size:\t", mdata_.mod["mod1"].n_obs)
++        mu.pp.filter_obs(mdata_.mod["mod1"], sub)
++
++
++def test_filter_obs_adata_view(mdata: MuData, rng: np.random.Generator) -> None:
++    pov = rng.binomial(1, 0.4, mdata.mod["mod1"].n_obs).astype(bool)
++    view = mdata.mod["mod1"][pov, :]
++    # When backed, in-place filtering should throw an error
++    with pytest.raises(ValueError, match="does not operate on views."):
++        sub = rng.binomial(1, 0.5, view.n_obs).astype(bool)
++        mu.pp.filter_obs(view, sub)
++
++
++def test_filter_obs_with_obsm_obsp(pbmc3k_processed: AnnData) -> None:
++    A = pbmc3k_processed[:500,].copy()
++    B = pbmc3k_processed[500:,].copy()
++    A_subset = A[A.obs["louvain"] == "B cells"].copy()
++    B_subset = B[B.obs["louvain"] == "B cells"].copy()
++    mdata = mu.MuData({"A": A, "B": B}, axis=1)
++    mdata.pull_obs("louvain")
++    mu.pp.filter_obs(mdata, "louvain", lambda x: x == "B cells")
++    assert mdata["B"].n_obs == B_subset.n_obs
++    assert mdata["A"].obs["louvain"].unique() == "B cells"
++    assert B.n_obs == B_subset.n_obs
++    assert A.obs["louvain"].unique() == "B cells"
++    assert_equal(mdata["A"], A_subset)
++    assert_equal(mdata["B"], B_subset)
++
++
++def test_filter_obs_with_obsm_obsp_explicit(mdata: MuData, rng: np.random.Generator) -> None:
++    mdata["mod1"].obsm["X_normal"] = rng.normal(size=(mdata["mod1"].n_obs, 10))
++    mdata["mod2"].obsm["X_normal"] = rng.normal(size=(mdata["mod2"].n_obs, 10))
++    mdata.obsm["X_normal"] = rng.normal(size=(mdata.n_obs, 10))
++    selection = mdata.obsm["X_normal"].sum(axis=1) > 0
++
++    mdata["mod1"].obsp["connectivities"] = rng.normal(size=(mdata["mod1"].n_obs, mdata["mod1"].n_obs))
++    mdata["mod2"].obsp["connectivities"] = rng.normal(size=(mdata["mod2"].n_obs, mdata["mod2"].n_obs))
++    mdata.obsp["connectivities"] = rng.normal(size=(mdata.n_obs, mdata.n_obs))
++
++    mu.pp.filter_obs(mdata, selection)
++    assert mdata.n_obs == selection.sum()
++
++
++def test_filter_obs_anndata(mdata: MuData, rng: np.random.Generator) -> None:
++    adata = mdata["mod1"]
++    adata.layers["X2"] = adata.X**2
++
++    adata.obsm["X_normal"] = rng.normal(size=(adata.n_obs, 10))
++    selection = adata.obsm["X_normal"].sum(axis=1) > 0
++
++    adata.obsp["connectivities"] = rng.normal(size=(adata.n_obs, adata.n_obs))
++
++    mu.pp.filter_obs(adata, selection)
++    assert adata.n_obs == selection.sum()
++
++
++def test_filter_var_adata(mdata: MuData, rng: np.random.Generator) -> None:
++    ad = mdata["mod1"]
++    sub = rng.binomial(1, 0.5, ad.n_vars).astype(bool)
++    mu.pp.filter_var(ad, sub)
++    assert ad.n_vars == sub.sum()
++
++
++def test_filter_var_mdata(mdata: MuData, rng: np.random.Generator) -> None:
++    sub = rng.binomial(1, 0.5, mdata.n_vars).astype(bool)
++    sub_mod1 = mdata.varm["mod1"][sub].sum()
++    sub_mod2 = mdata.varm["mod2"][sub].sum()
++    mu.pp.filter_var(mdata, sub)
++    assert mdata.n_vars == sub.sum()
++    assert mdata["mod1"].n_vars == sub_mod1
++    assert mdata["mod2"].n_vars == sub_mod2
++
++
++def test_filter_var_mdata_consecutive(mdata: MuData, rng: np.random.Generator) -> None:
++    mdata.var["condition1"] = rng.normal(size=mdata.n_var)
++    mdata.var["condition2"] = rng.normal(size=mdata.n_var, scale=2)
++    total_sub = np.sum((mdata.var["condition1"] > 0) * (mdata.var["condition2"] > 0))
++    mu.pp.filter_var(mdata, "condition1", lambda x: x > 0)
++    mu.pp.filter_var(mdata, "condition2", lambda x: x > 0)
++    assert mdata.n_var == total_sub
++
++
++def test_filter_var_adata_backed(mdata: MuData, rng: np.random.Generator, filepath_h5mu: str) -> None:
++    mdata.write(filepath_h5mu)
++    mdata_ = md.read_h5mu(filepath_h5mu, backed="r")
++    assert list(mdata_.mod.keys()) == ["mod1", "mod2"]
++
++    # When backed, in-place filtering should throw a warning
++    with pytest.warns(UserWarning, match="object is backed."):
++        sub = rng.binomial(1, 0.5, mdata_.mod["mod1"].n_vars).astype(bool)
++        print("Sub:\t", len(sub))
++        print("Size:\t", mdata_.mod["mod1"].n_vars)
++        mu.pp.filter_var(mdata_.mod["mod1"], sub)
++
++
++def test_filter_var_adata_view(mdata: MuData, rng: np.random.Generator) -> None:
++    pov = rng.binomial(1, 0.4, mdata.mod["mod1"].n_obs).astype(bool)
++    view = mdata.mod["mod1"][pov, :]
++    # When given a view, in-place filtering should throw an error
++    with pytest.raises(ValueError, match="does not operate on views."):
++        sub = rng.binomial(1, 0.5, view.n_vars).astype(bool)
++        mu.pp.filter_var(view, sub)
++
++
++def test_filter_var_with_varm_varp(pbmc3k_processed: AnnData, rng: np.random.Generator) -> None:
++    A = pbmc3k_processed[:, :500].copy()
++    B = pbmc3k_processed[:, 500:].copy()
++    A_var_sel = rng.choice(np.array([0, 1]), size=A.n_vars, replace=True)
++    B_var_sel = rng.choice(np.array([0, 1]), size=B.n_vars, replace=True)
++    A.var["sel"] = A_var_sel
++    B.var["sel"] = B_var_sel
++    A_subset = A[:, A_var_sel == 1].copy()
++    B_subset = B[:, B_var_sel == 1].copy()
++    mdata = mu.MuData({"A": A, "B": B})
++    mdata.pull_var("sel")
++    mu.pp.filter_var(mdata, "sel", lambda y: y == 1)
++    assert mdata.shape[1] == int(np.sum(A_var_sel) + np.sum(B_var_sel))
++    assert_equal(mdata["A"], A_subset)
++    assert_equal(mdata["B"], B_subset)
++
++
++@pytest.mark.parametrize("empty_X", [False, True])
++def test_filter_intersect_obs(mdata: MuData, rng: np.random.Generator, empty_X: bool) -> None:
++    modalities = {}
++    for mod, modality in mdata.mod.items():
++        mod_obs_names = [f"obs{i + 1}" for i in range(modality.n_obs)]
++        for obs in rng.choice(range(modality.n_obs), size=modality.n_obs // 10, replace=False):
++            mod_obs_names[obs] = f"{mod}_" + str(mod_obs_names[obs])
++
++        modalities[mod] = modality.copy()
++        if empty_X:
++            modalities[mod].X = None
++        modalities[mod].obs_names = mod_obs_names
++
++    mdata = MuData(modalities)
++
++    common_obs = reduce(lambda a, b: a.intersection(b), [adata.obs_names for adata in mdata.mod.values()])
++
++    mu.pp.intersect_obs(mdata)
++    assert mdata.n_obs == len(common_obs)
++    assert all(mdata.obs_names == common_obs)
+diff --git a/tests/test_muon_tools.py b/tests/test_muon_tools.py
+index d72d7ac9..f4e38841 100644
+--- a/tests/test_muon_tools.py
++++ b/tests/test_muon_tools.py
+@@ -1,129 +1,98 @@
+-import os
+-import tempfile
+-import unittest
++from pathlib import Path
+ 
++import h5py
+ import numpy as np
+-import pandas as pd
+ import pytest
+ from anndata import AnnData
++from mudata import MuData
+ from scipy import sparse
+ 
+ import muon as mu
+-from muon import MuData
+-
+-
+-class TestMOFASimple(unittest.TestCase):
+-    def setUp(self):
+-        tmpdir = tempfile.TemporaryDirectory()
+-        self.addCleanup(tmpdir.cleanup)
+-        self.outfile = os.path.join(tmpdir.name, "mofa.hdf5")
+-
+-        # Create a dataset using 5 factors
+-        np.random.seed(1000)
+-        z = np.random.normal(size=(100, 5))
+-        w1 = np.random.normal(size=(90, 5))
+-        w2 = np.random.normal(size=(50, 5))
+-        e1 = np.random.normal(size=(100, 90))
+-        e2 = np.random.normal(size=(100, 50))
+-        y1 = np.dot(z, w1.T) + e1
+-        y2 = np.dot(z, w2.T) + e2
+-        self.mdata = MuData({"y1": AnnData(y1), "y2": AnnData(y2)})
+-
+-    def test_mofa_nfactors(self):
+-        n_factors = 10
+-        mu.tl.mofa(self.mdata, n_factors=n_factors, quiet=True, verbose=False, outfile=self.outfile)
+-        y = np.concatenate([self.mdata.mod["y1"].X, self.mdata.mod["y2"].X], axis=1)
+-        yhat = np.dot(self.mdata.obsm["X_mofa"], self.mdata.varm["LFs"].T)
+-
+-        r2 = []
+-        for i in range(n_factors):
+-            yhat = np.dot(self.mdata.obsm["X_mofa"][:, [i]], self.mdata.varm["LFs"][:, [i]].T)
+-            r2.append(1 - np.sum((y - yhat) ** 2) / np.sum(y**2))
+-
+-        # Only first 5 factors should have high R2
+-        self.assertTrue(all(i > 0.1 for i in r2[:5]))
+-        self.assertFalse(any(i > 0.1 for i in r2[5:]))
+-
+-    def test_mofa_anndata(self):
+-        mu.tl.mofa(self.mdata["y1"], n_factors=10, quiet=True, verbose=False)
+-        self.assertTrue("X_mofa" in self.mdata["y1"].obsm)
+-        self.assertTrue("LFs" in self.mdata["y1"].varm)
+-
+-    def test_mofa_anndata_groups_cat(self):
+-        adata = self.mdata["y1"].copy()
+-        adata.obs["ab"] = np.random.choice(["a", "b"], adata.n_obs)
+-        adata.obs["ab"] = adata.obs.ab.astype("category")
+-        mu.tl.mofa(adata, groups_label="ab", n_factors=10, quiet=True, verbose=False)
+-        self.assertTrue("X_mofa" in adata.obsm)
+-        self.assertTrue("LFs" in adata.varm)
+-
+-    def test_mofa_obs_union(self):
+-        y1 = self.mdata["y1"]
+-        y2 = self.mdata["y2"]
+-        for sparsity in (0, 1, 2):
+-            if sparsity == 0 or sparsity == 2:
+-                y1.X = sparse.csr_matrix(y1.X)
+-            if sparsity == 1 or sparsity == 2:
+-                y2.X = sparse.csr_matrix(y2.X)
+-            mdata = MuData({"y1": y1[:-10], "y2": y2[10:]})
+-            mu.tl.mofa(mdata, n_factors=10, quiet=True, verbose=False, use_obs="union")
+-            self.assertTrue("X_mofa" in mdata.obsm)
+-            self.assertTrue("LFs" in mdata.varm)
+-
+-
+-@pytest.mark.usefixtures("filepath_hdf5")
+-class TestMOFA2D:
+-    def test_multi_group(self, filepath_hdf5):
+-        pytest.importorskip("mofapy2")
+-
+-        views_names = ["view1", "view2"]
+-
+-        # Set dimensions
+-        n_g1, n_g2 = 10, 20
+-        d_m1, d_m2 = 30, 40
+-        k = 5
+-
+-        # Generate data
+-        np.random.seed(42)
+-        z1 = np.random.normal(size=(n_g1, k))
+-        z2 = np.random.normal(size=(n_g2, k))
+-        z = np.concatenate([z1, z2], axis=0)
+-
+-        w1 = np.random.normal(size=(d_m1, k))
+-        w2 = np.random.normal(size=(d_m2, k))
+-
+-        e11 = np.random.normal(size=(n_g1, d_m1))
+-        e12 = np.random.normal(size=(n_g2, d_m1))
+-        e21 = np.random.normal(size=(n_g1, d_m2))
+-        e22 = np.random.normal(size=(n_g2, d_m2))
+-        e1 = np.concatenate([e11, e12], axis=0)
+-        e2 = np.concatenate([e21, e22], axis=0)
+-
+-        y1 = np.dot(z, w1.T) + e1
+-        y2 = np.dot(z, w2.T) + e2
+-
+-        # Make sample names
+-        samples_names = [f"sample{i}_group{g}" for g, g_size in {"A": n_g1, "B": n_g2}.items() for i in range(g_size)]
+-        np.random.shuffle(samples_names)
+-        samples_groups = [s.split("_")[1] for s in samples_names]
+-
+-        ad1 = AnnData(X=y1, obs=pd.DataFrame(index=samples_names))
+-        ad2 = AnnData(X=y2, obs=pd.DataFrame(index=samples_names))
+-
+-        mdata = MuData({views_names[0]: ad1, views_names[1]: ad2})
+-        obs = pd.DataFrame({"sample": samples_names, "group": samples_groups}, index=samples_names)
+-        mdata.obs = mdata.obs.join(obs)
+-
+-        mu.tl.mofa(mdata, groups_label="group", outfile=filepath_hdf5)
+-
+-        mdata.obs["true_group"] = [s.split("_")[1] for s in mdata.obs["sample"]]
+-
+-        assert all(mdata.obs.group.values == mdata.obs.true_group.values)
+-
+-        for sample, value in (("sample9_groupA", -1.719391), ("sample17_groupB", 2.057848)):
+-            si = np.where(mdata.obs.index == sample)[0]
+-            assert mdata.obsm["X_mofa"][si, 0].item() == pytest.approx(value)
+-
+-
+-if __name__ == "__main__":
+-    unittest.main()
++
++
++@pytest.fixture
++def filepath_hdf5(tmp_path: Path) -> str:
++    return str(tmp_path / "mofa.hdf5")
++
++
++@pytest.fixture
++def mdata(rng: np.random.Generator) -> MuData:
++    z = rng.normal(size=(100, 5))
++    w1 = rng.normal(size=(90, 5))
++    w2 = rng.normal(size=(50, 5))
++    e1 = rng.normal(size=(100, 90))
++    e2 = rng.normal(size=(100, 50))
++    y1 = z @ w1.T + e1
++    y2 = z @ w2.T + e2
++    mdata = MuData({"y1": AnnData(y1), "y2": AnnData(y2)})
++    mdata.obs["group"] = rng.choice((0, 1), size=mdata.n_obs)
++    mdata.obs["group_cat"] = mdata.obs["group"].astype("category")
++    mdata["y1"].obs["group"] = rng.choice((0, 1), size=mdata["y1"].n_obs)
++    mdata["y1"].obs["group_cat"] = mdata["y1"].obs["group"].astype("category")
++    return mdata
++
++
++def test_mofa_nfactors(mdata: MuData, filepath_hdf5: str) -> None:
++    n_factors = 10
++    mu.tl.mofa(mdata, n_factors=n_factors, quiet=True, verbose=False, outfile=filepath_hdf5)
++
++    # Only first 5 factors should have high R2
++    for view_r2 in mdata.uns["mofa"]["variance"].values():
++        assert np.all(view_r2[:5] > 5)
++        assert np.all(view_r2[5:] <= 5)
++
++
++def test_mofa_anndata(mdata: MuData, filepath_hdf5: str) -> None:
++    mu.tl.mofa(mdata["y1"], n_factors=10, quiet=True, verbose=False, outfile=filepath_hdf5)
++    assert "X_mofa" in mdata["y1"].obsm
++    assert "LFs" in mdata["y1"].varm
++
++
++@pytest.mark.parametrize("group_col", ("group", "group_cat"))
++@pytest.mark.parametrize("use_adata", (False, True))
++def test_mofa_groups(
++    mdata: MuData, group_col: str, use_adata: bool, rng: np.random.Generator, filepath_hdf5: str
++) -> None:
++    if use_adata:
++        mdata = mdata["y1"]
++    mu.tl.mofa(
++        mdata,
++        groups_label=group_col,
++        n_factors=10,
++        scale_views=False,
++        scale_groups=False,
++        center_groups=False,
++        quiet=True,
++        verbose=False,
++        outfile=filepath_hdf5,
++    )
++    assert "X_mofa" in mdata.obsm
++    assert "LFs" in mdata.varm
++
++    groups = np.sort(mdata.obs[group_col].unique())
++    groups_str = groups.astype(str)
++    with h5py.File(filepath_hdf5) as mofa_out:
++        assert np.all(np.asarray(sorted(mofa_out["samples_metadata"].keys())) == groups_str)
++        for group, group_str in zip(groups, groups_str, strict=True):
++            submdata = mdata[mdata.obs[group_col] == group]
++            if use_adata:
++                assert np.all(mofa_out["data"]["data"][group_str][()] == submdata.X)
++            else:
++                for view_name, view in submdata.mod.items():
++                    assert np.all(mofa_out["data"][view_name][group_str][()] == view.X)
++            assert np.all(mofa_out["samples_metadata"][group_str][group_col][()] == group)
++            assert np.all(mofa_out["expectations"]["Z"][group_str][()].T == submdata.obsm["X_mofa"])
++
++
++@pytest.mark.parametrize("sparsity", (0, 1, 2))
++def test_mofa_obs_union(mdata, sparsity: int, filepath_hdf5: str) -> None:
++    y1 = mdata["y1"]
++    y2 = mdata["y2"]
++    if sparsity in (0, 2):
++        y1.X = sparse.csr_matrix(y1.X)
++    if sparsity in (1, 2):
++        y2.X = sparse.csr_matrix(y2.X)
++    mdata = MuData({"y1": y1[:-10], "y2": y2[10:]})
++    mu.tl.mofa(mdata, n_factors=10, quiet=True, verbose=False, use_obs="union", outfile=filepath_hdf5)
++    assert "X_mofa" in mdata.obsm
++    assert "LFs" in mdata.varm

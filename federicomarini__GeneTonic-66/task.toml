@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/federicomarini__GeneTonic-66"
+description = "fixing tiny typos in gs_shaker"
+
+[metadata]
+difficulty = "small"
+category = "bugfix"
+keywords = [
+    "GeneTonic",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "federicomarini/GeneTonic"
+ref = "2ab39c1b5ff4dfa00d0b8692cf0d5096a594b808"
+reference = "https://github.com/federicomarini/GeneTonic/pull/66"
+source_access = "auto"
+built_at = "2026-11-15T19:34:00.694948+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:61947f3001eba86b9f52f4f3e6bb9d320c2ba7d9650f033cf9e639d75be11df8"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2025-05-09T11:15:46Z"
+diff_format = "unified"
+context_files = [
+    "R/gs_shaker.R",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 20
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

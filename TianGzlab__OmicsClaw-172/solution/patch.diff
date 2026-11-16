@@ -1,0 +1,957 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index 11a05861..144524b1 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -255,7 +255,9 @@ from omicsclaw.memory import (
+ )
+ ```
+ 
+-> **Migration note (PRs #125–#132).** `MemoryEngine` and `ReviewLog` replace the legacy 1584-line `GraphService`. New code MUST use `MemoryEngine`/`ReviewLog`/`MemoryClient`; `GraphService` lingers as a transitional shim while five remaining call sites (`/memory/update`, `/memory/children`, `/memory/domains`, `MemoryClient.forget`, `MemoryClient.get_recent`) are migrated.
++> **Migration note.** `MemoryEngine` and `ReviewLog` are the canonical hot- and cold-path layers; all production endpoints route through them. The legacy `GraphService` is retained only as an internal implementation detail of three cold-path API modules (`omicsclaw/memory/api/{browse,maintenance,review}.py`) — those will be retired in a follow-up PR. New code MUST use `MemoryEngine` / `ReviewLog` / `MemoryClient`, never `GraphService` directly.
++
++> **KH bootstrap.** Every memory-init path (`CompatMemoryStore.initialize`, `MemoryClient.initialize` with `database_url`, `app/server.py` chat lifespan, `memory/server.py` lifespan) calls `seed_knowhows()` after `init_db()`. The function reads `KnowHowInjector.iter_entries()` and writes each entry to `__shared__` under `core://kh/<doc_id>` via the idempotent `MemoryEngine.seed_shared`. Failures downgrade to a log line; missing `knowledge_base/` does not block startup.
+ 
+ ### Running the Dashboard API
+ 
+diff --git a/README.md b/README.md
+index 4b972b32..c436017a 100644
+--- a/README.md
++++ b/README.md
+@@ -129,7 +129,7 @@ Graph-backed memory at `omicsclaw/memory/` carries your sessions, datasets, anal
+ | Desktop app | Per launch (or per signed-in user) |
+ | Telegram / Feishu bot | Per platform user |
+ 
+-A reserved `__shared__` pool (core agent identity, glossary) is the one thing every surface reads back automatically. Full vocabulary and architecture in [`docs/CONTEXT.md`](docs/CONTEXT.md).
++A reserved `__shared__` pool (core agent identity, knowledge handbook guards, glossary) is the one thing every surface reads back automatically. Full vocabulary and architecture in [`docs/CONTEXT.md`](docs/CONTEXT.md).
+ 
+ ## ❓ FAQ
+ 
+diff --git a/omicsclaw/app/server.py b/omicsclaw/app/server.py
+index 869d2aa0..b77bd052 100644
+--- a/omicsclaw/app/server.py
++++ b/omicsclaw/app/server.py
+@@ -418,6 +418,11 @@ async def lifespan(app: FastAPI):
+         )
+ 
+         await get_engine_db().init_db()
++
++        from omicsclaw.memory import get_memory_engine
++        from omicsclaw.memory.bootstrap import seed_knowhows
++
++        await seed_knowhows(get_memory_engine())
+         _memory_client = get_memory_client(namespace=desktop_namespace())
+         logger.info(
+             "MemoryClient initialised (namespace=%s)", _memory_client.namespace
+diff --git a/omicsclaw/knowledge/knowhow.py b/omicsclaw/knowledge/knowhow.py
+index ecd9bdd2..fab85cb8 100644
+--- a/omicsclaw/knowledge/knowhow.py
++++ b/omicsclaw/knowledge/knowhow.py
+@@ -19,7 +19,7 @@
+ import os
+ from pathlib import Path
+ import re
+-from typing import Any, Optional
++from typing import Any, Iterable, Optional
+ 
+ try:
+     import yaml
+@@ -533,6 +533,26 @@ def get_all_kh_ids(self) -> list[str]:
+         self._ensure_loaded()
+         return list(self._cache.keys())
+ 
++    def iter_entries(self) -> Iterable[tuple[str, str]]:
++        """Yield ``(uri, content)`` pairs for every loaded KH document.
++
++        URI shape: ``core://kh/<doc_id>``. ``doc_id`` comes from the
++        frontmatter when present, otherwise from the filename stem —
++        same fallback ``_metadata_from_document`` uses, so the URI key
++        is stable even if a file lacks frontmatter.
++
++        ``content`` is the full markdown text including frontmatter,
++        matching what ``read_knowhow`` returns. The init_db() bootstrap
++        feeds these pairs into ``MemoryEngine.seed_shared`` so the
++        ``__shared__`` partition mirrors the on-disk KH corpus.
++        """
++        self._ensure_loaded()
++        for filename, meta in self._metadata.items():
++            content = self._cache.get(filename, "")
++            if not content:
++                continue
++            yield f"core://kh/{meta.doc_id}", content
++
+     def get_kh_for_skill(self, skill: str) -> list[str]:
+         """Return KH filenames relevant to a specific skill."""
+         self._ensure_loaded()
+diff --git a/omicsclaw/memory/bootstrap.py b/omicsclaw/memory/bootstrap.py
+new file mode 100644
+index 00000000..9986afa5
+--- /dev/null
++++ b/omicsclaw/memory/bootstrap.py
+@@ -0,0 +1,74 @@
++"""Bootstrap helpers — seed the ``__shared__`` namespace at startup.
++
++``seed_knowhows`` walks every ``KnowHowInjector`` entry and writes it
++through ``MemoryEngine.seed_shared``. Idempotency comes from
++``seed_shared`` itself (same content → no write); this module just
++handles enumeration, error containment, and stat reporting.
++
++Bootstrap failures are intentionally non-fatal: a missing
++``knowledge_base/`` directory or a write error must downgrade to a
++warning log, not block the surface from coming up.
++"""
++
++from __future__ import annotations
++
++import logging
++from typing import TYPE_CHECKING, Any, Optional
++
++logger = logging.getLogger(__name__)
++
++if TYPE_CHECKING:
++    from .engine import MemoryEngine
++
++
++async def seed_knowhows(
++    engine: "MemoryEngine",
++    *,
++    injector: Optional[Any] = None,
++) -> dict[str, int]:
++    """Seed every loaded KH document into ``__shared__``.
++
++    Returns ``{"seeded": N, "skipped": N, "failed": N}``:
++      - ``seeded`` — entries whose content was written (new or changed).
++      - ``skipped`` — entries whose active content already matched.
++      - ``failed`` — entries where the write raised; reasons are logged.
++
++    Passing ``injector`` is intended for tests; production callers omit
++    it and the function uses the global ``KnowHowInjector`` singleton.
++    """
++    if injector is None:
++        from omicsclaw.knowledge.knowhow import get_knowhow_injector
++
++        injector = get_knowhow_injector()
++
++    stats = {"seeded": 0, "skipped": 0, "failed": 0}
++
++    try:
++        entries = list(injector.iter_entries())
++    except Exception as exc:
++        logger.warning(
++            "KH bootstrap: enumerate failed (%s); skipping seed", exc
++        )
++        return stats
++
++    for uri, content in entries:
++        try:
++            _, written = await engine.seed_shared(uri, content)
++            if written:
++                stats["seeded"] += 1
++            else:
++                stats["skipped"] += 1
++        except Exception as exc:
++            stats["failed"] += 1
++            logger.warning(
++                "KH bootstrap: seed %s failed (%s)", uri, exc
++            )
++
++    if stats["seeded"] or stats["failed"]:
++        logger.info(
++            "KH bootstrap: %d seeded, %d unchanged, %d failed",
++            stats["seeded"],
++            stats["skipped"],
++            stats["failed"],
++        )
++    return stats
+diff --git a/omicsclaw/memory/compat.py b/omicsclaw/memory/compat.py
+index 24854084..ce0bbd73 100644
+--- a/omicsclaw/memory/compat.py
++++ b/omicsclaw/memory/compat.py
+@@ -345,6 +345,10 @@ async def initialize(self) -> None:
+             await self._db.init_db()
+             self._search = SearchIndexer(self._db)
+             self._engine = MemoryEngine(self._db, self._search)
++
++            from .bootstrap import seed_knowhows
++
++            await seed_knowhows(self._engine)
+             self._session_client = MemoryClient(
+                 engine=self._engine, namespace=SHARED_NAMESPACE
+             )
+diff --git a/omicsclaw/memory/engine.py b/omicsclaw/memory/engine.py
+index e6bf4f7a..6bb9fbff 100644
+--- a/omicsclaw/memory/engine.py
++++ b/omicsclaw/memory/engine.py
+@@ -39,6 +39,7 @@
+ from typing import TYPE_CHECKING, Optional, Union
+ 
+ from sqlalchemy import and_, func, not_, or_, select, update
++from sqlalchemy.exc import IntegrityError
+ from sqlalchemy.ext.asyncio import AsyncSession
+ 
+ from .models import (
+@@ -463,6 +464,158 @@ async def _upsert_versioned_chain(
+ 
+         return old_id, new_memory.id, node_uuid
+ 
++    async def _ensure_shared_parent_chain(self, parsed: MemoryURI) -> None:
++        """Auto-vivify missing parent containers in ``__shared__``.
++
++        Engine writes refuse missing parents; ``seed_shared`` is a
++        high-level seeding primitive and should let callers seed a
++        leaf like ``core://kh/safety`` without first having to create
++        ``core://kh`` themselves. Mirrors ``MemoryClient._ensure_parent_chain``
++        but is hard-locked to ``__shared__``.
++        """
++        if "/" not in parsed.path:
++            return
++        parent = parsed.parent()
++        if parent is None or parent.is_root:
++            return
++        existing = await self.recall(
++            parent, namespace=SHARED_NAMESPACE, fallback_to_shared=False
++        )
++        if existing is not None:
++            return
++        await self._ensure_shared_parent_chain(parent)
++        try:
++            await self.upsert(
++                parent,
++                f"Container node: {parent}",
++                namespace=SHARED_NAMESPACE,
++            )
++        except IntegrityError:
++            # Another coroutine raced us to create the same parent.
++            # If their row is now visible, treat the chain as ready;
++            # otherwise the error is something else worth surfacing.
++            recheck = await self.recall(
++                parent, namespace=SHARED_NAMESPACE, fallback_to_shared=False
++            )
++            if recheck is None:
++                raise
++
++    async def seed_shared(
++        self,
++        uri: str | MemoryURI,
++        content: str,
++        *,
++        priority: PriorityArg = _UNSET,
++        disclosure: DisclosureArg = _UNSET,
++    ) -> tuple[MemoryRef, bool]:
++        """Idempotent write to ``__shared__``: skip if active content matches.
++
++        Returns ``(ref, written)``. ``written=False`` means the active
++        row already held this exact content and the call was a no-op
++        (no new ``Memory`` row, no version bump, no edge touch).
++
++        Honors ``VERSIONED_PREFIXES`` — a content change on
++        ``core://agent`` appends a new version; a content change on
++        ``core://kh/*`` overwrites in place (KH is shared but not
++        versioned, see ``namespace_policy``).
++
++        Used by the KH bootstrap so re-running ``init_db()`` on a
++        populated database doesn't bump version counters or churn the
++        search index for unchanged guards.
++        """
++        from .namespace_policy import should_version
++
++        parsed = uri if isinstance(uri, MemoryURI) else MemoryURI.parse(uri)
++        canonical = str(parsed)
++
++        existing_ref = await self._active_shared_ref_if_matches(parsed, content)
++        if existing_ref is not None:
++            return existing_ref, False
++
++        try:
++            await self._ensure_shared_parent_chain(parsed)
++
++            if should_version(parsed):
++                vref = await self.upsert_versioned(
++                    parsed,
++                    content,
++                    namespace=SHARED_NAMESPACE,
++                    priority=priority,
++                    disclosure=disclosure,
++                )
++                return (
++                    MemoryRef(
++                        memory_id=vref.new_memory_id,
++                        node_uuid=vref.node_uuid,
++                        namespace=vref.namespace,
++                        uri=vref.uri,
++                    ),
++                    True,
++                )
++
++            ref = await self.upsert(
++                parsed,
++                content,
++                namespace=SHARED_NAMESPACE,
++                priority=priority,
++                disclosure=disclosure,
++            )
++            return ref, True
++        except IntegrityError:
++            # Lost a race with another coroutine seeding the same URI.
++            # The PK constraint on ``paths`` already guarantees we won't
++            # have produced a duplicate row; just adopt the winner's row
++            # and report no write.
++            winner = await self._active_shared_ref(parsed)
++            if winner is not None:
++                return winner, False
++            raise
++
++    async def _active_shared_ref(
++        self, parsed: MemoryURI
++    ) -> Optional[MemoryRef]:
++        """Return the active row's ``MemoryRef`` in ``__shared__`` or ``None``."""
++        canonical = str(parsed)
++        async with self._db.session() as s:
++            path_row = await self._fetch_path(s, SHARED_NAMESPACE, parsed)
++            if path_row is None:
++                return None
++            edge = await s.get(Edge, path_row.edge_id)
++            if edge is None:
++                return None
++            active = (
++                await s.execute(
++                    select(Memory)
++                    .where(
++                        Memory.node_uuid == edge.child_uuid,
++                        Memory.deprecated == False,  # noqa: E712
++                    )
++                    .order_by(Memory.id.desc())
++                    .limit(1)
++                )
++            ).scalar_one_or_none()
++            if active is None:
++                return None
++            return MemoryRef(
++                memory_id=active.id,
++                node_uuid=edge.child_uuid,
++                namespace=SHARED_NAMESPACE,
++                uri=canonical,
++            )
++
++    async def _active_shared_ref_if_matches(
++        self, parsed: MemoryURI, content: str
++    ) -> Optional[MemoryRef]:
++        """Return the active row's ref iff its content equals ``content``."""
++        ref = await self._active_shared_ref(parsed)
++        if ref is None:
++            return None
++        async with self._db.session() as s:
++            active = await s.get(Memory, ref.memory_id)
++            if active is None or active.content != content:
++                return None
++        return ref
++
+     async def delete(
+         self,
+         uri: str | MemoryURI,
+diff --git a/omicsclaw/memory/memory_client.py b/omicsclaw/memory/memory_client.py
+index d69b71a9..7b946a9b 100644
+--- a/omicsclaw/memory/memory_client.py
++++ b/omicsclaw/memory/memory_client.py
+@@ -103,6 +103,10 @@ async def initialize(self) -> None:
+         await self._db.init_db()
+         self._search = SearchIndexer(self._db)
+         self._engine = MemoryEngine(self._db, self._search)
++
++        from .bootstrap import seed_knowhows
++
++        await seed_knowhows(self._engine)
+         self._initialized = True
+ 
+     async def _ensure_init(self) -> None:
+diff --git a/omicsclaw/memory/server.py b/omicsclaw/memory/server.py
+index 8070dc2e..d7e34844 100644
+--- a/omicsclaw/memory/server.py
++++ b/omicsclaw/memory/server.py
+@@ -61,9 +61,12 @@ def _build_app():
+ 
+     @asynccontextmanager
+     async def lifespan(app):
+-        from . import get_db_manager
++        from . import get_db_manager, get_memory_engine
++        from .bootstrap import seed_knowhows
++
+         db = get_db_manager()
+         await db.init_db()
++        await seed_knowhows(get_memory_engine())
+         yield
+         from . import close_db
+         await close_db()
+diff --git a/tests/memory/test_kh_bootstrap.py b/tests/memory/test_kh_bootstrap.py
+new file mode 100644
+index 00000000..7b2ca025
+--- /dev/null
++++ b/tests/memory/test_kh_bootstrap.py
+@@ -0,0 +1,177 @@
++"""Tests for the KH bootstrap that seeds ``__shared__`` after init_db.
++
++Phase 1.3 of the KH-to-graph migration. The bootstrap function pulls
++every ``(uri, content)`` from ``KnowHowInjector.iter_entries`` and
++writes it via ``MemoryEngine.seed_shared``. Re-running on a populated
++database is a no-op (idempotency comes from ``seed_shared`` itself).
++
++Bootstrap failures must NEVER prevent a surface from starting — a
++missing knowledge_base/ directory or a write error must downgrade
++to a log line, not an exception.
++"""
++
++from __future__ import annotations
++
++from pathlib import Path
++
++import pytest
++import pytest_asyncio
++
++from omicsclaw.memory.bootstrap import seed_knowhows
++from omicsclaw.memory.database import DatabaseManager
++from omicsclaw.memory.engine import MemoryEngine
++from omicsclaw.memory.models import SHARED_NAMESPACE
++from omicsclaw.memory.search import SearchIndexer
++from omicsclaw.knowledge.knowhow import KnowHowInjector
++
++
++def _write_kh(kh_dir: Path, filename: str, body: str) -> None:
++    kh_dir.mkdir(parents=True, exist_ok=True)
++    (kh_dir / filename).write_text(body, encoding="utf-8")
++
++
++@pytest_asyncio.fixture
++async def engine(tmp_path):
++    db = DatabaseManager(f"sqlite+aiosqlite:///{tmp_path}/t.db")
++    await db.init_db()
++    search = SearchIndexer(db)
++    yield MemoryEngine(db, search)
++    await db.close()
++
++
++@pytest_asyncio.fixture
++def kh_injector(tmp_path):
++    kh_dir = tmp_path / "kh"
++    _write_kh(kh_dir, "KH-a.md", "---\ndoc_id: rule-a\n---\n\nBody A\n")
++    _write_kh(kh_dir, "KH-b.md", "---\ndoc_id: rule-b\n---\n\nBody B\n")
++    return KnowHowInjector(knowhows_dir=kh_dir)
++
++
++@pytest.mark.asyncio
++async def test_seed_knowhows_writes_each_entry_to_shared(engine, kh_injector):
++    stats = await seed_knowhows(engine, injector=kh_injector)
++
++    assert stats == {"seeded": 2, "skipped": 0, "failed": 0}
++
++    record_a = await engine.recall(
++        "core://kh/rule-a", namespace=SHARED_NAMESPACE
++    )
++    record_b = await engine.recall(
++        "core://kh/rule-b", namespace=SHARED_NAMESPACE
++    )
++    assert record_a is not None and "Body A" in record_a.content
++    assert record_b is not None and "Body B" in record_b.content
++
++
++@pytest.mark.asyncio
++async def test_seed_knowhows_is_idempotent_on_unchanged_corpus(
++    engine, kh_injector
++):
++    first = await seed_knowhows(engine, injector=kh_injector)
++    second = await seed_knowhows(engine, injector=kh_injector)
++
++    assert first == {"seeded": 2, "skipped": 0, "failed": 0}
++    assert second == {"seeded": 0, "skipped": 2, "failed": 0}
++
++
++@pytest.mark.asyncio
++async def test_seed_knowhows_detects_changed_content(tmp_path, engine):
++    kh_dir = tmp_path / "kh"
++    _write_kh(kh_dir, "KH-c.md", "---\ndoc_id: rule-c\n---\n\nBody v1\n")
++    injector = KnowHowInjector(knowhows_dir=kh_dir)
++    await seed_knowhows(engine, injector=injector)
++
++    # Simulate an updated KH on disk — fresh injector to bypass _cache.
++    _write_kh(kh_dir, "KH-c.md", "---\ndoc_id: rule-c\n---\n\nBody v2\n")
++    fresh = KnowHowInjector(knowhows_dir=kh_dir)
++    stats = await seed_knowhows(engine, injector=fresh)
++
++    assert stats["seeded"] == 1
++    assert stats["skipped"] == 0
++    record = await engine.recall(
++        "core://kh/rule-c", namespace=SHARED_NAMESPACE
++    )
++    assert record is not None and "Body v2" in record.content
++
++
++@pytest.mark.asyncio
++async def test_seed_knowhows_swallows_iter_errors(engine):
++    class _BrokenInjector:
++        def iter_entries(self):
++            raise RuntimeError("knowledge_base unreadable")
++
++    stats = await seed_knowhows(engine, injector=_BrokenInjector())
++
++    assert stats == {"seeded": 0, "skipped": 0, "failed": 0}
++
++
++@pytest.mark.asyncio
++async def test_compat_memory_store_seeds_kh_on_initialize(tmp_path):
++    """Wiring check: bot startup (CompatMemoryStore.initialize) must seed
++    KH guards into __shared__ so the bot's first message has graph access
++    to them. Catches a future regression that drops the bootstrap call.
++    """
++    import sqlalchemy as sa
++
++    from omicsclaw.memory.compat import CompatMemoryStore
++    from omicsclaw.memory.models import Path
++
++    store = CompatMemoryStore(
++        database_url=f"sqlite+aiosqlite:///{tmp_path}/wired.db"
++    )
++    try:
++        await store.initialize()
++        async with store._db.session() as s:
++            rows = (
++                await s.execute(
++                    sa.select(Path).where(
++                        Path.namespace == SHARED_NAMESPACE,
++                        Path.domain == "core",
++                        Path.path.like("kh/%"),
++                    )
++                )
++            ).scalars().all()
++        assert len(rows) > 0, (
++            "CompatMemoryStore.initialize() did not seed any core://kh/* "
++            "rows — bootstrap wiring is broken."
++        )
++    finally:
++        await store.close()
++
++
++@pytest.mark.asyncio
++async def test_seed_knowhows_swallows_per_entry_errors(engine, kh_injector):
++    """One bad URI must not stop the rest of the corpus from seeding."""
++
++    class _PartialInjector:
++        def __init__(self, real):
++            self._real = real
++
++        def iter_entries(self):
++            yield "core://kh/good", "Good body"
++            yield "://malformed", "Malformed URI"
++            for uri, content in self._real.iter_entries():
++                yield uri, content
++
++    stats = await seed_knowhows(
++        engine, injector=_PartialInjector(kh_injector)
++    )
++
++    assert stats["seeded"] >= 1
++    assert stats["failed"] >= 1
++    # Good entry and the two real-injector entries land in __shared__.
++    record = await engine.recall(
++        "core://kh/good", namespace=SHARED_NAMESPACE
++    )
++    assert record is not None
++
++    # Entries iterated AFTER the malformed one must still be written —
++    # one bad URI mustn't poison the rest of the corpus.
++    record_a = await engine.recall(
++        "core://kh/rule-a", namespace=SHARED_NAMESPACE
++    )
++    record_b = await engine.recall(
++        "core://kh/rule-b", namespace=SHARED_NAMESPACE
++    )
++    assert record_a is not None
++    assert record_b is not None
+diff --git a/tests/memory/test_seed_shared.py b/tests/memory/test_seed_shared.py
+new file mode 100644
+index 00000000..e651dacd
+--- /dev/null
++++ b/tests/memory/test_seed_shared.py
+@@ -0,0 +1,275 @@
++"""Tests for ``MemoryEngine.seed_shared`` — idempotent write to ``__shared__``.
++
++Used by KH bootstrap (Phase 1) so that re-running ``init_db()`` on a
++populated database does not produce duplicate version chains or
++needlessly bump version counters for unchanged knowledge entries.
++"""
++
++from __future__ import annotations
++
++import pytest
++import pytest_asyncio
++import sqlalchemy as sa
++
++from omicsclaw.memory.database import DatabaseManager
++from omicsclaw.memory.engine import MemoryEngine
++from omicsclaw.memory.models import Memory, Path, SHARED_NAMESPACE
++from omicsclaw.memory.search import SearchIndexer
++
++
++@pytest_asyncio.fixture
++async def engine(tmp_path):
++    db = DatabaseManager(f"sqlite+aiosqlite:///{tmp_path}/t.db")
++    await db.init_db()
++    search = SearchIndexer(db)
++    yield MemoryEngine(db, search), db
++    await db.close()
++
++
++@pytest.mark.asyncio
++async def test_seed_shared_first_call_writes_under_shared_namespace(engine):
++    eng, db = engine
++
++    ref, written = await eng.seed_shared(
++        "core://kh/safety", "do not invent gene-disease associations"
++    )
++
++    assert written is True
++    assert ref.namespace == SHARED_NAMESPACE
++    assert ref.uri == "core://kh/safety"
++
++    async with db.session() as s:
++        path_row = (
++            await s.execute(
++                sa.select(Path).where(
++                    Path.namespace == SHARED_NAMESPACE,
++                    Path.domain == "core",
++                    Path.path == "kh/safety",
++                )
++            )
++        ).scalar_one()
++        assert path_row.edge_id is not None
++
++
++@pytest.mark.asyncio
++async def test_seed_shared_same_content_is_noop(engine):
++    eng, db = engine
++
++    await eng.seed_shared("core://kh/safety", "rules v1")
++    _, written = await eng.seed_shared("core://kh/safety", "rules v1")
++
++    assert written is False
++
++    async with db.session() as s:
++        path_row = (
++            await s.execute(
++                sa.select(Path).where(
++                    Path.namespace == SHARED_NAMESPACE,
++                    Path.path == "kh/safety",
++                )
++            )
++        ).scalar_one()
++        memories = (
++            await s.execute(
++                sa.select(Memory).where(
++                    Memory.node_uuid
++                    == (
++                        await s.execute(
++                            sa.select(sa.text("child_uuid"))
++                            .select_from(sa.text("edges"))
++                            .where(sa.text("id = :eid")),
++                            {"eid": path_row.edge_id},
++                        )
++                    ).scalar_one()
++                )
++            )
++        ).scalars().all()
++        # Exactly one memory row — no version proliferation, no overwrite churn.
++        assert len(memories) == 1
++        assert memories[0].content == "rules v1"
++
++
++@pytest.mark.asyncio
++async def test_seed_shared_changed_content_overwrites_for_kh(engine):
++    eng, db = engine
++
++    _, written_first = await eng.seed_shared("core://kh/safety", "rules v1")
++    _, written_second = await eng.seed_shared("core://kh/safety", "rules v2")
++
++    assert written_first is True
++    assert written_second is True
++
++    async with db.session() as s:
++        # core://kh/* is not in VERSIONED_PREFIXES — overwrite mode keeps
++        # exactly one Memory row whose content reflects the latest seed.
++        path_row = (
++            await s.execute(
++                sa.select(Path).where(
++                    Path.namespace == SHARED_NAMESPACE,
++                    Path.path == "kh/safety",
++                )
++            )
++        ).scalar_one()
++        edge_child = (
++            await s.execute(
++                sa.text(
++                    "SELECT child_uuid FROM edges WHERE id = :eid"
++                ),
++                {"eid": path_row.edge_id},
++            )
++        ).scalar_one()
++        memories = (
++            await s.execute(
++                sa.select(Memory).where(Memory.node_uuid == edge_child)
++            )
++        ).scalars().all()
++        assert len(memories) == 1
++        assert memories[0].content == "rules v2"
++        assert memories[0].deprecated is False
++
++
++@pytest.mark.asyncio
++async def test_seed_shared_versioned_uri_creates_version_chain(engine):
++    """For URIs in VERSIONED_PREFIXES (e.g., core://agent), changed
++    content must produce a new active row and deprecate the previous
++    one — same versioning policy as ``MemoryClient.remember_shared``.
++    """
++    eng, db = engine
++
++    _, w1 = await eng.seed_shared("core://agent", "voice v1")
++    _, w2 = await eng.seed_shared("core://agent", "voice v2")
++
++    assert w1 is True
++    assert w2 is True
++
++    async with db.session() as s:
++        path_row = (
++            await s.execute(
++                sa.select(Path).where(
++                    Path.namespace == SHARED_NAMESPACE,
++                    Path.path == "agent",
++                )
++            )
++        ).scalar_one()
++        edge_child = (
++            await s.execute(
++                sa.text("SELECT child_uuid FROM edges WHERE id = :eid"),
++                {"eid": path_row.edge_id},
++            )
++        ).scalar_one()
++        memories = (
++            await s.execute(
++                sa.select(Memory)
++                .where(Memory.node_uuid == edge_child)
++                .order_by(Memory.id)
++            )
++        ).scalars().all()
++        assert len(memories) == 2
++        assert memories[0].content == "voice v1"
++        assert memories[0].deprecated is True
++        assert memories[1].content == "voice v2"
++        assert memories[1].deprecated is False
++
++
++@pytest.mark.asyncio
++async def test_seed_shared_always_targets_shared_namespace(engine):
++    """``seed_shared`` is hard-locked to ``__shared__`` — there is no
++    way to redirect it via a caller-provided namespace. This is what
++    distinguishes it from ``MemoryClient.remember``.
++    """
++    eng, db = engine
++
++    await eng.seed_shared("core://kh/policy", "policy v1")
++
++    async with db.session() as s:
++        # Nothing landed in any per-user namespace.
++        rows = (
++            await s.execute(
++                sa.select(Path).where(
++                    Path.namespace != SHARED_NAMESPACE,
++                    Path.path == "kh/policy",
++                )
++            )
++        ).scalars().all()
++        assert rows == []
++
++
++@pytest.mark.asyncio
++async def test_seed_shared_concurrent_first_writes_do_not_corrupt(engine):
++    """Two coroutines racing on the same fresh URI must converge to one
++    active row; neither call may leave the graph in a half-written state.
++
++    Pins the concurrency contract flagged in the Phase 1 5-axis review:
++    a TOCTOU window between the equality probe and the write must not
++    surface as data corruption or duplicate version chains.
++    """
++    import asyncio
++
++    eng, db = engine
++
++    results = await asyncio.gather(
++        eng.seed_shared("core://kh/raced", "body"),
++        eng.seed_shared("core://kh/raced", "body"),
++        return_exceptions=True,
++    )
++
++    # Both calls must complete cleanly. The loser of the PK race must
++    # transparently recover and report a valid ``MemoryRef`` rather than
++    # surfacing IntegrityError to the caller — bootstrap callers count
++    # exceptions as ``failed`` and a startup race shouldn't taint that.
++    # The ``written`` flag is best-effort under concurrency (a racing
++    # writer can legitimately observe ``True`` for both halves when the
++    # second probe still misses the first commit); we only require it
++    # never blows up.
++    exceptions = [r for r in results if isinstance(r, Exception)]
++    assert exceptions == [], f"seed_shared leaked exceptions under race: {exceptions}"
++    refs = [r[0] for r in results]
++    assert all(ref.uri == "core://kh/raced" for ref in refs)
++    assert all(ref.namespace == SHARED_NAMESPACE for ref in refs)
++
++    async with db.session() as s:
++        path_rows = (
++            await s.execute(
++                sa.select(Path).where(
++                    Path.namespace == SHARED_NAMESPACE,
++                    Path.path == "kh/raced",
++                )
++            )
++        ).scalars().all()
++        assert len(path_rows) == 1
++
++
++@pytest.mark.asyncio
++async def test_seed_shared_unchanged_versioned_uri_is_noop(engine):
++    """Even for versioned URIs, seeding the same content twice must
++    not append a new version — that's the whole point of an
++    idempotent seed.
++    """
++    eng, db = engine
++
++    await eng.seed_shared("core://agent", "voice v1")
++    _, written = await eng.seed_shared("core://agent", "voice v1")
++
++    assert written is False
++
++    async with db.session() as s:
++        path_row = (
++            await s.execute(
++                sa.select(Path).where(
++                    Path.namespace == SHARED_NAMESPACE,
++                    Path.path == "agent",
++                )
++            )
++        ).scalar_one()
++        edge_child = (
++            await s.execute(
++                sa.text("SELECT child_uuid FROM edges WHERE id = :eid"),
++                {"eid": path_row.edge_id},
++            )
++        ).scalar_one()
++        memories = (
++            await s.execute(
++                sa.select(Memory).where(Memory.node_uuid == edge_child)
++            )
++        ).scalars().all()
++        assert len(memories) == 1
+diff --git a/tests/test_knowhow_iter_entries.py b/tests/test_knowhow_iter_entries.py
+new file mode 100644
+index 00000000..c16a7329
+--- /dev/null
++++ b/tests/test_knowhow_iter_entries.py
+@@ -0,0 +1,104 @@
++"""Tests for ``KnowHowInjector.iter_entries`` — KH bootstrap source.
++
++Phase 1.2 of the KH-to-graph bootstrap. The ``init_db()`` hook iterates
++this generator and seeds each ``(uri, content)`` pair into the
++``__shared__`` namespace via ``MemoryEngine.seed_shared``.
++"""
++
++from __future__ import annotations
++
++from pathlib import Path
++
++import pytest
++
++from omicsclaw.knowledge.knowhow import KnowHowInjector
++
++
++def _write_kh(dir_: Path, filename: str, body: str) -> None:
++    dir_.mkdir(parents=True, exist_ok=True)
++    (dir_ / filename).write_text(body, encoding="utf-8")
++
++
++def test_iter_entries_yields_uri_and_full_content(tmp_path):
++    kh_dir = tmp_path / "knowhows"
++    _write_kh(
++        kh_dir,
++        "KH-test-safety.md",
++        "---\ndoc_id: test-safety\nrelated_skills: [__all__]\n---\n\nBody text.\n",
++    )
++
++    injector = KnowHowInjector(knowhows_dir=kh_dir)
++    entries = list(injector.iter_entries())
++
++    assert len(entries) == 1
++    uri, content = entries[0]
++    assert uri == "core://kh/test-safety"
++    assert "Body text." in content
++    assert content.startswith("---")  # frontmatter retained — same shape read_knowhow returns
++
++
++def test_iter_entries_uri_uses_doc_id_from_frontmatter(tmp_path):
++    kh_dir = tmp_path / "knowhows"
++    _write_kh(
++        kh_dir,
++        "KH-arbitrary-filename.md",
++        "---\ndoc_id: canonical-id\nrelated_skills: [foo]\n---\n\nBody.\n",
++    )
++
++    injector = KnowHowInjector(knowhows_dir=kh_dir)
++    uris = [uri for uri, _ in injector.iter_entries()]
++
++    # doc_id wins over filename stem so renaming the file later does not
++    # invalidate the URI key stored in the graph.
++    assert uris == ["core://kh/canonical-id"]
++
++
++def test_iter_entries_falls_back_to_filename_stem_without_doc_id(tmp_path):
++    kh_dir = tmp_path / "knowhows"
++    _write_kh(
++        kh_dir,
++        "KH-no-frontmatter.md",
++        "Just plain markdown without frontmatter.\n",
++    )
++
++    injector = KnowHowInjector(knowhows_dir=kh_dir)
++    uris = [uri for uri, _ in injector.iter_entries()]
++
++    assert uris == ["core://kh/KH-no-frontmatter"]
++
++
++def test_iter_entries_empty_when_dir_missing(tmp_path):
++    injector = KnowHowInjector(knowhows_dir=tmp_path / "does_not_exist")
++    assert list(injector.iter_entries()) == []
++
++
++def test_iter_entries_content_matches_read_knowhow(tmp_path):
++    """Bootstrap must seed the same body that ``read_knowhow`` would
++    return, so a future swap from filesystem-read to graph-read is
++    transparent to callers."""
++    kh_dir = tmp_path / "knowhows"
++    body = (
++        "---\ndoc_id: parity-check\nrelated_skills: [foo]\n---\n\n"
++        "# Heading\n\nFull body.\n"
++    )
++    _write_kh(kh_dir, "KH-parity.md", body)
++
++    injector = KnowHowInjector(knowhows_dir=kh_dir)
++    entries = dict(injector.iter_entries())
++    via_read = injector.read_knowhow("KH-parity.md")
++
++    assert entries["core://kh/parity-check"] == via_read
++
++
++def test_iter_entries_skips_non_kh_files(tmp_path):
++    """Loader globs ``KH-*.md`` — non-matching files must not appear in
++    the bootstrap stream."""
++    kh_dir = tmp_path / "knowhows"
++    _write_kh(kh_dir, "KH-real.md", "---\ndoc_id: real\n---\n\nBody.\n")
++    _write_kh(kh_dir, "README.md", "Not a KH document.\n")
++    _write_kh(kh_dir, "notes.txt", "Even less a KH document.\n")
++
++    injector = KnowHowInjector(knowhows_dir=kh_dir)
++    uris = [uri for uri, _ in injector.iter_entries()]
++
++    assert uris == ["core://kh/real"]

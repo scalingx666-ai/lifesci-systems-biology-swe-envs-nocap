@@ -1,0 +1,68 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-166"
+description = "feat(scaffolder): emit v2 layout (SKILL.md + parameters.yaml + references/) (PR-eval-3a)"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "0e2dc3566d1834d2d62af1d6ec44af0e328b7231"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/166"
+source_access = "auto"
+built_at = "2026-11-15T18:17:25.793729+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:3a29e703f7de657c165761d58b1957e6d64a67a3ea3cc16cfc44b8d2689ebe76"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-05-11T04:58:25Z"
+diff_format = "unified"
+context_files = [
+    "omicsclaw/core/parameters_md.py",
+    "omicsclaw/core/skill_scaffolder.py",
+    "omicsclaw/runtime/bot_tools.py",
+    "scripts/generate_parameters_md.py",
+    "scripts/skill_lint.py",
+    "skills/orchestrator/omics-skill-builder/omics_skill_builder.py",
+    "tests/test_skill_scaffolder.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 559
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

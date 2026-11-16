@@ -1,0 +1,76 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__muon-252"
+description = "style: switch to panache markdown formatting"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "muon",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/muon"
+ref = "83d6e962da0860e90102e4f488192a1c182c7f54"
+reference = "https://github.com/scverse/muon/pull/252"
+source_access = "auto"
+built_at = "2026-11-15T16:58:56.069073+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:a6870dbbd8d9c4fa1c204a5f1524f6996354409f93d635f6607c434a8ecf5e8a"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-11-12T17:25:50Z"
+diff_format = "unified"
+context_files = [
+    ".panache.toml",
+    ".pre-commit-config.yaml",
+    "DESIGN.md",
+    "README.md",
+    "biome.jsonc",
+    "docs/api.md",
+    "docs/changelog.md",
+    "docs/citation.md",
+    "docs/contributing.md",
+    "docs/index.md",
+    "docs/io/input.md",
+    "docs/io/mudata.md",
+    "docs/omics/atac.md",
+    "docs/omics/citeseq.md",
+    "docs/omics/multi.md",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 136
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

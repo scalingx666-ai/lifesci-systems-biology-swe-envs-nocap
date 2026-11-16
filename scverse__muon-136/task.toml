@@ -1,0 +1,67 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__muon-136"
+description = "scanpy 1.10 compat + PR CI"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "muon",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/muon"
+ref = "61942d63bae0c7674603ac30d69ded69eec133e1"
+reference = "https://github.com/scverse/muon/pull/136"
+source_access = "auto"
+built_at = "2026-11-15T17:00:04.792169+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:f488c367c3c920d4b24b1d787acff52a76d363f99ea5dc0b8505a46b19e14e6b"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2024-04-09T08:46:06Z"
+diff_format = "unified"
+context_files = [
+    ".github/workflows/pythonpackage.yml",
+    "docs/source/changelog.rst",
+    "muon/__init__.py",
+    "muon/_core/preproc.py",
+    "muon/_core/tools.py",
+    "pyproject.toml",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 98
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

@@ -1,0 +1,2310 @@
+diff --git a/.gitignore b/.gitignore
+index d162946a..c9b7a681 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -138,3 +138,4 @@ workspace/
+ 
+ # Local references / external tools (user-downloaded, large)
+ resources/
++.codex
+diff --git a/knowledge_base/knowhows/KH-sc-cell-annotation-guardrails.md b/knowledge_base/knowhows/KH-sc-cell-annotation-guardrails.md
+index 9d248f84..37af05ba 100644
+--- a/knowledge_base/knowhows/KH-sc-cell-annotation-guardrails.md
++++ b/knowledge_base/knowhows/KH-sc-cell-annotation-guardrails.md
+@@ -2,30 +2,26 @@
+ doc_id: sc-cell-annotation-guardrails
+ title: Single-Cell Annotation Guardrails
+ doc_type: knowhow
+-critical_rule: MUST explain the selected annotation source and the exact reference/model input before running sc-cell-annotation
++critical_rule: MUST explain the chosen annotation source and the exact reference/model input before running sc-cell-annotation
+ domains: [singlecell]
+ related_skills: [sc-cell-annotation, sc-annotate]
+ phases: [before_run, on_warning, after_run]
+-search_terms: [cell annotation, CellTypist, SingleR, scmap, model, reference, 单细胞注释, 参考集, 调参]
++search_terms: [cell annotation, manual annotation, CellTypist, SingleR, scmap, popv, knnpredict, model, reference, 单细胞注释, 参考集, 调参]
+ priority: 1.0
+ source_urls:
+-  - https://celltypist.readthedocs.io/en/stable/_modules/celltypist/annotate.html
+-  - https://celltypist.readthedocs.io/en/stable/notebook/celltypist_tutorial.html
++  - https://celltypist.readthedocs.io/en/latest/celltypist.annotate.html
+   - https://bioconductor.org/packages/release/bioc/vignettes/SingleR/inst/doc/SingleR.html
+-  - https://bioconductor.org/packages/SingleR/
+-  - https://pmc.ncbi.nlm.nih.gov/articles/PMC11631762/
+-  - https://docs.scvi-tools.org/en/1.3.3/tutorials/notebooks/multimodal/scarches_scvi_tools.html
++  - https://bioconductor.org/packages/release/bioc/html/scmap.html
+ ---
+ 
+ # Single-Cell Annotation Guardrails
+ 
+-- **Inspect first**: check whether cluster labels already exist and whether the user wants marker-based annotation, CellTypist, PopV-style reference mapping, or an R reference path.
+-- **Standardize external inputs first**: if the object comes from outside OmicsClaw and matrix provenance is unclear, recommend `sc-standardize-input` before annotation.
+-- **Key wrapper controls**: explain `method`, `cluster_key`, `model`, and `reference` before running.
+-- **Use method-correct language**: `model` is the main CellTypist selector; `reference` is either the R atlas selector for `singler`/`scmap` or a labeled reference H5AD path for `popv`.
+-- **Do not invent unsupported knobs**: official CellTypist docs also expose options like `majority_voting`, but the current OmicsClaw wrapper does not expose them.
+-- **Respect the matrix contract**: marker scoring, CellTypist, SingleR, and scmap should read log-normalized expression, preferably from `adata.raw`; do not describe raw counts as direct input for these methods.
+-- **Disclose fallback honestly**: if CellTypist input validation fails or the model cannot run, the wrapper can fall back to `markers`; report both the requested and executed methods.
+-- **Stop when the biological selector is still ambiguous**: do not blindly keep the default CellTypist model or default SingleR/scmap reference without user confirmation when those choices materially affect the label story.
+-- **Be honest about runtime dependencies**: `popv` in the current wrapper is a lightweight reference-mapping implementation and still depends on a well-labeled reference H5AD with sufficient gene overlap; `singler` requires an R environment with SingleR, celldex, SingleCellExperiment, and zellkonverter; `scmap` is a public method and requires `scmap` plus the same R bridge stack.
+-- **For detailed parameter strategies**: see `knowledge_base/skill-guides/singlecell/sc-cell-annotation.md`.
++- **Inspect first**: confirm whether the user wants manual relabeling, marker-based annotation, CellTypist, a labeled H5AD reference (`popv` / `knnpredict`), or an R reference path (`singler` / `scmap`).
++- **Use normalized expression**: public annotation paths should read normalized expression, not raw counts.
++- **Do not auto-cluster in marker mode**: `markers` annotation now expects an existing cluster/label column.
++- **Key wrapper controls**: explain `method`, `cluster_key`, `manual_map/manual_map_file`, `model`, `reference`, and `celltypist_majority_voting` before running.
++- **Use method-correct language**: `model` is the CellTypist selector; `reference` is either a labeled H5AD (`popv` / `knnpredict`) or an atlas selector / labeled H5AD (`singler` / `scmap`).
++- **Disclose fallback honestly**: if CellTypist falls back to `markers`, state both the requested and executed methods.
++- **Do not overclaim certainty**: annotation labels are still hypotheses that should be checked against markers and biology.
++- **Point to the next step**: after annotation, users often go back to `sc-markers` for support or forward to `sc-de` for condition-aware testing.
++- **For detailed parameter strategy**: see `knowledge_base/skill-guides/singlecell/sc-cell-annotation.md`.
+diff --git a/knowledge_base/skill-guides/singlecell/sc-cell-annotation.md b/knowledge_base/skill-guides/singlecell/sc-cell-annotation.md
+index f7cecb96..6caa755c 100644
+--- a/knowledge_base/skill-guides/singlecell/sc-cell-annotation.md
++++ b/knowledge_base/skill-guides/singlecell/sc-cell-annotation.md
+@@ -10,130 +10,43 @@ priority: 0.8
+ 
+ # OmicsClaw Skill Guide — SC Cell Annotation
+ 
+-**Status**: implementation-aligned guide derived from the current OmicsClaw
+-`sc-cell-annotation` skill. This is a wrapper guide for method choice and
+-reference/model reasoning, not a claim that all upstream annotation features
+-are already exposed.
+-
+-## Purpose
+-
+-Use this guide when you need to decide:
+-- whether marker-based or reference/model-based annotation is the better first pass
+-- which parameters matter first in the current wrapper
+-- how to explain current fallback behavior honestly
+-
+-## Step 1: Inspect The Data First
+-
+-Key properties to check:
+-- **Cluster labels**:
+-  - `markers` depends on a sensible `cluster_key`
+-- **Reference / model availability**:
+-  - CellTypist needs a real model choice
+-  - reference-style paths need a trustworthy reference concept
+-- **Expression state**:
+-  - marker scoring, CellTypist, SingleR, and scmap should read log-normalized expression
+-  - when `adata.raw` exists and matches the current cells/genes, treat it as the preferred source for annotation backends
+-- **Input provenance**:
+-  - if the object is external and count-vs-normalized state is unclear, recommend `sc-standardize-input` first
+-
+-Important implementation notes in current OmicsClaw:
+-- implemented methods are `markers`, `celltypist`, `popv`, `singler`, and `scmap`
+-- `singler` and `scmap` are available via the shared R bridge when the required R packages are installed
+-- `model` is the key user-facing CellTypist selector
+-- if CellTypist input validation or model execution fails, the wrapper may fall back to `markers` and records both requested and actual methods
+-
+-## Step 2: Pick The Method Deliberately
+-
+-| Method | Best first use | Strong starting parameters | Main caveat |
+-|--------|----------------|----------------------------|-------------|
+-| **markers** | Fast baseline when clusters are already interpretable | `cluster_key` | Quality is limited by upstream clustering and marker quality; use log-normalized expression rather than counts |
+-| **celltypist** | Best first automated model-based label transfer | `model` | Wrapper does not expose the full CellTypist tuning surface |
+-| **popv** | Reference mapping when you already have a labeled atlas in H5AD format | `reference`, `cluster_key` | Current wrapper is PopV-style consensus mapping, not the full upstream popV package |
+-| **singler** | Reference-based annotation through SingleR | `reference` | Requires an R environment with SingleR and celldex |
+-| **scmap** | Cluster-level projection against a reference atlas | `reference` | Requires the R `scmap` stack and is only as good as the reference clusters |
+-
+-## Step 3: Always Show A Parameter Summary Before Running
+-
+-```text
+-About to run cell annotation
+-  Method: celltypist
+-  Parameters: model=Immune_All_Low
+-  Note: reference-style paths read log-normalized expression, preferably from adata.raw.
+-```
+-
+-## Step 4: Method-Specific Tuning Rules
+-
+-### Marker-Based
+-
+-Tune in this order:
+-1. `cluster_key`
+-
+-Guidance:
+-- use marker-based mode only when clusters already look biologically coherent
+-
+-### CellTypist
+-
+-Tune in this order:
+-1. `model`
+-
+-Guidance:
+-- choose the smallest model that matches the biology before trying bigger generic atlases
+-
+-Important warnings:
+-- do not expose `majority_voting`, `mode`, or other CellTypist internals as current public OmicsClaw parameters
+-- if the current matrix still looks count-like, do not present CellTypist as if it can run natively without either preprocessing first or explicitly accepting marker fallback
+-
+-### PopV
+-
+-Tune in this order:
+-1. `reference`
+-2. `cluster_key`
+-
+-Important warnings:
+-- the current wrapper expects `reference` to be a labeled H5AD path, not a symbolic atlas name
+-- gene overlap and label quality in the reference matter more than the method name
+-- describe this path as reference mapping with cluster consensus, not as the full upstream popV ensemble unless that backend is actually present
+-
+-### SingleR
+-
+-Tune in this order:
+-1. `reference`
+-
+-Important warnings:
+-- ensure the requested reference is available in the current R environment
+-- be explicit that this path depends on Bioconductor packages outside the Python environment
+-- make the user confirm the reference choice instead of blindly running the default HPCA atlas on unknown biology
+-
+-### scmap
+-
+-Tune in this order:
+-1. `reference`
+-
+-Important warnings:
+-- use scmap for atlas projection, not as a substitute for marker reasoning when clusters are badly defined
+-- keep the explanation clear that scmap is reference-driven and depends on the R bridge stack
+-
+-## Step 5: What To Say After The Run
+-
+-- If one label dominates everything: question reference/model mismatch before trusting the labels.
+-- If marker-based labels look noisy: question cluster quality first.
+-- If CellTypist fell back: explain why the fallback happened and make it explicit that the final labels came from `markers`, not CellTypist.
+-- If SingleR cannot run: explain which R packages are missing instead of pretending marker mode is equivalent.
+-- If scmap and SingleR disagree: report the disagreement and revisit the reference choice before forcing a single label story.
+-
+-## Step 6: Explain Outputs Using Method-Correct Language
+-
+-- describe `cell_type` as the standardized label column
+-- describe `annotation_method` as the actual wrapper method used
+-- when a fallback happened, describe the requested and executed methods separately
+-- describe confidence only when the chosen backend truly produced one
+-
+-## Official References
+-
+-- https://celltypist.readthedocs.io/en/latest/celltypist.annotate.html
+-- https://celltypist.readthedocs.io/en/latest/notebook/celltypist_tutorial.html
+-- https://github.com/Teichlab/celltypist
+-- https://pmc.ncbi.nlm.nih.gov/articles/PMC11631762/
+-- https://docs.scvi-tools.org/en/1.3.3/tutorials/notebooks/multimodal/scarches_scvi_tools.html
+-- https://bioconductor.org/packages/release/bioc/vignettes/SingleR/inst/doc/SingleR.html
+-- https://bioconductor.org/packages/release/bioc/html/scmap.html
++## When To Use It
++
++Use this skill after clustering when the question becomes: “these clusters probably represent what cell types?”
++
++Common OmicsClaw path:
++
++1. `sc-qc`
++2. `sc-preprocessing`
++3. optional `sc-batch-integration`
++4. `sc-clustering`
++5. `sc-cell-annotation`
++6. optionally return to `sc-markers` for supporting evidence
++
++## Method Choice
++
++| Method | Best first use | Main public controls | Main caveat |
++|--------|----------------|----------------------|-------------|
++| `manual` | explicit relabeling when you already know what each cluster should be called | `cluster_key`, `manual_map` / `manual_map_file` | quality depends entirely on the supplied mapping |
++| `markers` | quick label proposal when clusters are already interpretable | `cluster_key` | depends strongly on upstream cluster quality |
++| `celltypist` | best first automated model-based annotation | `model`, `celltypist_majority_voting` | model choice is tissue-dependent |
++| `popv` | labeled H5AD reference mapping | `reference`, `cluster_key` | tries official PopV first, then falls back to lightweight mapping |
++| `knnpredict` | lightweight AnnData-first reference mapping | `reference`, `cluster_key` | quality depends entirely on the external reference |
++| `singler` | Bioconductor atlas-based annotation or local-reference mapping | `reference` | atlas keywords depend on R packages and cache/network; labeled local H5AD references are more stable |
++| `scmap` | reference projection through R | `reference` | atlas keywords depend on cache/network; labeled local H5AD references are more stable |
++
++## How To Explain Parameters
++
++Start with:
++- which method is being used (`method`)
++- whether it depends on a cluster column (`cluster_key`)
++- whether the user is explicitly supplying a relabeling map (`manual_map` / `manual_map_file`)
++- whether it depends on a model (`model`) or a reference (`reference`)
++- whether CellTypist smoothing is enabled (`celltypist_majority_voting`)
++
++## What To Say After The Run
++
++- Check the annotated embedding and label distribution first.
++- If labels look implausible, question the reference/model before trusting the result.
++- If labels are still ambiguous, go back to `sc-markers` for supporting evidence.
++- If the next question is biological comparison between labeled groups, continue to `sc-de`.
+diff --git a/omicsclaw/core/registry.py b/omicsclaw/core/registry.py
+index 89bab924..478ff692 100644
+--- a/omicsclaw/core/registry.py
++++ b/omicsclaw/core/registry.py
+@@ -945,8 +945,8 @@ def ensure_registry_loaded(skills_dir: Path | None = None) -> OmicsRegistry:
+         "legacy_aliases": ["sc-annotate"],
+         "script": SKILLS_DIR / "singlecell" / "scrna" / "sc-cell-annotation" / "sc_annotate.py",
+         "demo_args": ["--demo"],
+-        "description": "Cell type annotation (markers, CellTypist, PopV-style reference mapping, SingleR, scmap)",
+-        "allowed_extra_flags": {"--method", "--reference", "--species", "--cluster-key", "--model"},
++        "description": "Cell type annotation (markers, CellTypist, PopV-style mapping, KNNPredict-style mapping, SingleR, scmap)",
++        "allowed_extra_flags": {"--method", "--reference", "--cluster-key", "--model", "--celltypist-majority-voting", "--no-celltypist-majority-voting"},
+         "saves_h5ad": True,
+     },
+     # sc-trajectory: replaced by sc-pseudotime and sc-velocity
+diff --git a/omicsclaw/r_scripts/sc_scmap_annotate.R b/omicsclaw/r_scripts/sc_scmap_annotate.R
+index 1b956003..230157cc 100644
+--- a/omicsclaw/r_scripts/sc_scmap_annotate.R
++++ b/omicsclaw/r_scripts/sc_scmap_annotate.R
+@@ -9,6 +9,16 @@ h5ad_file  <- args[1]
+ output_dir <- args[2]
+ reference  <- if (length(args) >= 3) args[3] else "HPCA"
+ 
++infer_label_key <- function(sce) {
++    candidates <- c("cell_type", "celltype", "label", "annotation", "cell_type_label")
++    for (candidate in candidates) {
++        if (candidate %in% colnames(colData(sce))) {
++            return(candidate)
++        }
++    }
++    stop("Reference H5AD must contain a label column such as cell_type or annotation")
++}
++
+ suppressPackageStartupMessages({
+     library(scmap)
+     library(celldex)
+@@ -18,29 +28,44 @@ suppressPackageStartupMessages({
+ 
+ if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
+ 
+-cache_dir <- file.path(path.expand("~"), ".cache", "omicsclaw", "experimenthub")
++cache_dir <- Sys.getenv("OMICSCLAW_EXPERIMENTHUB_CACHE", unset = file.path(tempdir(), "omicsclaw", "experimenthub"))
+ dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
+ Sys.setenv(EXPERIMENT_HUB_CACHE = cache_dir)
+ options(timeout = max(600, getOption("timeout")))
+ 
+ tryCatch({
+-    sce <- readH5AD(h5ad_file)
++    sce <- readH5AD(h5ad_file, reader = "R")
++    if (!"counts" %in% SummarizedExperiment::assayNames(sce) && "X" %in% SummarizedExperiment::assayNames(sce)) {
++        SummarizedExperiment::assay(sce, "counts") <- SummarizedExperiment::assay(sce, "X")
++    }
+     if (!"logcounts" %in% SummarizedExperiment::assayNames(sce)) {
+         SummarizedExperiment::assay(sce, "logcounts") <- SummarizedExperiment::assay(sce, "X")
+     }
+     rowData(sce)$feature_symbol <- rownames(sce)
+ 
+-    ref_data <- switch(reference,
+-        HPCA = celldex::HumanPrimaryCellAtlasData(),
+-        Blueprint_Encode = celldex::BlueprintEncodeData(),
+-        Monaco = celldex::MonacoImmuneData(),
+-        Mouse = celldex::MouseRNAseqData(),
+-        stop(sprintf("Unsupported scmap reference: %s", reference))
+-    )
+-    ref_data <- as(ref_data, "SingleCellExperiment")
++    if (file.exists(reference)) {
++        ref_data <- readH5AD(reference, reader = "R")
++        label_key <- infer_label_key(ref_data)
++        if (!"counts" %in% SummarizedExperiment::assayNames(ref_data) && "X" %in% SummarizedExperiment::assayNames(ref_data)) {
++            SummarizedExperiment::assay(ref_data, "counts") <- SummarizedExperiment::assay(ref_data, "X")
++        }
++        if (!"logcounts" %in% SummarizedExperiment::assayNames(ref_data) && "X" %in% SummarizedExperiment::assayNames(ref_data)) {
++            SummarizedExperiment::assay(ref_data, "logcounts") <- SummarizedExperiment::assay(ref_data, "X")
++        }
++    } else {
++        ref_data <- switch(reference,
++            HPCA = celldex::HumanPrimaryCellAtlasData(),
++            Blueprint_Encode = celldex::BlueprintEncodeData(),
++            Monaco = celldex::MonacoImmuneData(),
++            Mouse = celldex::MouseRNAseqData(),
++            stop(sprintf("Unsupported scmap reference: %s", reference))
++        )
++        ref_data <- as(ref_data, "SingleCellExperiment")
++        label_key <- "label.main"
++    }
+     rowData(ref_data)$feature_symbol <- rownames(ref_data)
+     ref_data <- scmap::selectFeatures(ref_data, suppress_plot = TRUE)
+-    ref_data <- scmap::indexCluster(ref_data, cluster_col = "label.main")
++    ref_data <- scmap::indexCluster(ref_data, cluster_col = label_key)
+ 
+     res <- scmap::scmapCluster(
+         projection = sce,
+diff --git a/omicsclaw/r_scripts/sc_singler_annotate.R b/omicsclaw/r_scripts/sc_singler_annotate.R
+index 4f457ec6..002cb551 100644
+--- a/omicsclaw/r_scripts/sc_singler_annotate.R
++++ b/omicsclaw/r_scripts/sc_singler_annotate.R
+@@ -26,29 +26,49 @@ suppressPackageStartupMessages({
+ 
+ if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
+ 
+-cache_dir <- file.path(path.expand("~"), ".cache", "omicsclaw", "experimenthub")
++cache_dir <- Sys.getenv("OMICSCLAW_EXPERIMENTHUB_CACHE", unset = file.path(tempdir(), "omicsclaw", "experimenthub"))
+ dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
+ Sys.setenv(EXPERIMENT_HUB_CACHE = cache_dir)
+ options(timeout = max(600, getOption("timeout")))
+ 
++infer_label_key <- function(sce) {
++    candidates <- c("cell_type", "celltype", "label", "annotation", "cell_type_label")
++    for (candidate in candidates) {
++        if (candidate %in% colnames(colData(sce))) {
++            return(candidate)
++        }
++    }
++    stop("Reference H5AD must contain a label column such as cell_type or annotation")
++}
++
+ tryCatch({
+     cat(sprintf("Loading data from %s...\n", h5ad_file))
+-    sce <- readH5AD(h5ad_file)
++    sce <- readH5AD(h5ad_file, reader = "R")
+ 
+     cat(sprintf("Loading reference: %s...\n", reference))
+-    ref_data <- switch(reference,
+-        HPCA             = celldex::HumanPrimaryCellAtlasData(),
+-        Blueprint_Encode = celldex::BlueprintEncodeData(),
+-        Monaco           = celldex::MonacoImmuneData(),
+-        Mouse            = celldex::MouseRNAseqData(),
+-        stop(sprintf("Unsupported SingleR reference: %s", reference))
+-    )
++    if (file.exists(reference)) {
++        ref_data <- readH5AD(reference, reader = "R")
++        label_key <- infer_label_key(ref_data)
++        ref_labels <- colData(ref_data)[[label_key]]
++        if (!"logcounts" %in% SummarizedExperiment::assayNames(ref_data) && "X" %in% SummarizedExperiment::assayNames(ref_data)) {
++            SummarizedExperiment::assay(ref_data, "logcounts") <- SummarizedExperiment::assay(ref_data, "X")
++        }
++    } else {
++        ref_data <- switch(reference,
++            HPCA             = celldex::HumanPrimaryCellAtlasData(),
++            Blueprint_Encode = celldex::BlueprintEncodeData(),
++            Monaco           = celldex::MonacoImmuneData(),
++            Mouse            = celldex::MouseRNAseqData(),
++            stop(sprintf("Unsupported SingleR reference: %s", reference))
++        )
++        ref_labels <- ref_data$label.main
++    }
+ 
+     cat("Running SingleR annotation...\n")
+     pred <- SingleR(
+         test   = SummarizedExperiment::assay(sce, "X"),
+         ref    = ref_data,
+-        labels = ref_data$label.main
++        labels = ref_labels
+     )
+ 
+     score <- apply(pred$scores, 1, max)
+diff --git a/skills/singlecell/_lib/annotation.py b/skills/singlecell/_lib/annotation.py
+index 1e5bbd34..44e95570 100644
+--- a/skills/singlecell/_lib/annotation.py
++++ b/skills/singlecell/_lib/annotation.py
+@@ -8,7 +8,9 @@
+ from __future__ import annotations
+ 
+ import logging
++import os
+ import tempfile
++import json
+ from pathlib import Path
+ from typing import TYPE_CHECKING, Any, Dict, Optional, Union
+ 
+@@ -19,11 +21,34 @@
+ if TYPE_CHECKING:
+     pass
+ 
+-from .adata_utils import select_count_like_expression_source
++from .adata_utils import (
++    infer_x_matrix_kind,
++    matrix_kind_is_normalized,
++    raw_matrix_kind,
++    select_count_like_expression_source,
++)
+ 
+ logger = logging.getLogger(__name__)
+ 
+ 
++def celltypist_model_available_locally(model: str) -> tuple[bool, str]:
++    """Return whether the requested CellTypist model already exists locally."""
++    try:
++        import celltypist
++    except Exception:
++        return False, ""
++
++    model_name = model if str(model).endswith(".pkl") else f"{model}.pkl"
++    model_dir = Path(getattr(celltypist.models, "models_path", Path.home() / ".celltypist" / "data" / "models"))
++    model_path = model_dir / model_name
++    return model_path.exists(), str(model_path)
++
++
++def experimenthub_cache_dir() -> str:
++    """Return the cache directory used by celldex / ExperimentHub helpers."""
++    return os.getenv("OMICSCLAW_EXPERIMENTHUB_CACHE", str(Path.home() / ".cache" / "omicsclaw" / "experimenthub"))
++
++
+ # ---------------------------------------------------------------------------
+ # Manual annotation
+ # ---------------------------------------------------------------------------
+@@ -101,6 +126,86 @@ def annotate_clusters_manual(
+     return adata
+ 
+ 
++def parse_manual_annotation_map(mapping_text: str) -> Dict[str, str]:
++    """Parse a compact manual annotation mapping string.
++
++    Supported format examples:
++    - ``"0=T cell;1,2=Myeloid;3=NK"``
++    - one rule per line
++    """
++    if not str(mapping_text).strip():
++        raise ValueError("Manual annotation mapping is empty.")
++
++    mapping: dict[str, str] = {}
++    raw_items = []
++    for line in str(mapping_text).replace("\r", "\n").split("\n"):
++        raw_items.extend(part for part in line.split(";") if part.strip())
++
++    for item in raw_items:
++        if "=" not in item:
++            raise ValueError(
++                "Manual annotation entries must use `cluster=label` syntax, e.g. `0=T cell;1,2=Myeloid`."
++            )
++        left, right = item.split("=", 1)
++        label = str(right).strip()
++        if not label:
++            raise ValueError(f"Manual annotation entry `{item}` has an empty label.")
++        cluster_tokens = [token.strip() for token in str(left).split(",") if token.strip()]
++        if not cluster_tokens:
++            raise ValueError(f"Manual annotation entry `{item}` has no cluster IDs.")
++        for token in cluster_tokens:
++            mapping[str(token)] = label
++
++    if not mapping:
++        raise ValueError("No valid manual annotation mappings were parsed.")
++    return mapping
++
++
++def load_manual_annotation_map(path: str | Path) -> Dict[str, str]:
++    """Load a manual annotation mapping from JSON/CSV/TSV/text."""
++    path = Path(path)
++    if not path.exists():
++        raise FileNotFoundError(f"Manual annotation mapping file not found: {path}")
++
++    suffix = path.suffix.lower()
++    if suffix == ".json":
++        data = json.loads(path.read_text(encoding="utf-8"))
++        if isinstance(data, dict):
++            mapping: dict[str, str] = {}
++            for key, value in data.items():
++                for cluster_id in str(key).split(","):
++                    token = cluster_id.strip()
++                    if token:
++                        mapping[token] = str(value)
++            return mapping
++        if isinstance(data, list):
++            frame = pd.DataFrame(data)
++        else:
++            raise ValueError("JSON manual annotation file must be a dict or a list of mapping records.")
++    elif suffix in {".csv", ".tsv", ".txt"}:
++        sep = "\t" if suffix == ".tsv" else None
++        if suffix == ".txt":
++            return parse_manual_annotation_map(path.read_text(encoding="utf-8"))
++        frame = pd.read_csv(path, sep=sep)
++    else:
++        return parse_manual_annotation_map(path.read_text(encoding="utf-8"))
++
++    cluster_col = next((col for col in ("cluster", "cluster_id", "group", "source_cluster") if col in frame.columns), None)
++    label_col = next((col for col in ("cell_type", "label", "annotation", "target_label") if col in frame.columns), None)
++    if cluster_col is None or label_col is None:
++        raise ValueError("Manual annotation table must contain cluster/group and label/cell_type columns.")
++    mapping: dict[str, str] = {}
++    for _, row in frame.iterrows():
++        label = str(row[label_col]).strip()
++        for cluster_id in str(row[cluster_col]).split(","):
++            token = cluster_id.strip()
++            if token:
++                mapping[token] = label
++    if not mapping:
++        raise ValueError("Manual annotation mapping file did not produce any usable mappings.")
++    return mapping
++
++
+ # ---------------------------------------------------------------------------
+ # CellTypist annotation
+ # ---------------------------------------------------------------------------
+@@ -146,12 +251,6 @@ def annotate_with_celltypist(
+     logger.info("Running CellTypist annotation (model=%s, majority_voting=%s)",
+                 model, majority_voting)
+ 
+-    # Download models if needed
+-    try:
+-        ct.models.download_models(force_update=False)
+-    except Exception as exc:
+-        logger.warning("Model download check failed: %s", exc)
+-
+     # Load model
+     ct_model = ct.models.Model.load(model=model)
+     logger.info("  Loaded model: %s", model)
+@@ -691,8 +790,21 @@ def compare_annotations(
+ 
+ 
+ def build_celltypist_input_adata(adata: AnnData):
+-    """Return an AnnData view whose X matches CellTypist official input expectations."""
+-    if adata.raw is not None and adata.raw.shape == adata.shape:
++    """Return an AnnData view whose X matches current annotation input expectations.
++
++    OmicsClaw annotation workflows prefer normalized expression in ``adata.X``.
++    When ``adata.X`` lacks an explicit matrix contract but still looks usable,
++    it remains the first choice. Aligned ``adata.raw`` is only used when it is
++    explicitly declared as normalized and ``adata.X`` is not.
++    """
++    x_kind = infer_x_matrix_kind(adata, fallback="normalized_expression")
++    if matrix_kind_is_normalized(x_kind):
++        tmp = AnnData(X=adata.X.copy(), obs=adata.obs.copy(), var=adata.var.copy())
++        tmp.obs_names = adata.obs_names.copy()
++        tmp.var_names = adata.var_names.copy()
++        return tmp, "adata.X"
++    raw_kind = raw_matrix_kind(adata)
++    if adata.raw is not None and adata.raw.shape == adata.shape and matrix_kind_is_normalized(raw_kind):
+         tmp = AnnData(X=adata.raw.X.copy(), obs=adata.obs.copy(), var=adata.raw.var.copy())
+         tmp.obs_names = adata.obs_names.copy()
+         tmp.var_names = adata.raw.var_names.copy()
+@@ -708,8 +820,14 @@ def build_celltypist_input_adata(adata: AnnData):
+ # ---------------------------------------------------------------------------
+ 
+ 
+-def _dense_expression_matrix(adata: AnnData, prefer_raw: bool = True) -> tuple[np.ndarray, pd.Index, str]:
+-    use_raw = prefer_raw and adata.raw is not None and adata.raw.shape == adata.shape
++def _dense_expression_matrix(adata: AnnData, prefer_raw: bool = False) -> tuple[np.ndarray, pd.Index, str]:
++    raw_kind = raw_matrix_kind(adata)
++    use_raw = (
++        prefer_raw
++        and adata.raw is not None
++        and adata.raw.shape == adata.shape
++        and matrix_kind_is_normalized(raw_kind)
++    )
+     if use_raw:
+         matrix = adata.raw.X
+         obs_source = "adata.raw"
+@@ -727,6 +845,100 @@ def _dense_expression_matrix(adata: AnnData, prefer_raw: bool = True) -> tuple[n
+     return matrix.astype(float, copy=False), pd.Index(var_names), obs_source
+ 
+ 
++def _apply_lightweight_reference_mapping(
++    adata: AnnData,
++    reference_adata: AnnData,
++    *,
++    cluster_key: str,
++    annotation_key: str,
++    prediction_key: str,
++    consensus_key: str,
++) -> dict:
++    """Apply AnnData-first cosine-centroid reference mapping."""
++    reference_label_key = _infer_reference_label_key(reference_adata)
++
++    query_matrix, query_vars, expression_source = _dense_expression_matrix(adata, prefer_raw=False)
++    ref_matrix, ref_vars, _ = _dense_expression_matrix(reference_adata, prefer_raw=False)
++
++    common_genes = query_vars.intersection(ref_vars)
++    if common_genes.empty:
++        raise ValueError(
++            "Reference mapping requires overlapping genes between query and reference; none were found."
++        )
++    sorted_genes = common_genes.sort_values()
++    query_idx = [query_vars.get_loc(gene) for gene in sorted_genes]
++    ref_idx = [ref_vars.get_loc(gene) for gene in sorted_genes]
++    query_view = query_matrix[:, query_idx]
++    ref_view = ref_matrix[:, ref_idx]
++
++    ref_labels = reference_adata.obs[reference_label_key].astype(str)
++    label_centroids = []
++    centroid_labels: list[str] = []
++    for label in sorted(ref_labels.unique(), key=str):
++        mask = ref_labels == label
++        if not mask.any():
++            continue
++        centroid = np.asarray(ref_view[mask.values].mean(axis=0)).reshape(-1)
++        label_centroids.append(centroid)
++        centroid_labels.append(label)
++
++    if not label_centroids:
++        raise ValueError("Reference needs at least one labeled cell type for mapping.")
++
++    centroids = np.vstack(label_centroids)
++    n_cells = query_view.shape[0]
++    n_centroids = centroids.shape[0]
++
++    query_norm = np.linalg.norm(query_view, axis=1)
++    centroid_norm = np.linalg.norm(centroids, axis=1)
++    centroid_norm = np.where(centroid_norm == 0, 1.0, centroid_norm)
++
++    scores = query_view @ centroids.T
++    norm_product = np.outer(np.where(query_norm == 0, 1.0, query_norm), centroid_norm)
++    with np.errstate(divide="ignore", invalid="ignore"):
++        scores = np.divide(scores, norm_product)
++    scores = np.nan_to_num(scores, nan=0.0, posinf=0.0, neginf=0.0)
++
++    pick_idx = np.argmax(scores, axis=1)
++    best_scores = scores[np.arange(n_cells), pick_idx]
++    predicted_labels = [centroid_labels[idx] for idx in pick_idx]
++
++    predictions = pd.DataFrame({
++        "cell_id": adata.obs_names.astype(str),
++        prediction_key: predicted_labels,
++        "popv_score": best_scores.astype(float),
++    }, index=adata.obs_names.copy())
++    _apply_cluster_consensus(
++        adata,
++        predictions,
++        cluster_key=cluster_key,
++        annotation_key=annotation_key,
++        prediction_key=prediction_key,
++        consensus_key=consensus_key,
++    )
++    adata.uns["popv_predictions"] = predictions.copy()
++
++    logger.info(
++        "Reference centroid mapping labeled %d cells across %d reference labels using %d overlapping genes.",
++        n_cells,
++        n_centroids,
++        len(sorted_genes),
++    )
++
++    if cluster_key not in adata.obs.columns:
++        logger.warning(
++            "Cluster key %s not found; labels remain on a per-cell basis.",
++            cluster_key,
++        )
++
++    return {
++        "expression_source": expression_source,
++        "reference_label_key": reference_label_key,
++        "reference_cell_types": n_centroids,
++        "reference_gene_overlap": len(sorted_genes),
++    }
++
++
+ def _infer_reference_label_key(adata: AnnData) -> str:
+     candidates = [
+         "cell_type",
+@@ -910,88 +1122,49 @@ def apply_popv_annotation(
+         logger.warning("Official PopV path failed, falling back to lightweight reference mapping: %s", exc)
+ 
+     reference_adata = sc.read_h5ad(reference_file)
+-    reference_label_key = _infer_reference_label_key(reference_adata)
+-
+-    query_matrix, query_vars, expression_source = _dense_expression_matrix(adata)
+-    ref_matrix, ref_vars, _ = _dense_expression_matrix(reference_adata)
+-
+-    common_genes = query_vars.intersection(ref_vars)
+-    if common_genes.empty:
+-        raise ValueError(
+-            "PopV requires overlapping genes between query and reference; "
+-            "none were found."
+-        )
+-    sorted_genes = common_genes.sort_values()
+-    query_idx = [query_vars.get_loc(gene) for gene in sorted_genes]
+-    ref_idx = [ref_vars.get_loc(gene) for gene in sorted_genes]
+-    query_view = query_matrix[:, query_idx]
+-    ref_view = ref_matrix[:, ref_idx]
+-
+-    ref_labels = reference_adata.obs[reference_label_key].astype(str)
+-    label_centroids = []
+-    centroid_labels: list[str] = []
+-    for label in sorted(ref_labels.unique(), key=str):
+-        mask = ref_labels == label
+-        if not mask.any():
+-            continue
+-        centroid = np.asarray(ref_view[mask.values].mean(axis=0)).reshape(-1)
+-        label_centroids.append(centroid)
+-        centroid_labels.append(label)
+-
+-    if not label_centroids:
+-        raise ValueError("Reference needs at least one labeled cell type for PopV mapping.")
+-
+-    centroids = np.vstack(label_centroids)
+-    n_cells = query_view.shape[0]
+-    n_centroids = centroids.shape[0]
+-
+-    query_norm = np.linalg.norm(query_view, axis=1)
+-    centroid_norm = np.linalg.norm(centroids, axis=1)
+-    centroid_norm = np.where(centroid_norm == 0, 1.0, centroid_norm)
+-
+-    scores = query_view @ centroids.T
+-    norm_product = np.outer(np.where(query_norm == 0, 1.0, query_norm), centroid_norm)
+-    with np.errstate(divide="ignore", invalid="ignore"):
+-        scores = np.divide(scores, norm_product)
+-    scores = np.nan_to_num(scores, nan=0.0, posinf=0.0, neginf=0.0)
+-
+-    pick_idx = np.argmax(scores, axis=1)
+-    best_scores = scores[np.arange(n_cells), pick_idx]
+-    predicted_labels = [centroid_labels[idx] for idx in pick_idx]
+-
+-    predictions = pd.DataFrame({
+-        "cell_id": adata.obs_names.astype(str),
+-        prediction_key: predicted_labels,
+-        "popv_score": best_scores.astype(float),
+-    }, index=adata.obs_names.copy())
+-    _apply_cluster_consensus(
++    metadata = _apply_lightweight_reference_mapping(
+         adata,
+-        predictions,
++        reference_adata,
+         cluster_key=cluster_key,
+         annotation_key=annotation_key,
+         prediction_key=prediction_key,
+         consensus_key=consensus_key,
+     )
+-    adata.uns["popv_predictions"] = predictions.copy()
++    return {
++        "backend": "popv_lightweight",
++        **metadata,
++        "reference_path": str(reference_file),
++    }
+ 
+-    logger.info(
+-        "PopV mapped %d cells to %d reference labels using %d overlapping genes.",
+-        n_cells,
+-        n_centroids,
+-        len(sorted_genes),
+-    )
+ 
+-    if cluster_key not in adata.obs.columns:
+-        logger.warning(
+-            "Cluster key %s not found; PopV labels remain on a per-cell basis.",
+-            cluster_key,
+-        )
++def apply_knnpredict_annotation(
++    adata: AnnData,
++    reference_path: str,
++    *,
++    cluster_key: str = "leiden",
++    annotation_key: str = "cell_type",
++    prediction_key: str = "knnpredict_label",
++    consensus_key: str = "knnpredict_cluster_consensus",
++) -> dict:
++    """AnnData-first lightweight reference mapping inspired by SCOP KNNPredict."""
++    import scanpy as sc
+ 
++    reference_file = Path(reference_path)
++    if not reference_file.exists():
++        raise FileNotFoundError(
++            f"KNNPredict reference file {reference_file} does not exist. Provide a labeled reference in H5AD format."
++        )
++    reference_adata = sc.read_h5ad(reference_file)
++    metadata = _apply_lightweight_reference_mapping(
++        adata,
++        reference_adata,
++        cluster_key=cluster_key,
++        annotation_key=annotation_key,
++        prediction_key=prediction_key,
++        consensus_key=consensus_key,
++    )
+     return {
+-        "backend": "popv_lightweight",
+-        "expression_source": expression_source,
+-        "reference_label_key": reference_label_key,
+-        "reference_cell_types": n_centroids,
+-        "reference_gene_overlap": len(sorted_genes),
++        "backend": "knnpredict_lightweight",
++        **metadata,
+         "reference_path": str(reference_file),
+     }
+diff --git a/skills/singlecell/_lib/preflight.py b/skills/singlecell/_lib/preflight.py
+index 4acbf263..d153c20b 100644
+--- a/skills/singlecell/_lib/preflight.py
++++ b/skills/singlecell/_lib/preflight.py
+@@ -295,41 +295,156 @@ def preflight_sc_cell_annotation(
+     method: str,
+     model: str,
+     reference: str,
+-    cluster_key: str,
++    cluster_key: str | None,
++    celltypist_majority_voting: bool = False,
++    manual_map: str | None = None,
++    manual_map_file: str | None = None,
+     source_path: str | None = None,
+ ) -> PreflightDecision:
+     decision = PreflightDecision("sc-cell-annotation")
+     _add_standardization_guidance(decision, adata, source_path=source_path)
+ 
++    matrix_contract = get_matrix_contract(adata)
++    cluster_candidates: list[str] = []
++    primary_cluster_key = matrix_contract.get("primary_cluster_key")
++    if primary_cluster_key and primary_cluster_key in adata.obs.columns:
++        cluster_candidates.append(str(primary_cluster_key))
++    for key in _obs_candidates(adata, "cluster"):
++        if key not in cluster_candidates:
++            cluster_candidates.append(key)
++
+     if method == "markers":
+-        if cluster_key not in adata.obs.columns:
+-            candidates = _obs_candidates(adata, "cluster")
+-            if candidates:
++        if cluster_key:
++            if cluster_key not in adata.obs.columns:
++                if cluster_candidates:
++                    decision.require_field(
++                        "cluster_key",
++                        f"`--cluster-key {cluster_key}` was not found. Confirm which existing cluster/label column should guide marker-based annotation: {_format_candidates(cluster_candidates)}.",
++                        aliases=["cluster_key", "groupby"],
++                        flag="--cluster-key",
++                        choices=cluster_candidates,
++                    )
++                else:
++                    decision.add_guidance(
++                        "`markers` annotation will not auto-cluster implicitly; cluster assignments should come from `sc-clustering` or another explicit upstream step."
++                    )
++                    decision.block(
++                        "Marker-based annotation requires an existing cluster/label column in `adata.obs`. Run `sc-clustering` first."
++                    )
++            else:
++                decision.add_guidance(f"`markers` will use `cluster_key={cluster_key}`.")
++        else:
++            if len(cluster_candidates) > 1:
++                decision.require_field(
++                    "cluster_key",
++                    f"`markers` annotation needs a cluster/label column. Multiple candidates are available: {_format_candidates(cluster_candidates)}. Confirm which one should drive marker scoring.",
++                    aliases=["cluster_key", "groupby"],
++                    flag="--cluster-key",
++                    choices=cluster_candidates,
++                )
++            elif len(cluster_candidates) == 1:
+                 decision.add_guidance(
+-                    f"`--cluster-key {cluster_key}` was not found. Marker mode will auto-cluster unless you prefer an existing column such as {_format_candidates(candidates)}."
++                    f"`markers` annotation will use `{cluster_candidates[0]}` as the cluster column."
+                 )
+             else:
++                decision.block(
++                    "Marker-based annotation needs an existing cluster/label column in `adata.obs`; it will not auto-cluster anymore. Run `sc-clustering` first."
++                )
+                 decision.add_guidance(
+-                    "Marker mode will auto-cluster because no existing cluster column was found. If you already have trusted labels, pass them via `--cluster-key` instead."
++                    "`markers` annotation no longer auto-clusters implicitly; cluster assignments should come from `sc-clustering` or an equivalent upstream step."
+                 )
++        if not _declared_x_is_normalized(adata) and matrix_looks_count_like(adata.X):
++            decision.require_confirmation(
++                "`markers` annotation expects normalized expression. Run `sc-preprocessing` first or confirm that the current matrix has already been transformed outside OmicsClaw."
++            )
++        decision.add_guidance(
++            "Marker-based annotation is best used after `sc-markers` or when you already have trusted lineage markers for the clustered groups."
++        )
++        decision.add_guidance(
++            f"Current first-pass settings: `method=markers`, `cluster_key={cluster_key or (cluster_candidates[0] if len(cluster_candidates) == 1 else 'confirm')}`."
++        )
++        decision.add_guidance(
++            "After annotation, inspect the annotated embedding and label distribution; if labels are still ambiguous, revisit `sc-markers` or try a reference-based method."
++        )
+         return decision
+ 
+-    use_raw = _declared_raw_is_normalized(adata)
+-    if not use_raw and not _declared_x_is_normalized(adata):
+-        if method == "celltypist":
++    if method == "manual":
++        if cluster_key:
++            if cluster_key not in adata.obs.columns:
++                if cluster_candidates:
++                    decision.require_field(
++                        "cluster_key",
++                        f"`--cluster-key {cluster_key}` was not found. Confirm which existing cluster/label column should guide manual relabeling: {_format_candidates(cluster_candidates)}.",
++                        aliases=["cluster_key", "groupby"],
++                        flag="--cluster-key",
++                        choices=cluster_candidates,
++                    )
++                else:
++                    decision.block(
++                        "Manual annotation requires an existing cluster/label column in `adata.obs`. Run `sc-clustering` first."
++                    )
++            else:
++                decision.add_guidance(f"`manual` annotation will use `cluster_key={cluster_key}`.")
++        else:
++            if len(cluster_candidates) > 1:
++                decision.require_field(
++                    "cluster_key",
++                    f"`manual` annotation needs a cluster/label column. Multiple candidates are available: {_format_candidates(cluster_candidates)}. Confirm which one should be relabeled.",
++                    aliases=["cluster_key", "groupby"],
++                    flag="--cluster-key",
++                    choices=cluster_candidates,
++                )
++            elif len(cluster_candidates) == 1:
++                decision.add_guidance(
++                    f"`manual` annotation will use `{cluster_candidates[0]}` as the cluster column."
++                )
++            else:
++                decision.block(
++                    "Manual annotation requires an existing cluster/label column in `adata.obs`; it will not auto-cluster. Run `sc-clustering` first."
++                )
++
++        if manual_map and manual_map_file:
+             decision.require_confirmation(
+-                "`celltypist` currently sees count-like expression and would likely fall back to marker annotation. Run `sc-preprocessing` first or confirm that fallback is acceptable."
++                "Both `--manual-map` and `--manual-map-file` were provided. Confirm which one should take precedence."
++            )
++        elif not manual_map and not manual_map_file:
++            decision.require_field(
++                "manual_map",
++                "Manual annotation needs either `--manual-map '0=T cell;1,2=Myeloid'` or `--manual-map-file <csv/json/txt>`.",
++                aliases=["manual_map", "manual_labels", "mapping"],
++                flag="--manual-map",
+             )
+-        elif method == "popv":
++        elif manual_map_file and not Path(manual_map_file).exists():
++            decision.block(f"`--manual-map-file {manual_map_file}` was not found.")
++
++        decision.add_guidance(
++            "Manual annotation is the explicit relabeling path: it keeps the original cluster column and writes your chosen labels into `cell_type`."
++        )
++        decision.add_guidance(
++            "Current first-pass settings: `method=manual`. Mapping can be supplied inline with `--manual-map` or via `--manual-map-file`."
++        )
++        return decision
++
++    x_normalized = _declared_x_is_normalized(adata)
++    if not x_normalized:
++        if not matrix_looks_count_like(adata.X):
+             decision.add_guidance(
+-                "`popv` works best on log-normalized query expression aligned to a labeled reference. If matrix scale is uncertain, run `sc-preprocessing` first."
++                "This object does not declare a matrix contract yet, but `adata.X` does not look raw count-like, so annotation will treat it as normalized expression."
++            )
++        elif method == "celltypist":
++            decision.require_confirmation(
++                "`celltypist` expects normalized expression in `adata.X`. The current matrix still looks count-like, so it would likely fall back or misbehave. Run `sc-preprocessing` first or confirm the matrix state."
+             )
+         else:
+             decision.block(
+-                f"`{method}` expects log-normalized expression. Run `sc-preprocessing` first or provide a processed h5ad with normalized expression."
++                f"`{method}` expects log-normalized expression in `adata.X`. Run `sc-preprocessing` first or provide a processed h5ad with normalized expression."
+             )
+ 
+     if method == "celltypist":
++        if cluster_key and cluster_key not in adata.obs.columns and cluster_candidates:
++            decision.add_guidance(
++                f"`--cluster-key {cluster_key}` was not found. Annotation can still run per cell, but downstream summaries are easier to interpret if you later reuse one of: {_format_candidates(cluster_candidates)}."
++            )
+         if model == "Immune_All_Low":
+             decision.require_field(
+                 "model",
+@@ -342,19 +457,54 @@ def preflight_sc_cell_annotation(
+             )
+             if not valid_input:
+                 decision.block(reason)
++        model_available, model_path = sc_annotation_utils.celltypist_model_available_locally(model)
++        if not model_available:
++            decision.require_field(
++                "allow_online_model_fetch",
++                f"`celltypist` model `{model}` is not present locally at `{model_path}`. Running this path would need to download the model through the CellTypist model hub. Confirm whether network fetch is acceptable, or provide a model already cached locally.",
++                value_type="boolean",
++                aliases=["allow_online_model_fetch", "allow_download", "download_model"],
++            )
++            decision.add_guidance(
++                "CellTypist models are typically downloaded into `~/.celltypist/data/models/`. If you want to stay offline, pre-download the model there and rerun."
++            )
++        decision.add_guidance(
++            f"Current first-pass settings: `method=celltypist`, `model={model}`, `celltypist_majority_voting={celltypist_majority_voting}`."
++        )
++        decision.add_guidance(
++            "If CellTypist fails or the matrix still looks incompatible, the wrapper may fall back to `markers` and should report that honestly."
++        )
++        decision.add_guidance(
++            "After CellTypist annotation, compare the labels against clusters or marker evidence before trusting rare cell states."
++        )
+         return decision
+ 
+-    if method == "popv":
++    if method in {"popv", "knnpredict"}:
++        if cluster_key and cluster_key not in adata.obs.columns and cluster_candidates:
++            decision.add_guidance(
++                f"`--cluster-key {cluster_key}` was not found. `{method}` can still label cells, but cluster-level summaries are easier if you later confirm one of: {_format_candidates(cluster_candidates)}."
++            )
+         ref_path = Path(reference)
+         if reference == "HPCA":
+             decision.require_field(
+                 "reference",
+-                "`popv` expects `--reference` to be a labeled H5AD path; the default `HPCA` atlas keyword is not valid for this wrapper path.",
++                f"`{method}` expects `--reference` to be a labeled H5AD path; the default `HPCA` atlas keyword is not valid for this wrapper path.",
+                 aliases=["reference", "ref"],
+             )
+         elif not ref_path.exists():
+             decision.block(
+-                f"`popv` reference file was not found at {reference}. Provide a labeled H5AD reference via `--reference`."
++                f"`{method}` reference file was not found at {reference}. Provide a labeled H5AD reference via `--reference`."
++            )
++        decision.add_guidance(
++            f"Current first-pass settings: `method={method}`, `reference={reference}`."
++        )
++        if method == "popv":
++            decision.add_guidance(
++                "After PopV-style mapping, inspect cluster-to-label agreement and gene-overlap notes before trusting the projected labels."
++            )
++        else:
++            decision.add_guidance(
++                "`knnpredict` is the lightweight AnnData-first reference mapping path inspired by SCOP KNNPredict. It is useful when you already have a labeled H5AD reference and want a simpler projection step."
+             )
+         return decision
+ 
+@@ -364,6 +514,28 @@ def preflight_sc_cell_annotation(
+             f"Confirm the reference atlas via `--reference`; the current default `HPCA` should not be used blindly for `{method}`.",
+             aliases=["reference", "ref"],
+         )
++    if method in {"singler", "scmap"}:
++        if not Path(reference).exists():
++            cache_dir = sc_annotation_utils.experimenthub_cache_dir()
++            decision.require_field(
++                "allow_online_reference_fetch",
++                f"`{method}` with atlas selector `{reference}` may need to download reference data through celldex / ExperimentHub. The local cache is expected under `{cache_dir}`. Confirm whether online fetch is acceptable, or provide a local labeled H5AD via `--reference` instead.",
++                value_type="boolean",
++                aliases=["allow_online_reference_fetch", "allow_download", "download_reference"],
++            )
++        decision.add_guidance(
++            f"Current first-pass settings: `method={method}`, `reference={reference}`."
++        )
++        if cluster_key and cluster_key not in adata.obs.columns and cluster_candidates:
++            decision.add_guidance(
++                f"`--cluster-key {cluster_key}` was not found. The reference-based annotation can still run per cell, but cluster-level summaries are easier if you later reuse one of: {_format_candidates(cluster_candidates)}."
++            )
++        decision.add_guidance(
++            "After reference-based annotation, compare labels against clusters and known markers before moving to DE or communication analysis."
++        )
++        decision.add_guidance(
++            f"`{method}` currently uses celldex / ExperimentHub atlases in R. Even when the R packages are installed, this path can still fail in restricted-network or empty-cache environments."
++        )
+     return decision
+ 
+ 
+diff --git a/skills/singlecell/_lib/viz/__init__.py b/skills/singlecell/_lib/viz/__init__.py
+index 9521ca57..8427bd96 100644
+--- a/skills/singlecell/_lib/viz/__init__.py
++++ b/skills/singlecell/_lib/viz/__init__.py
+@@ -10,6 +10,10 @@
+     plot_embedding_comparison,
+     plot_embedding_continuous,
+ )
++from .annotation import (
++    plot_cell_type_count_barplot,
++    plot_cluster_annotation_heatmap,
++)
+ from .markers import (
+     plot_marker_cluster_summary,
+     plot_marker_dotplot,
+@@ -62,6 +66,8 @@
+     "plot_embedding_categorical",
+     "plot_embedding_comparison",
+     "plot_embedding_continuous",
++    "plot_cell_type_count_barplot",
++    "plot_cluster_annotation_heatmap",
+     "plot_cluster_size_summary",
+     "plot_cluster_qc_heatmap",
+     "plot_marker_heatmap",
+diff --git a/skills/singlecell/_lib/viz/annotation.py b/skills/singlecell/_lib/viz/annotation.py
+new file mode 100644
+index 00000000..c84dae67
+--- /dev/null
++++ b/skills/singlecell/_lib/viz/annotation.py
+@@ -0,0 +1,88 @@
++"""Visualization helpers for single-cell annotation outputs."""
++
++from __future__ import annotations
++
++import logging
++from pathlib import Path
++from typing import Union
++
++import pandas as pd
++
++from .core import QC_PALETTE, apply_singlecell_theme, save_figure
++
++logger = logging.getLogger(__name__)
++
++
++def plot_cell_type_count_barplot(
++    counts_df: pd.DataFrame,
++    output_dir: Union[str, Path],
++    *,
++    filename: str = "cell_type_counts.png",
++) -> Path | None:
++    """Plot cell type counts with proportions."""
++    import matplotlib.pyplot as plt
++
++    output_dir = Path(output_dir)
++    if counts_df.empty:
++        return None
++
++    frame = counts_df.copy().sort_values("n_cells", ascending=True)
++    apply_singlecell_theme()
++    height = max(4.5, 0.42 * len(frame) + 1.2)
++    fig, ax = plt.subplots(figsize=(8.6, height))
++    bars = ax.barh(frame["cell_type"].astype(str), frame["n_cells"], color=QC_PALETTE["bar"], alpha=0.92)
++    ax.set_xlabel("Cells")
++    ax.set_ylabel("Cell type")
++    ax.set_title("Cell type counts", fontsize=17, pad=14)
++
++    xmax = max(float(frame["n_cells"].max()), 1.0)
++    for bar, pct in zip(bars, frame["proportion_pct"]):
++        ax.text(
++            bar.get_width() + xmax * 0.015,
++            bar.get_y() + bar.get_height() / 2,
++            f"{pct:.1f}%",
++            va="center",
++            fontsize=9,
++            color="#334155",
++        )
++    fig.tight_layout()
++    return save_figure(fig, output_dir, filename)
++
++
++def plot_cluster_annotation_heatmap(
++    matrix_df: pd.DataFrame,
++    output_dir: Union[str, Path],
++    *,
++    cluster_key: str,
++    filename: str = "cluster_to_cell_type_heatmap.png",
++) -> Path | None:
++    """Plot a normalized cluster-to-cell-type mapping heatmap."""
++    import matplotlib.pyplot as plt
++    import seaborn as sns
++
++    output_dir = Path(output_dir)
++    if matrix_df.empty:
++        return None
++
++    frame = matrix_df.copy()
++    if cluster_key in frame.columns:
++        frame = frame.set_index(cluster_key)
++    if frame.empty:
++        return None
++
++    apply_singlecell_theme()
++    fig, ax = plt.subplots(figsize=(max(8.0, 0.55 * frame.shape[1] + 3.5), max(5.0, 0.45 * frame.shape[0] + 2.0)))
++    sns.heatmap(
++        frame,
++        annot=True,
++        fmt=".2f",
++        cmap="YlOrRd",
++        linewidths=0.4,
++        cbar_kws={"label": "Fraction of cells"},
++        ax=ax,
++    )
++    ax.set_xlabel("Cell type")
++    ax.set_ylabel(cluster_key)
++    ax.set_title("Cluster to cell-type mapping", fontsize=17, pad=14)
++    fig.tight_layout()
++    return save_figure(fig, output_dir, filename)
+diff --git a/skills/singlecell/scrna/sc-cell-annotation/SKILL.md b/skills/singlecell/scrna/sc-cell-annotation/SKILL.md
+index 89e8b213..35cd49e4 100644
+--- a/skills/singlecell/scrna/sc-cell-annotation/SKILL.md
++++ b/skills/singlecell/scrna/sc-cell-annotation/SKILL.md
+@@ -1,192 +1,120 @@
+ ---
+ name: sc-cell-annotation
+ description: >-
+-  Annotate cell types from preprocessed scRNA-seq data using marker scoring,
+-  CellTypist, PopV-style reference mapping, SingleR, or scmap through the
+-  shared Python/R backends.
+-version: 0.6.0
++  Annotate cell types from normalized scRNA-seq data using marker scoring,
++  CellTypist, PopV-style reference mapping, lightweight KNNPredict-style
++  mapping, SingleR, or scmap through shared Python/R backends.
++version: 0.9.0
+ author: OmicsClaw
+ license: MIT
+-tags: [singlecell, annotation, celltypist, popv, singler, scmap]
++tags: [singlecell, annotation, celltypist, popv, knnpredict, singler, scmap]
+ metadata:
+   omicsclaw:
+     domain: singlecell
+     allowed_extra_flags:
++      - "--manual-map"
++      - "--manual-map-file"
+       - "--cluster-key"
+       - "--method"
+       - "--model"
+       - "--reference"
++      - "--celltypist-majority-voting"
++      - "--no-celltypist-majority-voting"
+     param_hints:
++      manual:
++        priority: "cluster_key -> manual_map/manual_map_file"
++        params: ["cluster_key", "manual_map", "manual_map_file"]
++        defaults: {cluster_key: auto}
++        requires: ["cluster_labels_in_obs"]
++        tips:
++          - "--method manual: explicit relabeling from user-provided cluster mappings."
++          - "--manual-map example: `0=T cell;1,2=Myeloid`."
+       markers:
+         priority: "cluster_key"
+         params: ["cluster_key"]
+-        defaults: {cluster_key: "leiden"}
+-        requires: ["cluster_labels_in_obs"]
++        defaults: {cluster_key: auto}
++        requires: ["normalized_expression", "cluster_labels_in_obs"]
+         tips:
+-          - "--method markers: Fully implemented Python path using built-in marker scoring."
++          - "--method markers: use when clusters already exist and you want a quick label proposal from known markers."
+       celltypist:
+-        priority: "model"
+-        params: ["model"]
+-        defaults: {model: "Immune_All_Low"}
++        priority: "model -> celltypist_majority_voting"
++        params: ["model", "celltypist_majority_voting"]
++        defaults: {model: "Immune_All_Low", celltypist_majority_voting: false}
+         requires: ["celltypist", "normalized_expression_matrix"]
+         tips:
+           - "--model: CellTypist model name or model file stem."
++          - "--celltypist-majority-voting: optional neighborhood/cluster smoothing for CellTypist labels."
+       popv:
+         priority: "reference -> cluster_key"
+         params: ["reference", "cluster_key"]
+-        defaults: {cluster_key: "leiden"}
++        defaults: {cluster_key: auto}
++        requires: ["labeled_reference_h5ad", "normalized_expression_matrix"]
++        tips:
++          - "--method popv: official PopV path when possible, else lightweight reference mapping fallback."
++      knnpredict:
++        priority: "reference -> cluster_key"
++        params: ["reference", "cluster_key"]
++        defaults: {cluster_key: auto}
+         requires: ["labeled_reference_h5ad", "normalized_expression_matrix"]
+         tips:
+-          - "--method popv: reference-mapped consensus annotation using a labeled H5AD reference provided via --reference."
++          - "--method knnpredict: lightweight AnnData-first projection inspired by SCOP KNNPredict."
+       singler:
+         priority: "reference"
+         params: ["reference"]
+         defaults: {reference: "HPCA"}
+         requires: ["R_SingleR_stack"]
+         tips:
+-          - "--method singler: SingleR reference-based annotation through the shared R bridge."
++          - "--method singler: R SingleR path using celldex / ExperimentHub atlases or a labeled local H5AD reference."
+       scmap:
+         priority: "reference"
+         params: ["reference"]
+         defaults: {reference: "HPCA"}
+         requires: ["R_scmap_stack"]
+         tips:
+-          - "--method scmap: scmap cluster projection through the shared R bridge."
++          - "--method scmap: R scmap path using celldex / ExperimentHub atlases or a labeled local H5AD reference."
+     legacy_aliases: [sc-annotate]
+     saves_h5ad: true
+     requires_preprocessed: true
+-    requires:
+-      bins: [python3]
+-      env: []
+-      config: []
+-    emoji: "S"
+-    homepage: https://github.com/OmicsClaw/OmicsClaw
+-    os: [macos, linux]
+-    install:
+-      - kind: pip
+-        package: scanpy
+-        bins: []
+-    trigger_keywords:
+-      - cell type annotation
+-      - annotate cells
+-      - celltypist
+-      - singler
+-      - popv
+-      - reference mapping
+-      - marker gene annotation
+ ---
+ 
+ # Single-Cell Cell Annotation
+ 
+ ## Why This Exists
+ 
+-- Without it: users hand-label clusters inconsistently or rely on opaque defaults.
+-- With it: annotation method, reference choice, and output columns are standardized.
+-- Why OmicsClaw: one wrapper unifies marker-based and reference-style entry paths.
+-
+-## Core Capabilities
+-
+-1. **Four annotation backends**: marker scoring, CellTypist, SingleR, and scmap.
+-2. **Unified label contract**: standardized `cell_type` output plus method provenance.
+-3. **Standard annotation gallery**: annotated UMAP, cluster-to-cell-type Sankey, and cell-type count bar plot.
+-4. **Figure-ready exports**: `figure_data/` CSVs plus a gallery manifest for downstream customization.
+-5. **Downstream-ready export**: annotated `processed.h5ad`, summary tables, report, result JSON, README, and notebook artifacts.
++- Without it: users hand-label clusters inconsistently or trust opaque defaults.
++- With it: annotation method, reference/model choice, label outputs, and figures are standardized.
++- Why OmicsClaw: one wrapper unifies marker-based and reference-style annotation while preserving an AnnData-first workflow.
+ 
+ ## Scope Boundary
+ 
+ Implemented methods:
+ 
+-1. `markers`
+-2. `celltypist`
+-3. `singler`
+-4. `scmap`
+-
+-## Input Formats
++1. `manual`
++2. `markers`
++3. `celltypist`
++4. `popv`
++5. `knnpredict`
++6. `singler`
++7. `scmap`
+ 
+-| Format | Extension / form | Current wrapper support | Notes |
+-|--------|------------------|-------------------------|-------|
+-| AnnData | `.h5ad` | yes | current direct input path |
+-| Demo | `--demo` | yes | bundled annotated-example fallback |
++This skill annotates cells or clusters. It does not replace marker discovery or replicate-aware DE.
+ 
+-### Input Expectations
++## Input Expectations
+ 
+-- Typical requirements: log-normalized expression and cluster labels such as `leiden`.
+-- Preferred matrix source: `adata.raw` when present and aligned; otherwise `adata.X`.
+-- Marker scoring needs a defensible grouping column.
+-- Reference-based methods need the selected model or reference resource to be available.
+-
+-## Workflow
+-
+-1. Validate required cluster/reference metadata.
+-2. Run the selected annotation backend.
+-3. Standardize output columns such as `cell_type` and `annotation_method`.
+-4. Export figures, tables, and the annotated AnnData object.
+-5. Record method/reference settings in `result.json`.
+-
+-## CLI Reference
+-
+-```bash
+-python skills/singlecell/scrna/sc-cell-annotation/sc_annotate.py \
+-  --input <processed.h5ad> --method markers --cluster-key leiden --output <dir>
+-
+-python skills/singlecell/scrna/sc-cell-annotation/sc_annotate.py \
+-  --input <processed.h5ad> --method celltypist \
+-  --model Immune_All_Low --output <dir>
+-
+-python skills/singlecell/scrna/sc-cell-annotation/sc_annotate.py \
+-  --input <processed.h5ad> --method singler \
+-  --reference HPCA --output <dir>
+-```
++- Expected state: normalized expression in `adata.X`
++- Typical upstream step: `sc-clustering`
++- Typical downstream steps: `sc-markers`, `sc-de`, or interpretation/reporting
++- Marker mode needs an existing cluster/label column; it will not auto-cluster anymore
+ 
+ ## Public Parameters
+ 
+-| Parameter | Role | Notes |
+-|-----------|------|-------|
+-| `--method` | annotation backend | `markers`, `celltypist`, `popv`, `singler`, or `scmap` |
+-| `--cluster-key` | grouping column | most important for `markers` and Sankey-style summaries |
+-| `--model` | CellTypist model selector | used only by `celltypist` |
+-| `--reference` | reference selector | H5AD reference path for `popv`; atlas selector for `singler` / `scmap` |
+-
+-## Algorithm / Methodology
+-
+-### `markers`
+-
+-Current OmicsClaw marker-based annotation:
+-
+-1. reads cluster labels from `cluster_key`
+-2. scores known marker patterns across clusters
+-3. writes standardized cell-type assignments back into `obs`
+-
+-### `celltypist`
+-
+-Current OmicsClaw CellTypist path:
+-
+-1. selects the requested `model`
+-2. uses normalized expression from `adata.raw` when available, otherwise `adata.X`
+-3. writes per-cell predictions and standardized summary outputs
+-
+-### `popv`
+-
+-Current OmicsClaw PopV-style path:
+-
+-1. loads a labeled reference H5AD from `--reference`
+-2. aligns overlapping genes between query and reference
+-3. projects query cells to reference label centroids
+-4. derives a cluster-level consensus label when `cluster_key` exists
+-
+-### `singler` and `scmap`
+-
+-Current OmicsClaw R-backed reference paths:
+-
+-1. export expression data through the shared H5AD bridge
+-2. run the selected reference-based annotator in R
+-3. reimport labels into the standardized AnnData contract
+-
+-Important implementation notes:
+-
+-- `model` is the main CellTypist selector.
+-- `reference` is an OmicsClaw-level selector: a labeled H5AD for `popv`, or an atlas selector for the current SingleR / scmap path.
+-- If CellTypist input validation fails or the model cannot run, the wrapper falls back to `markers` and records both requested and actual methods.
++- `--method`
++- `--manual-map`
++- `--manual-map-file`
++- `--cluster-key`
++- `--model`
++- `--reference`
++- `--celltypist-majority-voting`
+ 
+ ## Output Contract
+ 
+@@ -195,42 +123,29 @@ Successful runs write:
+ - `processed.h5ad`
+ - `report.md`
+ - `result.json`
++- `figures/embedding_cell_type.png`
++- `figures/embedding_cluster_vs_cell_type.png`
++- `figures/cluster_to_cell_type_heatmap.png`
++- `figures/cell_type_counts.png`
++- `figures/embedding_annotation_score.png` when scores are available
+ - `figures/manifest.json`
+ - `figure_data/manifest.json`
+ - `tables/annotation_summary.csv`
+ - `tables/cell_type_counts.csv`
++- `tables/cluster_annotation_matrix.csv`
+ - `reproducibility/commands.sh`
+ 
+-### Visualization Contract
+-
+-The current standard Python gallery uses:
+-
+-- `overview`: annotated UMAP colored by `cell_type`
+-- `diagnostic`: cluster-to-cell-type Sankey summary
+-- `supporting`: cell-type count bar plot
+-
+-`figure_data/` is the stable hand-off layer for downstream restyling without rerunning annotation.
+-
+-### What Users Should Inspect First
++## What Users Should Inspect First
+ 
+ 1. `report.md`
+-2. `figures/umap_cell_type.png`
+-3. `figures/sankey_<cluster_key>_to_cell_type.png`
++2. `figures/embedding_cell_type.png`
++3. `figures/embedding_cluster_vs_cell_type.png`
+ 4. `tables/annotation_summary.csv`
+ 5. `processed.h5ad`
+ 
+-## Current Limitations
+-
+-- `celltypist` can fall back to `markers` when the input matrix or requested model is not runnable in the current environment.
+-- `popv` currently expects `--reference` to point to a labeled H5AD reference rather than a symbolic atlas shortcut like `HPCA`.
+-- `singler` requires an R environment with `SingleR`, `celldex`, `SingleCellExperiment`, and `zellkonverter`.
+-- `scmap` requires an R environment with `scmap`, `celldex`, `SingleCellExperiment`, and `zellkonverter`.
+-- This skill writes `README.md` and notebook-style reproducibility artifacts when notebook export dependencies are available.
+-
+-## Safety And Guardrails
++## Guardrails
+ 
+-- Explain the selected annotation source explicitly: `cluster_key` for marker scoring, `model` for CellTypist, `reference` as a labeled H5AD for `popv`, or `reference` as an atlas selector for SingleR/scmap.
+-- Treat log-normalized expression as the expected matrix contract for all annotation paths.
+-- If the run falls back from `celltypist` to `markers`, state both the requested and executed methods instead of presenting marker labels as CellTypist output.
+-- For short execution guardrails, see `knowledge_base/knowhows/KH-sc-cell-annotation-guardrails.md`.
+-- For longer method and interpretation guidance, see `knowledge_base/skill-guides/singlecell/sc-cell-annotation.md`.
++- Treat `method` and its corresponding `model` / `reference` / `cluster_key` as the key scientific choices.
++- Use normalized expression for public annotation workflows.
++- If CellTypist falls back to `markers`, report both requested and executed methods.
++- If `singler` / `scmap` use celldex atlases, remember they may still fail in restricted-network or empty-cache environments even when R packages are installed.
+diff --git a/skills/singlecell/scrna/sc-cell-annotation/sc_annotate.py b/skills/singlecell/scrna/sc-cell-annotation/sc_annotate.py
+index 16a93bfb..8726ba2a 100644
+--- a/skills/singlecell/scrna/sc-cell-annotation/sc_annotate.py
++++ b/skills/singlecell/scrna/sc-cell-annotation/sc_annotate.py
+@@ -6,11 +6,15 @@
+ import argparse
+ import json
+ import logging
++import os
+ import shlex
+ import tempfile
+ import sys
+ from pathlib import Path
+ 
++os.environ.setdefault("MPLCONFIGDIR", "/tmp/omicsclaw_mpl")
++os.environ.setdefault("NUMBA_CACHE_DIR", "/tmp/omicsclaw_numba_cache")
++
+ import matplotlib
+ matplotlib.use("Agg")
+ import matplotlib.pyplot as plt
+@@ -31,12 +35,28 @@
+     write_result_json,
+ )
+ from skills.singlecell._lib import io as sc_io
+-from skills.singlecell._lib.adata_utils import store_analysis_metadata
++from skills.singlecell._lib.adata_utils import (
++    get_matrix_contract,
++    infer_x_matrix_kind,
++    propagate_singlecell_contracts,
++    store_analysis_metadata,
++)
+ from skills.singlecell._lib import annotation as sc_annotation_utils
+ from skills.singlecell._lib.export import save_h5ad
+ from skills.singlecell._lib.gallery import PlotSpec, VisualizationRecipe, render_plot_specs
+ from skills.singlecell._lib.method_config import MethodConfig, validate_method_choice
+-from skills.singlecell._lib.preflight import apply_preflight, preflight_sc_cell_annotation
++from skills.singlecell._lib.preflight import (
++    _obs_candidates,
++    apply_preflight,
++    preflight_sc_cell_annotation,
++)
++from skills.singlecell._lib.viz import (
++    plot_cell_type_count_barplot,
++    plot_cluster_annotation_heatmap,
++    plot_embedding_categorical,
++    plot_embedding_comparison,
++    plot_embedding_continuous,
++)
+ from omicsclaw.core.dependency_manager import validate_r_environment
+ from omicsclaw.core.r_script_runner import RScriptRunner
+ 
+@@ -44,7 +64,7 @@
+ logger = logging.getLogger(__name__)
+ 
+ SKILL_NAME = "sc-cell-annotation"
+-SKILL_VERSION = "0.6.0"
++SKILL_VERSION = "0.7.0"
+ SCRIPT_REL_PATH = "skills/singlecell/scrna/sc-cell-annotation/sc_annotate.py"
+ 
+ 
+@@ -99,6 +119,11 @@ def write_standard_run_artifacts(output_dir: Path, result_payload: dict, summary
+         logger.warning("Failed to write README.md: %s", exc)
+ 
+ METHOD_REGISTRY: dict[str, MethodConfig] = {
++    "manual": MethodConfig(
++        name="manual",
++        description="Manual relabeling from a user-supplied cluster-to-cell-type mapping",
++        dependencies=(),
++    ),
+     "markers": MethodConfig(
+         name="markers",
+         description="Marker-based annotation using known gene signatures",
+@@ -114,6 +139,11 @@ def write_standard_run_artifacts(output_dir: Path, result_payload: dict, summary
+         description="Reference-mapped consensus annotation (PopV)",
+         dependencies=("scanpy",),
+     ),
++    "knnpredict": MethodConfig(
++        name="knnpredict",
++        description="Lightweight AnnData-first reference mapping inspired by SCOP KNNPredict",
++        dependencies=("scanpy",),
++    ),
+     "singler": MethodConfig(
+         name="singler",
+         description="SingleR reference-based annotation (R)",
+@@ -183,23 +213,35 @@ def _annotation_summary(
+     return summary
+ 
+ 
+-def _marker_expression_source(adata) -> tuple[str, object]:
+-    if adata.raw is not None and adata.raw.shape == adata.shape:
+-        return "adata.raw", adata.raw
+-    return "adata.X", adata
++def _candidate_cluster_keys(adata) -> list[str]:
++    matrix_contract = get_matrix_contract(adata)
++    candidates: list[str] = []
++    primary = matrix_contract.get("primary_cluster_key")
++    if primary and primary in adata.obs.columns:
++        candidates.append(str(primary))
++    for key in ("leiden", "louvain", "seurat_clusters", "cluster", "cell_type"):
++        if key in adata.obs.columns and key not in candidates:
++            candidates.append(key)
++    return candidates
++
++
++def _resolve_cluster_key(adata, cluster_key: str | None) -> str | None:
++    if cluster_key and cluster_key in adata.obs.columns:
++        return cluster_key
++    candidates = _candidate_cluster_keys(adata)
++    return candidates[0] if candidates else None
+ 
+ 
+ def annotate_markers(adata, markers=None, cluster_key: str = "leiden"):
+     """Marker-based annotation."""
+     if markers is None:
+         markers = PBMC_MARKERS
+-    expression_source, expr = _marker_expression_source(adata)
++    expression_source, expr = "adata.X", adata
+ 
+     if cluster_key not in adata.obs:
+-        logger.warning("No %s found, running clustering", cluster_key)
+-        sc.pp.neighbors(adata)
+-        sc.tl.leiden(adata)
+-        cluster_key = "leiden"
++        raise ValueError(
++            f"Marker-based annotation requires an existing cluster/label column. `{cluster_key}` was not found in adata.obs."
++        )
+ 
+     cluster_annotations = {}
+     expr_var_names = expr.var_names
+@@ -213,10 +255,7 @@ def annotate_markers(adata, markers=None, cluster_key: str = "leiden"):
+             available = [g for g in marker_genes if g in expr_var_names]
+             if not available:
+                 continue
+-            if expression_source == "adata.raw":
+-                scores = np.asarray(cluster_data.raw[:, available].X.mean()).item()
+-            else:
+-                scores = np.asarray(cluster_data[:, available].X.mean()).item()
++            scores = np.asarray(cluster_data[:, available].X.mean()).item()
+             if scores > best_score:
+                 best_score = float(scores)
+                 best_type = cell_type
+@@ -239,7 +278,42 @@ def annotate_markers(adata, markers=None, cluster_key: str = "leiden"):
+     )
+ 
+ 
+-def annotate_celltypist(adata, model: str = "Immune_All_Low"):
++def annotate_manual(adata, *, cluster_key: str, manual_map: str | None = None, manual_map_file: str | None = None):
++    """Apply an explicit user-supplied cluster-to-label mapping."""
++    if manual_map_file:
++        annotations = sc_annotation_utils.load_manual_annotation_map(manual_map_file)
++        mapping_source = str(manual_map_file)
++    elif manual_map:
++        annotations = sc_annotation_utils.parse_manual_annotation_map(manual_map)
++        mapping_source = "inline"
++    else:
++        raise ValueError("Manual annotation requires --manual-map or --manual-map-file.")
++
++    sc_annotation_utils.annotate_clusters_manual(
++        adata,
++        annotations=annotations,
++        cluster_key=cluster_key,
++        annotation_key="cell_type",
++        inplace=True,
++    )
++    adata.obs["annotation_score"] = np.nan
++    _record_annotation_execution(
++        adata,
++        requested_method="manual",
++        actual_method="manual",
++    )
++    summary = _annotation_summary(
++        adata,
++        requested_method="manual",
++        actual_method="manual",
++        expression_source="manual_mapping",
++    )
++    summary["manual_mapping_source"] = mapping_source
++    summary["manual_mapping"] = annotations
++    return summary
++
++
++def annotate_celltypist(adata, model: str = "Immune_All_Low", majority_voting: bool = False):
+     """CellTypist annotation with explicit fallback recording."""
+     celltypist_input, expression_source = sc_annotation_utils.build_celltypist_input_adata(adata)
+     is_valid, reason = sc_annotation_utils.validate_celltypist_input_matrix(celltypist_input)
+@@ -266,6 +340,7 @@ def annotate_celltypist(adata, model: str = "Immune_All_Low"):
+         sc_annotation_utils.annotate_with_celltypist(
+             celltypist_input,
+             model=model_name,
++            majority_voting=majority_voting,
+             annotation_key="cell_type",
+             inplace=True,
+         )
+@@ -338,6 +413,37 @@ def annotate_popv(adata, reference: str = "HPCA", cluster_key: str = "leiden"):
+     return summary
+ 
+ 
++def annotate_knnpredict(adata, reference: str = "HPCA", cluster_key: str = "leiden"):
++    """Lightweight reference mapping inspired by SCOP KNNPredict."""
++    metadata = sc_annotation_utils.apply_knnpredict_annotation(
++        adata,
++        reference,
++        cluster_key=cluster_key,
++    )
++    _record_annotation_execution(
++        adata,
++        requested_method="knnpredict",
++        actual_method="knnpredict",
++    )
++    summary = _annotation_summary(
++        adata,
++        requested_method="knnpredict",
++        actual_method="knnpredict",
++        expression_source=metadata.get("expression_source"),
++    )
++    summary.update(
++        {
++            "backend": metadata.get("backend"),
++            "reference": reference,
++            "reference_label_key": metadata.get("reference_label_key"),
++            "reference_cell_types": metadata.get("reference_cell_types"),
++            "reference_gene_overlap": metadata.get("reference_gene_overlap"),
++            "reference_path": metadata.get("reference_path"),
++        }
++    )
++    return summary
++
++
+ def _apply_r_annotations(adata, df: pd.DataFrame, *, requested_method: str, actual_method: str) -> dict:
+     df = df.copy()
+     if df.empty:
+@@ -367,12 +473,23 @@ def annotate_singler(adata, reference: str = "HPCA"):
+         input_h5ad = tmpdir / "input.h5ad"
+         output_dir = tmpdir / "output"
+         output_dir.mkdir(parents=True, exist_ok=True)
++        r_home = tmpdir / "r_home"
++        xdg_cache = tmpdir / "xdg_cache"
++        eh_cache = tmpdir / "experimenthub"
++        for path in (r_home, xdg_cache, eh_cache):
++            path.mkdir(parents=True, exist_ok=True)
+         export_adata.write_h5ad(input_h5ad)
+         runner.run_script(
+             "sc_singler_annotate.R",
+             args=[str(input_h5ad), str(output_dir), reference],
+             expected_outputs=["singler_results.csv"],
+             output_dir=output_dir,
++            env={
++                "HOME": str(r_home),
++                "XDG_CACHE_HOME": str(xdg_cache),
++                "OMICSCLAW_EXPERIMENTHUB_CACHE": str(eh_cache),
++                "ZELLKONVERTER_USE_BASILISK": "FALSE",
++            },
+         )
+         df = pd.read_csv(output_dir / "singler_results.csv", index_col=0)
+     summary = _apply_r_annotations(adata, df, requested_method="singler", actual_method="singler")
+@@ -392,12 +509,23 @@ def annotate_scmap(adata, reference: str = "HPCA"):
+         input_h5ad = tmpdir / "input.h5ad"
+         output_dir = tmpdir / "output"
+         output_dir.mkdir(parents=True, exist_ok=True)
++        r_home = tmpdir / "r_home"
++        xdg_cache = tmpdir / "xdg_cache"
++        eh_cache = tmpdir / "experimenthub"
++        for path in (r_home, xdg_cache, eh_cache):
++            path.mkdir(parents=True, exist_ok=True)
+         export_adata.write_h5ad(input_h5ad)
+         runner.run_script(
+             "sc_scmap_annotate.R",
+             args=[str(input_h5ad), str(output_dir), reference],
+             expected_outputs=["scmap_results.csv"],
+             output_dir=output_dir,
++            env={
++                "HOME": str(r_home),
++                "XDG_CACHE_HOME": str(xdg_cache),
++                "OMICSCLAW_EXPERIMENTHUB_CACHE": str(eh_cache),
++                "ZELLKONVERTER_USE_BASILISK": "FALSE",
++            },
+         )
+         df = pd.read_csv(output_dir / "scmap_results.csv", index_col=0)
+     summary = _apply_r_annotations(adata, df, requested_method="scmap", actual_method="scmap")
+@@ -407,9 +535,16 @@ def annotate_scmap(adata, reference: str = "HPCA"):
+ 
+ 
+ _METHOD_DISPATCH = {
++    "manual": lambda adata, args: annotate_manual(
++        adata,
++        cluster_key=args.cluster_key,
++        manual_map=args.manual_map,
++        manual_map_file=args.manual_map_file,
++    ),
+     "markers": lambda adata, args: annotate_markers(adata, cluster_key=args.cluster_key),
+-    "celltypist": lambda adata, args: annotate_celltypist(adata, args.model),
++    "celltypist": lambda adata, args: annotate_celltypist(adata, args.model, majority_voting=bool(args.celltypist_majority_voting)),
+     "popv": lambda adata, args: annotate_popv(adata, args.reference, cluster_key=args.cluster_key),
++    "knnpredict": lambda adata, args: annotate_knnpredict(adata, args.reference, cluster_key=args.cluster_key),
+     "singler": lambda adata, args: annotate_singler(adata, args.reference),
+     "scmap": lambda adata, args: annotate_scmap(adata, args.reference),
+ }
+@@ -439,17 +574,24 @@ def _build_cluster_annotation_matrix(adata, cluster_key: str) -> pd.DataFrame:
+     return matrix.reset_index()
+ 
+ 
+-def _build_annotation_umap_points_table(adata, cluster_key: str) -> pd.DataFrame:
+-    if "X_umap" not in adata.obsm:
+-        return pd.DataFrame(columns=["cell_id", "UMAP1", "UMAP2", "cell_type"])
+-    coords = np.asarray(adata.obsm["X_umap"])
++def _candidate_embedding_keys(adata) -> list[str]:
++    preferred = [key for key in ("X_umap", "X_tsne", "X_pca", "X_scvi", "X_scanvi", "X_harmony", "X_scanorama") if key in adata.obsm]
++    if preferred:
++        return preferred
++    return [str(key) for key in adata.obsm.keys() if str(key).startswith("X_")]
++
++
++def _build_annotation_embedding_points_table(adata, cluster_key: str | None, embedding_key: str | None) -> pd.DataFrame:
++    if embedding_key is None or embedding_key not in adata.obsm:
++        return pd.DataFrame(columns=["cell_id", "dim1", "dim2", "cell_type"])
++    coords = np.asarray(adata.obsm[embedding_key])
+     data = {
+         "cell_id": adata.obs_names.astype(str),
+-        "UMAP1": coords[:, 0],
+-        "UMAP2": coords[:, 1],
++        "dim1": coords[:, 0],
++        "dim2": coords[:, 1],
+         "cell_type": adata.obs["cell_type"].astype(str).to_numpy(),
+     }
+-    if cluster_key in adata.obs.columns:
++    if cluster_key and cluster_key in adata.obs.columns:
+         data[cluster_key] = adata.obs[cluster_key].astype(str).to_numpy()
+     if "annotation_score" in adata.obs.columns:
+         data["annotation_score"] = pd.to_numeric(adata.obs["annotation_score"], errors="coerce").to_numpy()
+@@ -457,23 +599,26 @@ def _build_annotation_umap_points_table(adata, cluster_key: str) -> pd.DataFrame
+ 
+ 
+ def _prepare_annotation_gallery_context(adata, summary: dict, params: dict, output_dir: Path) -> dict:
+-    cluster_key = params.get("cluster_key", "leiden")
++    cluster_key = params.get("cluster_key")
+     if cluster_key not in adata.obs.columns:
+-        cluster_key = "leiden" if "leiden" in adata.obs.columns else cluster_key
++        cluster_key = _resolve_cluster_key(adata, cluster_key)
+     summary["cluster_key"] = cluster_key
+     annotation_summary_df = sc_annotation_utils.create_annotation_summary(
+         adata,
+         output_dir,
+         annotation_key="cell_type",
+-        cluster_key=cluster_key,
++        cluster_key=cluster_key or "leiden",
+     )
++    embedding_candidates = _candidate_embedding_keys(adata)
++    embedding_key = embedding_candidates[0] if embedding_candidates else None
+     context = {
+         "output_dir": Path(output_dir),
+         "cluster_key": cluster_key,
++        "embedding_key": embedding_key,
+         "annotation_summary_df": annotation_summary_df,
+         "cell_type_counts_df": _build_cell_type_counts_table(summary),
+         "cluster_annotation_matrix_df": _build_cluster_annotation_matrix(adata, cluster_key),
+-        "annotation_umap_points_df": _build_annotation_umap_points_table(adata, cluster_key),
++        "annotation_embedding_points_df": _build_annotation_embedding_points_table(adata, cluster_key, embedding_key),
+     }
+     if "popv_predictions" in adata.uns:
+         context["popv_predictions_df"] = adata.uns["popv_predictions"].copy()
+@@ -489,21 +634,30 @@ def _build_annotation_visualization_recipe(_adata, summary: dict, context: dict)
+         description=f"Default OmicsClaw annotation gallery for method '{summary.get('method', '')}'.",
+         plots=[
+             PlotSpec(
+-                plot_id="annotation_umap",
++                plot_id="annotation_embedding",
+                 role="overview",
+-                renderer="annotated_umap",
+-                filename="umap_cell_type.png",
+-                title="Annotated UMAP",
+-                description="UMAP colored by inferred cell type labels.",
++                renderer="annotated_embedding",
++                filename="embedding_cell_type.png",
++                title="Annotated embedding",
++                description="Primary embedding colored by inferred cell type labels.",
+                 required_obs=["cell_type"],
+             ),
+             PlotSpec(
+-                plot_id="annotation_sankey",
++                plot_id="annotation_embedding_compare",
+                 role="diagnostic",
+-                renderer="annotation_sankey",
+-                filename=f"sankey_{cluster_key}_to_cell_type.png",
++                renderer="annotation_embedding_comparison",
++                filename="embedding_cluster_vs_cell_type.png",
++                title="Cluster vs annotation",
++                description="Primary embedding colored by cluster labels and inferred cell types.",
++                required_obs=["cell_type"],
++            ),
++            PlotSpec(
++                plot_id="annotation_mapping_heatmap",
++                role="diagnostic",
++                renderer="annotation_mapping_heatmap",
++                filename="cluster_to_cell_type_heatmap.png",
+                 title="Cluster-to-annotation mapping",
+-                description="Flow from clustering labels to inferred cell types.",
++                description="Normalized mapping from cluster labels to inferred cell types.",
+                 required_obs=[cluster_key, "cell_type"],
+             ),
+             PlotSpec(
+@@ -515,6 +669,15 @@ def _build_annotation_visualization_recipe(_adata, summary: dict, context: dict)
+                 description="Counts of assigned cell types across the dataset.",
+                 required_obs=["cell_type"],
+             ),
++            PlotSpec(
++                plot_id="annotation_score_embedding",
++                role="supporting",
++                renderer="annotation_score_embedding",
++                filename="embedding_annotation_score.png",
++                title="Annotation score on embedding",
++                description="Continuous annotation score rendered on the primary embedding when available.",
++                required_obs=["annotation_score"],
++            ),
+         ],
+     )
+ 
+@@ -525,7 +688,18 @@ def _gallery_figure_path(output_dir: Path, filename: str) -> Path:
+ 
+ def _render_annotated_umap(adata, spec: PlotSpec, context: dict) -> object:
+     output_dir = Path(context["output_dir"])
+-    sc_annotation_utils.plot_annotated_umap(adata, output_dir, annotation_key="cell_type")
++    embedding_key = context.get("embedding_key")
++    if not embedding_key:
++        return None
++    plot_embedding_categorical(
++        adata,
++        output_dir,
++        obsm_key=embedding_key,
++        color_key="cell_type",
++        filename=spec.filename,
++        title="Annotated embedding",
++        subtitle=f"Embedding: {embedding_key}",
++    )
+     path = _gallery_figure_path(output_dir, spec.filename)
+     return path if path.exists() else None
+ 
+@@ -533,44 +707,67 @@ def _render_annotated_umap(adata, spec: PlotSpec, context: dict) -> object:
+ def _render_annotation_sankey(adata, spec: PlotSpec, context: dict) -> object:
+     output_dir = Path(context["output_dir"])
+     cluster_key = context["cluster_key"]
+-    sc_annotation_utils.plot_annotation_sankey(
++    embedding_key = context.get("embedding_key")
++    if not cluster_key or not embedding_key:
++        return None
++    plot_embedding_comparison(
+         adata,
+         output_dir,
+-        cluster_key=cluster_key,
+-        annotation_key="cell_type",
++        obsm_key=embedding_key,
++        color_keys=[cluster_key, "cell_type"],
++        filename=spec.filename,
++        title="Cluster vs annotation on embedding",
+     )
+     path = _gallery_figure_path(output_dir, spec.filename)
+-    if path.exists():
+-        return path
+-    fallback = _gallery_figure_path(output_dir, f"heatmap_{cluster_key}_to_cell_type.png")
+-    return fallback if fallback.exists() else None
++    return path if path.exists() else None
+ 
+ 
+ def _render_cell_type_barplot(_adata, spec: PlotSpec, context: dict) -> object:
+     counts_df = context.get("cell_type_counts_df", pd.DataFrame())
+     if counts_df.empty:
+         return None
+-    fig, ax = plt.subplots(figsize=(8, 5))
+-    ax.bar(counts_df["cell_type"], counts_df["n_cells"], color="#4c72b0")
+-    ax.set_xlabel("Cell type")
+-    ax.set_ylabel("Cells")
+-    ax.set_title("Cell type counts")
+-    plt.xticks(rotation=45, ha="right")
+-    ax.spines["top"].set_visible(False)
+-    ax.spines["right"].set_visible(False)
+-    fig.tight_layout()
+-    figures_dir = Path(context["output_dir"]) / "figures"
+-    figures_dir.mkdir(parents=True, exist_ok=True)
+-    path = figures_dir / spec.filename
+-    fig.savefig(path, dpi=200, bbox_inches="tight")
+-    plt.close(fig)
+-    return path
++    plot_cell_type_count_barplot(counts_df, context["output_dir"], filename=spec.filename)
++    path = _gallery_figure_path(Path(context["output_dir"]), spec.filename)
++    return path if path.exists() else None
++
++
++def _render_annotation_mapping_heatmap(_adata, spec: PlotSpec, context: dict) -> object:
++    matrix_df = context.get("cluster_annotation_matrix_df", pd.DataFrame())
++    cluster_key = context.get("cluster_key")
++    if matrix_df.empty or not cluster_key:
++        return None
++    plot_cluster_annotation_heatmap(matrix_df, context["output_dir"], cluster_key=cluster_key, filename=spec.filename)
++    path = _gallery_figure_path(Path(context["output_dir"]), spec.filename)
++    return path if path.exists() else None
++
++
++def _render_annotation_score_embedding(adata, spec: PlotSpec, context: dict) -> object:
++    embedding_key = context.get("embedding_key")
++    if not embedding_key or "annotation_score" not in adata.obs.columns:
++        return None
++    scores = pd.to_numeric(adata.obs["annotation_score"], errors="coerce")
++    if scores.isna().all():
++        return None
++    plot_embedding_continuous(
++        adata,
++        context["output_dir"],
++        obsm_key=embedding_key,
++        color_key="annotation_score",
++        filename=spec.filename,
++        title="Annotation score on embedding",
++        subtitle=f"Embedding: {embedding_key}",
++        cmap="viridis",
++    )
++    path = _gallery_figure_path(Path(context["output_dir"]), spec.filename)
++    return path if path.exists() else None
+ 
+ 
+ ANNOTATION_GALLERY_RENDERERS = {
+-    "annotated_umap": _render_annotated_umap,
+-    "annotation_sankey": _render_annotation_sankey,
++    "annotated_embedding": _render_annotated_umap,
++    "annotation_embedding_comparison": _render_annotation_sankey,
++    "annotation_mapping_heatmap": _render_annotation_mapping_heatmap,
+     "cell_type_barplot": _render_cell_type_barplot,
++    "annotation_score_embedding": _render_annotation_score_embedding,
+ }
+ 
+ 
+@@ -588,7 +785,7 @@ def _export_figure_data(output_dir: Path, summary: dict, recipe: VisualizationRe
+         ("annotation_summary", "annotation_summary.csv", context.get("annotation_summary_df")),
+         ("cell_type_counts", "cell_type_counts.csv", context.get("cell_type_counts_df")),
+         ("cluster_annotation_matrix", "cluster_annotation_matrix.csv", context.get("cluster_annotation_matrix_df")),
+-        ("annotation_umap_points", "annotation_umap_points.csv", context.get("annotation_umap_points_df")),
++        ("annotation_embedding_points", "annotation_embedding_points.csv", context.get("annotation_embedding_points_df")),
+         ("popv_predictions", "popv_predictions.csv", context.get("popv_predictions_df")),
+     ):
+         if isinstance(df, pd.DataFrame) and not df.empty:
+@@ -648,7 +845,7 @@ def export_tables(output_dir: Path, *, gallery_context: dict | None = None) -> l
+ 
+ 
+ def write_report(output_dir: Path, summary: dict, input_file: str | None, params: dict, *, gallery_context: dict | None = None) -> None:
+-    """Write report."""
++    """Write the user-facing annotation report."""
+     context = gallery_context or {}
+     header = generate_report_header(
+         title="Cell Type Annotation Report",
+@@ -662,29 +859,51 @@ def write_report(output_dir: Path, summary: dict, input_file: str | None, params
+ 
+     body_lines = [
+         "## Summary\n",
+-        f"- **Method**: {summary['method']}",
++        f"- **Requested method**: `{summary.get('requested_method', summary['method'])}`",
++        f"- **Executed method**: `{summary.get('actual_method', summary['method'])}`",
+         f"- **Cell types identified**: {summary['n_cell_types']}",
+-        f"- **Primary cluster column**: `{context.get('cluster_key', summary.get('cluster_key', 'leiden'))}`",
++        f"- **Primary cluster column**: `{context.get('cluster_key', summary.get('cluster_key', 'none'))}`",
++    ]
++    if summary.get("fallback_reason"):
++        body_lines.append(f"- **Fallback note**: {summary['fallback_reason']}")
++    if summary.get("expression_source"):
++        body_lines.append(f"- **Expression source used**: `{summary['expression_source']}`")
++
++    body_lines.extend([
+         "",
+-        "### Cell Type Distribution\n",
++        "## Cell Type Distribution\n",
+         "| Cell Type | Count | Proportion (%) |",
+         "|-----------|-------|----------------|",
+-    ]
++    ])
+ 
+     counts_df = context.get("cell_type_counts_df", _build_cell_type_counts_table(summary))
+     if isinstance(counts_df, pd.DataFrame):
+         for row in counts_df.itertuples(index=False):
+             body_lines.append(f"| {row.cell_type} | {row.n_cells} | {row.proportion_pct:.2f} |")
+ 
+-    body_lines.extend(["", "## Parameters\n"])
++    body_lines.extend(["", "## First-pass Settings\n"])
+     for k, v in params.items():
+         body_lines.append(f"- `{k}`: {v}")
+ 
+     body_lines.extend(
+         [
++            "",
++            "## Beginner Notes\n",
++            "- `sc-cell-annotation` usually follows clustering or marker review.",
++            "- Treat these labels as a first biological interpretation layer, then cross-check them with marker genes and cluster structure.",
++            "- If labels still look uncertain, compare another annotation method before moving to DE or communication analysis.",
++            "",
++            "## Recommended Next Steps\n",
++            "- If labels remain ambiguous: revisit `sc-markers` or try a different annotation method/reference.",
++            "- If labels look stable: continue to `sc-de` or communication analysis using the inferred cell types.",
+             "",
+             "## Output Files\n",
+             "- `processed.h5ad` — annotated AnnData object.",
++            "- `figures/embedding_cell_type.png` — primary embedding colored by cell type.",
++            "- `figures/embedding_cluster_vs_cell_type.png` — cluster vs annotation comparison on the same embedding.",
++            "- `figures/cluster_to_cell_type_heatmap.png` — normalized mapping from cluster labels to cell types.",
++            "- `figures/cell_type_counts.png` — cell type counts and proportions.",
++            "- `figures/embedding_annotation_score.png` — score map when the method exposes a numeric confidence.",
+             "- `figures/manifest.json` — standard Python gallery manifest.",
+             "- `figure_data/` — figure-ready CSV exports for downstream customization.",
+             "- `tables/annotation_summary.csv` — annotation overview by cell type.",
+@@ -702,13 +921,20 @@ def write_report(output_dir: Path, summary: dict, input_file: str | None, params
+ def write_reproducibility(output_dir: Path, params: dict, *, demo_mode: bool = False) -> None:
+     repro_dir = output_dir / "reproducibility"
+     repro_dir.mkdir(exist_ok=True)
+-    command = (
+-        f"python {SCRIPT_REL_PATH} "
+-        f"{'--demo' if demo_mode else '--input <input.h5ad>'} "
+-        f"--output {shlex.quote(str(output_dir))}"
+-    )
++    command_parts = ["python", SCRIPT_REL_PATH]
++    if demo_mode:
++        command_parts.append("--demo")
++    else:
++        command_parts.extend(["--input", "<input.h5ad>"])
++    command_parts.extend(["--output", str(output_dir)])
+     for key, value in params.items():
+-        command += f" --{key.replace('_', '-')} {shlex.quote(str(value))}"
++        flag = f"--{key.replace('_', '-')}"
++        if isinstance(value, bool):
++            if key == "celltypist_majority_voting":
++                command_parts.append(flag if value else "--no-celltypist-majority-voting")
++            continue
++        command_parts.extend([flag, str(value)])
++    command = " ".join(shlex.quote(part) for part in command_parts)
+     (repro_dir / "commands.sh").write_text(f"#!/bin/bash\n{command}\n", encoding="utf-8")
+     _write_repro_requirements(
+         repro_dir,
+@@ -724,20 +950,40 @@ def main():
+     parser.add_argument("--method", choices=list(METHOD_REGISTRY.keys()), default="markers")
+     parser.add_argument("--model", default="Immune_All_Low", help="CellTypist model")
+     parser.add_argument("--reference", default="HPCA", help="SingleR/scmap atlas selector or labeled H5AD path for popv")
+-    parser.add_argument("--cluster-key", default="leiden", help="Cluster column for marker mode")
++    parser.add_argument("--cluster-key", default=None, help="Cluster/label column for marker summaries and marker-based annotation")
++    parser.add_argument("--manual-map", default=None, help="Inline manual mapping like '0=T cell;1,2=Myeloid'")
++    parser.add_argument("--manual-map-file", default=None, help="Path to manual mapping file (json/csv/tsv/txt)")
++    parser.add_argument(
++        "--celltypist-majority-voting",
++        action=argparse.BooleanOptionalAction,
++        default=False,
++        help="Enable CellTypist majority voting when running the celltypist backend",
++    )
+     args = parser.parse_args()
+ 
+     output_dir = Path(args.output_dir)
+     output_dir.mkdir(parents=True, exist_ok=True)
+ 
+     if args.demo:
+-        adata, _ = sc_io.load_repo_demo_data("pbmc3k_processed")
++        adata = sc_io.load_repo_demo_data("pbmc3k_raw")[0]
++        sc.pp.filter_cells(adata, min_genes=200)
++        sc.pp.filter_genes(adata, min_cells=3)
++        adata.layers["counts"] = adata.X.copy()
++        adata.raw = adata.copy()
++        sc.pp.normalize_total(adata, target_sum=1e4)
++        sc.pp.log1p(adata)
++        sc.pp.pca(adata)
++        sc.pp.neighbors(adata)
++        sc.tl.umap(adata)
++        try:
++            sc.tl.louvain(adata, resolution=0.8, key_added="louvain")
++        except Exception:
++            sc.tl.leiden(adata, resolution=0.8, key_added="louvain")
+         input_file = None
+     else:
+         if not args.input_path:
+             raise ValueError("--input required when not using --demo")
+-        adata = sc.read_h5ad(args.input_path)
+-        sc_io.maybe_warn_standardize_first(adata, source_path=args.input_path, skill_name=SKILL_NAME)
++        adata = sc_io.smart_load(args.input_path, skill_name=SKILL_NAME)
+         input_file = args.input_path
+ 
+     logger.info("Input: %d cells x %d genes", adata.n_obs, adata.n_vars)
+@@ -749,16 +995,31 @@ def main():
+             model=args.model,
+             reference=args.reference,
+             cluster_key=args.cluster_key,
++            celltypist_majority_voting=args.celltypist_majority_voting,
++            manual_map=args.manual_map,
++            manual_map_file=args.manual_map_file,
+             source_path=input_file,
+         ),
+         logger,
+     )
++    resolved_cluster_key = _resolve_cluster_key(adata, args.cluster_key)
++    args.cluster_key = resolved_cluster_key
+     summary = _METHOD_DISPATCH[method](adata, args)
+     summary["n_cells"] = int(adata.n_obs)
+ 
+-    params = {"method": method, "reference": args.reference, "cluster_key": args.cluster_key}
+-    if method == "celltypist":
++    params = {"method": method}
++    if args.cluster_key:
++        params["cluster_key"] = args.cluster_key
++    if method == "manual":
++        if args.manual_map:
++            params["manual_map"] = args.manual_map
++        if args.manual_map_file:
++            params["manual_map_file"] = args.manual_map_file
++    elif method == "celltypist":
+         params["model"] = args.model
++        params["celltypist_majority_voting"] = args.celltypist_majority_voting
++    elif method in {"popv", "knnpredict", "singler", "scmap"}:
++        params["reference"] = args.reference
+ 
+     gallery_context = _prepare_annotation_gallery_context(adata, summary, params, output_dir)
+     generate_figures(adata, output_dir, summary, gallery_context=gallery_context)
+@@ -770,6 +1031,15 @@ def main():
+     params["actual_method"] = summary.get("actual_method", method)
+     if summary.get("fallback_reason"):
+         params["fallback_reason"] = summary["fallback_reason"]
++
++    input_contract, matrix_contract = propagate_singlecell_contracts(
++        adata,
++        adata,
++        producer_skill=SKILL_NAME,
++        x_kind="normalized_expression",
++        raw_kind=get_matrix_contract(adata).get("raw"),
++        primary_cluster_key=gallery_context.get("cluster_key"),
++    )
+     store_analysis_metadata(adata, SKILL_NAME, summary.get("actual_method", method), params)
+     output_h5ad = output_dir / "processed.h5ad"
+     save_h5ad(adata, output_h5ad)
+@@ -783,12 +1053,14 @@ def main():
+         "used_fallback": summary.get("used_fallback", False),
+         "fallback_reason": summary.get("fallback_reason", ""),
+         "params": params,
++        "input_contract": input_contract,
++        "matrix_contract": matrix_contract,
+         **summary,
+         "visualization": {
+             "recipe_id": "standard-sc-cell-annotation-gallery",
+             "cluster_column": gallery_context.get("cluster_key"),
+             "annotation_column": "cell_type",
+-            "umap_key": "X_umap" if "X_umap" in adata.obsm else None,
++            "embedding_key": gallery_context.get("embedding_key"),
+             "available_figure_data": gallery_context.get("figure_data_files", {}),
+         },
+     }
+diff --git a/skills/singlecell/scrna/sc-cell-annotation/tests/test_sc_annotate_methods.py b/skills/singlecell/scrna/sc-cell-annotation/tests/test_sc_annotate_methods.py
+index 227c19de..76e4f218 100644
+--- a/skills/singlecell/scrna/sc-cell-annotation/tests/test_sc_annotate_methods.py
++++ b/skills/singlecell/scrna/sc-cell-annotation/tests/test_sc_annotate_methods.py
+@@ -9,8 +9,26 @@
+ 
+ def test_method_registry_includes_popv():
+     assert '"popv": MethodConfig(' in MODULE_TEXT
+-    assert 'description="Reference-mapped consensus annotation (PopV)"' in MODULE_TEXT
++    assert 'PopV-style reference mapping' in MODULE_TEXT or 'PopV' in MODULE_TEXT
++
++
++def test_method_registry_includes_manual():
++    assert '"manual": MethodConfig(' in MODULE_TEXT
++    assert 'Manual relabeling' in MODULE_TEXT
++
++
++def test_method_registry_includes_knnpredict():
++    assert '"knnpredict": MethodConfig(' in MODULE_TEXT
++    assert 'Lightweight AnnData-first reference mapping inspired by SCOP KNNPredict' in MODULE_TEXT
+ 
+ 
+ def test_dispatch_includes_popv():
+     assert '"popv": lambda adata, args: annotate_popv' in MODULE_TEXT
++
++
++def test_dispatch_includes_manual():
++    assert '"manual": lambda adata, args: annotate_manual' in MODULE_TEXT
++
++
++def test_dispatch_includes_knnpredict():
++    assert '"knnpredict": lambda adata, args: annotate_knnpredict' in MODULE_TEXT
+diff --git a/tests/test_sc_preflight.py b/tests/test_sc_preflight.py
+index bf75679b..53670b19 100644
+--- a/tests/test_sc_preflight.py
++++ b/tests/test_sc_preflight.py
+@@ -116,7 +116,7 @@ def test_preflight_sc_cell_annotation_blocks_qc_style_count_contract_for_scmap()
+     assert any("expects log-normalized expression" in line for line in decision.missing_requirements)
+ 
+ 
+-def test_preflight_sc_cell_annotation_markers_can_auto_cluster_with_guidance():
++def test_preflight_sc_cell_annotation_markers_now_requires_existing_cluster_key():
+     adata = _adata(x=np.array([[10, 1], [8, 2]], dtype=float))
+ 
+     decision = preflight_sc_cell_annotation(
+@@ -127,10 +127,28 @@ def test_preflight_sc_cell_annotation_markers_can_auto_cluster_with_guidance():
+         cluster_key="leiden",
+     )
+ 
+-    assert decision.status == "proceed_with_guidance"
++    assert decision.status == "blocked"
++    assert any("Run `sc-clustering` first" in line or "existing cluster/label column" in line for line in decision.missing_requirements)
+     assert any("auto-cluster" in line for line in decision.guidance)
+ 
+ 
++def test_preflight_sc_cell_annotation_manual_requires_mapping():
++    adata = _adata(x=np.array([[0.1, 0.2], [0.4, 0.5]], dtype=float), obs={"louvain": ["0", "1"]})
++
++    decision = preflight_sc_cell_annotation(
++        adata,
++        method="manual",
++        model="Immune_All_Low",
++        reference="HPCA",
++        cluster_key="louvain",
++        manual_map=None,
++        manual_map_file=None,
++    )
++
++    assert decision.status == "needs_user_input"
++    assert any("--manual-map" in line or "Manual annotation needs either" in line for line in decision.confirmations)
++
++
+ def test_preflight_sc_cell_communication_needs_label_confirmation():
+     adata = _adata(
+         x=np.array([[1, 0], [0, 1]], dtype=float),

@@ -1,0 +1,71 @@
+version = "1.0"
+
+[task]
+name = "default/aertslab__SCope-212"
+description = "Feature 149 searchable regulon targets"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "SCope",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aertslab/SCope"
+ref = "d77dad328ba7b266aad09d4c01d109fe39933a49"
+reference = "https://github.com/aertslab/SCope/pull/212"
+source_access = "auto"
+built_at = "2026-11-15T19:39:38.505686+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:dadc3ed2338290e4a19e29eb618033a7235a7b9f12e4fe5b9eefe67e66e115f6"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2019-08-01T07:36:37Z"
+diff_format = "unified"
+context_files = [
+    "README.md",
+    "VERSION",
+    "opt/scopeserver/dataserver/modules/gserver/GServer.py",
+    "opt/scopeserver/dataserver/utils/loom.py",
+    "opt/scopeserver/dataserver/utils/search_space.py",
+    "opt/setup.py",
+    "package.json",
+    "src/components/common/FeatureSearchBox.jsx",
+    "src/components/common/ViewerSidebar.jsx",
+    "src/css/features.css",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 231
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

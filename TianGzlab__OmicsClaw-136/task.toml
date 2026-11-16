@@ -1,0 +1,70 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-136"
+description = "feat(spatial): migrate spatial-de to v2 (PR #3 of skill rework)"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "f09e35fafc1510f21476fde1af331807f3c94622"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/136"
+source_access = "auto"
+built_at = "2026-11-15T18:17:44.537473+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:bf4b38a4123e7973c87d2fa9b3809dbd8586b5c39457b73a8bd668a106f1757b"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-05-10T07:38:06Z"
+diff_format = "unified"
+context_files = [
+    "scripts/migrate_skill.py",
+    "skills/spatial/spatial-de/SKILL.md",
+    "skills/spatial/spatial-de/parameters.yaml",
+    "skills/spatial/spatial-de/references/methodology.md",
+    "skills/spatial/spatial-de/references/output_contract.md",
+    "skills/spatial/spatial-de/references/parameters.md",
+    "skills/spatial/spatial-de/references/r_visualization.md",
+    "tests/test_metadata_roundtrip.py",
+    "tests/test_migrate_skill.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 1414
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

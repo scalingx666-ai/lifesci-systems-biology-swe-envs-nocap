@@ -1,0 +1,518 @@
+diff --git a/omicsclaw/providers/patches.py b/omicsclaw/providers/patches.py
+index 4603cc0b..2a91c933 100644
+--- a/omicsclaw/providers/patches.py
++++ b/omicsclaw/providers/patches.py
+@@ -113,8 +113,132 @@ async def discover_ollama_models_async(
+     ]
+ 
+ 
++# ---------------------------------------------------------------------------
++# Ollama tool-capability classification
++# ---------------------------------------------------------------------------
++#
++# OmicsClaw is a tool-using agent: every chat turn may call MCP tools. The
++# Ollama tool API rejects requests for models that don't implement function
++# calling with an HTTP 400 like ``... does not support tools``. A pattern
++# heuristic lets us tag models in the UI and translate the upstream error
++# into actionable guidance — without paying for an ``/api/show`` round-trip
++# per model on every ``/providers`` poll. Patterns are matched against the
++# tag-stripped, lowercased model name (``deepseek-r1:14b`` → ``deepseek-r1``).
++#
++# Sources: Ollama model library tool-support metadata as of 2025-Q4. Keep
++# patterns conservative — unknowns return ``None`` so callers can pass
++# through and let Ollama be authoritative.
++
++_OLLAMA_TOOL_CAPABLE_PATTERNS: tuple[str, ...] = (
++    "qwen2.5",
++    "qwen3",
++    "qwen3-coder",
++    "qwen2.5-coder",
++    "llama3.1",
++    "llama3.2",
++    "llama3.3",
++    "llama4",
++    "mistral",
++    "mistral-nemo",
++    "mistral-small",
++    "mistral-large",
++    "mixtral",
++    "command-r",
++    "command-r-plus",
++    "command-r7b",
++    "granite3",
++    "granite3.1",
++    "granite3.2",
++    "granite3.3",
++    "firefunction",
++    "nemotron",
++    "llama3-groq-tool-use",
++    "hermes3",
++    "cogito",
++    "devstral",
++    "phi4",
++    # Google Gemma 4 (released 2026-04-02) ships native function-calling —
++    # the capabilities row on https://ollama.com/library/gemma4/tags lists
++    # `tools` alongside vision/thinking/audio. Distinct from gemma 1–3
++    # which remain text-only without tool support.
++    "gemma4",
++)
++
++_OLLAMA_TOOL_INCAPABLE_PATTERNS: tuple[str, ...] = (
++    "deepseek-r1",
++    "gemma3",
++    "gemma2",
++    "gemma",
++    "phi3",
++    "phi3.5",
++    "llama2",
++    "llama3",  # base llama3 (without .1/.2/.3 suffix) — see ordering below
++    "codellama",
++    "tinyllama",
++    "wizardlm",
++    "wizardcoder",
++    "starcoder",
++    "starcoder2",
++    "vicuna",
++    "orca",
++    "neural-chat",
++    "yi",
++    "qwen2",  # base qwen2 — no tool support; qwen2.5 does
++    "qwen",
++    "nomic-embed-text",
++    "mxbai-embed",
++    "snowflake-arctic-embed",
++    "all-minilm",
++)
++
++
++def _ollama_base_name(model: str) -> str:
++    """Strip Ollama tag (``:7b``, ``:latest``) and lowercase."""
++    if not isinstance(model, str):
++        return ""
++    base = model.split(":", 1)[0].strip().lower()
++    # Drop any registry path prefix (``registry.ollama.ai/library/foo`` → ``foo``)
++    if "/" in base:
++        base = base.rsplit("/", 1)[-1]
++    return base
++
++
++def model_supports_tools_ollama(model: str) -> bool | None:
++    """Return tool-support classification for an Ollama model name.
++
++    Returns ``True`` / ``False`` for known families, ``None`` for unknown
++    models (caller should treat as "let Ollama be authoritative"). Matching
++    is on the longest-prefix tag-stripped base name, so ``qwen2.5:14b`` and
++    ``qwen2.5-coder:7b`` both resolve to capable, while ``deepseek-r1:14b``
++    resolves to incapable.
++
++    Never raises.
++    """
++    base = _ollama_base_name(model)
++    if not base:
++        return None
++
++    # Longest-match wins to disambiguate qwen2.5 (capable) from qwen2 (not).
++    capable = max(
++        (p for p in _OLLAMA_TOOL_CAPABLE_PATTERNS if base == p or base.startswith(p + "-") or base.startswith(p + ".")),
++        key=len,
++        default="",
++    )
++    incapable = max(
++        (p for p in _OLLAMA_TOOL_INCAPABLE_PATTERNS if base == p or base.startswith(p + "-") or base.startswith(p + ".")),
++        key=len,
++        default="",
++    )
++    if capable and len(capable) >= len(incapable):
++        return True
++    if incapable:
++        return False
++    return None
++
++
+ __all__ = [
+     "apply_deepseek_reasoning_passback",
+     "discover_ollama_models",
+     "discover_ollama_models_async",
++    "model_supports_tools_ollama",
+ ]
+diff --git a/omicsclaw/providers/registry.py b/omicsclaw/providers/registry.py
+index 1d3c300b..08e29b24 100644
+--- a/omicsclaw/providers/registry.py
++++ b/omicsclaw/providers/registry.py
+@@ -15,9 +15,14 @@
+ ProviderTier = Literal["primary", "aggregator", "local"]
+ 
+ 
+-class ModelMetadata(TypedDict):
++class ModelMetadata(TypedDict, total=False):
+     id: str
+     context_window: int | None
++    # Optional per-provider capability hints. ``supports_tools`` is populated
++    # for providers where tool-calling support varies per model (notably
++    # Ollama-served local models) so the UI can warn users away from
++    # tool-incompatible picks. ``None`` means "unknown".
++    supports_tools: bool | None
+ 
+ 
+ class ProviderDisplayMetadata(TypedDict):
+@@ -205,7 +210,16 @@ class ProviderRegistryEntry(TypedDict):
+             "qwen2.5:7b",
+             "qwen2.5:14b",
+             "qwen2.5:32b",
++            "qwen3:8b",
+             "llama3.3:70b",
++            "llama3.1:8b",
++            # Gemma 4 (2026-04, Apache 2.0) — native tool calling.
++            "gemma4:e4b",
++            "gemma4:26b",
++            # Reasoning / text-only models retained for visibility but the
++            # frontend marks them with supports_tools=False so users can't
++            # pick them as the primary agent model. See
++            # https://github.com/TianGzlab/OmicsClaw/issues/208.
+             "deepseek-r1:7b",
+             "deepseek-r1:14b",
+             "deepseek-r1:32b",
+@@ -277,20 +291,39 @@ def get_provider_display_metadata(provider_name: str) -> ProviderDisplayMetadata
+ 
+ def build_provider_registry_entries(
+     provider_presets: Mapping[str, ProviderPreset] = PROVIDER_PRESETS,
++    *,
++    discovered_models: Mapping[str, list[str]] | None = None,
+ ) -> list[ProviderRegistryEntry]:
++    """Build the registry payload consumed by surfaces.
++
++    ``discovered_models`` lets callers inject runtime-detected model names
++    (currently used by the desktop surface to surface the user's installed
++    Ollama tags). When provided, discovered names are prepended to the
++    curated list and the merged result is deduplicated while preserving
++    order. The curated list is still kept as a fallback for first-run UX
++    when discovery fails (e.g. ollama daemon not running).
++    """
+     from .models import get_context_window
++    from .patches import model_supports_tools_ollama
+ 
+     entries: list[ProviderRegistryEntry] = []
+     for name, (base_url, default_model, env_key) in provider_presets.items():
+         metadata = get_provider_display_metadata(name)
++        discovered = list(discovered_models.get(name, [])) if discovered_models else []
+         models = list(dict.fromkeys([
++            *discovered,
+             *metadata["models"],
+             *((default_model,) if default_model else tuple()),
+         ]))
+-        model_metadata: list[ModelMetadata] = [
+-            {"id": model, "context_window": get_context_window(model)}
+-            for model in models
+-        ]
++        model_metadata: list[ModelMetadata] = []
++        for model in models:
++            entry: ModelMetadata = {
++                "id": model,
++                "context_window": get_context_window(model),
++            }
++            if name == "ollama":
++                entry["supports_tools"] = model_supports_tools_ollama(model)
++            model_metadata.append(entry)
+         entries.append({
+             "name": name,
+             "base_url": base_url,
+diff --git a/omicsclaw/runtime/agent/loop.py b/omicsclaw/runtime/agent/loop.py
+index 4078c16e..cca3ffec 100644
+--- a/omicsclaw/runtime/agent/loop.py
++++ b/omicsclaw/runtime/agent/loop.py
+@@ -190,6 +190,24 @@ def _format_llm_api_error_message(exc: Exception) -> str:
+             "provider dashboard or homepage."
+         )
+ 
++    # Ollama-specific: translate the upstream "does not support tools"
++    # 400 into actionable guidance. OmicsClaw needs function-calling for
++    # every turn, so models like deepseek-r1 / gemma3 can't be used as the
++    # agent's primary model regardless of how capable they are otherwise.
++    if provider == "ollama" and "does not support tools" in detail.lower():
++        active_model = str(getattr(_core, "OMICSCLAW_MODEL", "") or "")
++        model_hint = f" `{active_model}`" if active_model else ""
++        return (
++            f"The selected Ollama model{model_hint} does not support tool "
++            "calling, which OmicsClaw requires for every turn. Pick a "
++            "tool-capable model — e.g. `qwen2.5:7b`, `qwen3:8b`, "
++            "`llama3.1:8b`, `llama3.3:70b`, `gemma4:e4b`, `mistral`, or "
++            "`command-r` — via Settings → Provider, or by setting "
++            "OMICSCLAW_MODEL. Reasoning-only models (deepseek-r1) and "
++            "older Gemma versions (gemma2, gemma3) lack tool support; "
++            "Gemma 4 added native function calling and works."
++        )
++
+     return f"Sorry, I'm having trouble thinking right now -- API error: {detail}"
+ 
+ 
+diff --git a/omicsclaw/surfaces/desktop/server.py b/omicsclaw/surfaces/desktop/server.py
+index e0d41f49..88092548 100644
+--- a/omicsclaw/surfaces/desktop/server.py
++++ b/omicsclaw/surfaces/desktop/server.py
+@@ -3640,9 +3640,13 @@ async def list_providers():
+     except ImportError:
+         return {"providers": [], "current": core.LLM_PROVIDER_NAME, "current_model": core.OMICSCLAW_MODEL}
+ 
++    discovered_models = await _cached_ollama_models(PROVIDER_PRESETS)
++
+     providers = []
+     try:
+-        provider_entries = build_provider_registry_entries(PROVIDER_PRESETS)
++        provider_entries = build_provider_registry_entries(
++            PROVIDER_PRESETS, discovered_models=discovered_models
++        )
+     except Exception:
+         provider_entries = [
+             {
+@@ -3708,6 +3712,80 @@ def provider_supports_oauth(_name: str) -> bool:  # type: ignore[no-redef]
+     }
+ 
+ 
++# ---------------------------------------------------------------------------
++# Ollama installed-model discovery cache
++# ---------------------------------------------------------------------------
++#
++# Probes ``GET {ollama_base_url}/api/tags`` to surface the user's actually
++# installed Ollama models in the UI rather than only the curated catalog.
++# Resolves the gap behind https://github.com/TianGzlab/OmicsClaw/issues/208
++# where freshly pulled tags (e.g. ``gemma3:4b``) never appeared in the
++# dropdown. Falls back silently to the curated list if the daemon isn't
++# running. Short TTL — installed models change rarely but settings pages
++# may poll ``/providers`` frequently.
++
++_OLLAMA_MODELS_CACHE: dict[str, object] = {"ts": 0.0, "data": {}}
++_OLLAMA_MODELS_TTL_SECONDS: float = 30.0
++
++
++def _normalize_ollama_discovery_base_url(raw: str) -> str:
++    """Strip the OpenAI-compat ``/v1`` suffix from an Ollama base URL.
++
++    The OmicsClaw preset advertises ``http://localhost:11434/v1`` because
++    chat/completions traffic goes through Ollama's OpenAI-compatible layer.
++    Native endpoints — including ``/api/tags`` used for installed-model
++    discovery — live at the *root*, so passing the ``/v1``-suffixed value
++    straight to :func:`discover_ollama_models_async` would request the
++    nonexistent ``/v1/api/tags`` and silently 404. We only strip a trailing
++    ``/v1`` segment; nothing else about the URL is rewritten.
++    """
++    value = str(raw or "").strip().rstrip("/")
++    if value.endswith("/v1"):
++        return value[:-3]
++    return value
++
++
++async def _cached_ollama_models(
++    provider_presets: dict[str, tuple[str, str, str]],
++) -> dict[str, list[str]]:
++    """Return ``{provider_name: [model, ...]}`` from live Ollama discovery.
++
++    Cached for ``_OLLAMA_MODELS_TTL_SECONDS``. Returns an empty mapping on
++    any failure so the curated fallback list still drives the UI.
++    """
++    import time as _time
++
++    now = _time.monotonic()
++    if (now - float(_OLLAMA_MODELS_CACHE["ts"])) < _OLLAMA_MODELS_TTL_SECONDS:
++        return _OLLAMA_MODELS_CACHE["data"]  # type: ignore[return-value]
++
++    result: dict[str, list[str]] = {}
++    try:
++        from omicsclaw.providers.patches import discover_ollama_models_async
++
++        ollama_preset = provider_presets.get("ollama")
++        if ollama_preset:
++            base_url = _normalize_ollama_discovery_base_url(
++                _read_first_env("OLLAMA_BASE_URL")
++                or (
++                    _read_first_env("LLM_BASE_URL", "OMICSCLAW_BASE_URL")
++                    if _configured_provider_name() == "ollama"
++                    else ""
++                )
++                or str(ollama_preset[0] or "")
++            )
++            if base_url:
++                models = await discover_ollama_models_async(base_url)
++                if models:
++                    result["ollama"] = models
++    except Exception:
++        result = {}
++
++    _OLLAMA_MODELS_CACHE["ts"] = now
++    _OLLAMA_MODELS_CACHE["data"] = result
++    return result
++
++
+ # ---------------------------------------------------------------------------
+ # OAuth status cache — avoids subprocess-spawning on every /providers poll
+ # ---------------------------------------------------------------------------
+diff --git a/tests/test_app_server.py b/tests/test_app_server.py
+index 4b6995b3..137ab610 100644
+--- a/tests/test_app_server.py
++++ b/tests/test_app_server.py
+@@ -3700,3 +3700,75 @@ async def test_memory_review_version_chain_endpoint_rejects_overwrite_uri(
+         assert ei.value.status_code == 400
+     finally:
+         await memory_pkg.close_db()
++
++
++# ---------------------------------------------------------------------------
++# Ollama installed-model discovery URL normalization (issue #208 regression)
++# ---------------------------------------------------------------------------
++
++
++def test_normalize_ollama_discovery_base_url_strips_v1():
++    """The OmicsClaw preset advertises ``…/v1`` for OpenAI-compat chat,
++    but Ollama's ``/api/tags`` lives at the root. Without this stripping
++    the discovery endpoint would resolve to ``…/v1/api/tags`` and 404,
++    making the entire live-discovery path silently no-op.
++    """
++    pytest.importorskip("fastapi")
++
++    from omicsclaw.surfaces.desktop import server
++
++    f = server._normalize_ollama_discovery_base_url
++    assert f("http://localhost:11434/v1") == "http://localhost:11434"
++    assert f("http://localhost:11434/v1/") == "http://localhost:11434"
++    assert f("http://localhost:11434") == "http://localhost:11434"
++    assert f("http://localhost:11434/") == "http://localhost:11434"
++    # Mid-path /v1 must not be stripped.
++    assert f("http://gw.example.com/proxy/v1/extra") == (
++        "http://gw.example.com/proxy/v1/extra"
++    )
++    # Defensive against empty / whitespace input.
++    assert f("") == ""
++    assert f("   ") == ""
++
++
++@pytest.mark.asyncio
++async def test_cached_ollama_models_strips_v1_before_discovery(monkeypatch):
++    """End-to-end guard: ``_cached_ollama_models`` must hand
++    ``discover_ollama_models_async`` a root URL (no ``/v1``) regardless of
++    whether the preset, ``OLLAMA_BASE_URL``, or ``LLM_BASE_URL`` was the
++    source. Catches the original #208 regression even when discovery is
++    stubbed in higher-level tests.
++    """
++    pytest.importorskip("fastapi")
++
++    from omicsclaw.surfaces.desktop import server
++    from omicsclaw.providers import patches as patches_mod
++
++    server._OLLAMA_MODELS_CACHE["ts"] = 0.0
++    server._OLLAMA_MODELS_CACHE["data"] = {}
++
++    captured: dict[str, str] = {}
++
++    async def fake_discover(base_url, *, timeout=1.5):
++        captured["base_url"] = base_url
++        return ["qwen2.5:7b"]
++
++    monkeypatch.setattr(
++        patches_mod, "discover_ollama_models_async", fake_discover
++    )
++    monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
++    monkeypatch.delenv("LLM_BASE_URL", raising=False)
++    monkeypatch.delenv("OMICSCLAW_BASE_URL", raising=False)
++    monkeypatch.delenv("LLM_PROVIDER", raising=False)
++    monkeypatch.delenv("OMICSCLAW_PROVIDER", raising=False)
++
++    presets = {"ollama": ("http://localhost:11434/v1", "qwen2.5:7b", "")}
++    result = await server._cached_ollama_models(presets)
++
++    assert captured["base_url"] == "http://localhost:11434"
++    assert not captured["base_url"].endswith("/v1")
++    assert result == {"ollama": ["qwen2.5:7b"]}
++
++    # Reset cache so subsequent tests aren't polluted.
++    server._OLLAMA_MODELS_CACHE["ts"] = 0.0
++    server._OLLAMA_MODELS_CACHE["data"] = {}
+diff --git a/tests/test_llm_patches.py b/tests/test_llm_patches.py
+index 14cf99f7..3c9f7975 100644
+--- a/tests/test_llm_patches.py
++++ b/tests/test_llm_patches.py
+@@ -10,6 +10,7 @@
+     apply_deepseek_reasoning_passback,
+     discover_ollama_models,
+     discover_ollama_models_async,
++    model_supports_tools_ollama,
+ )
+ 
+ 
+@@ -173,3 +174,78 @@ async def fake_get(*args, **kwargs):
+                 discover_ollama_models_async("http://127.0.0.1:11434")
+             )
+         assert result == ["qwen2.5:7b", "llama3.3:70b"]
++
++
++# ---------------------------------------------------------------------------
++# Ollama tool-capability classification
++# ---------------------------------------------------------------------------
++
++
++class TestModelSupportsToolsOllama:
++    def test_qwen2_5_family_capable(self):
++        assert model_supports_tools_ollama("qwen2.5:7b") is True
++        assert model_supports_tools_ollama("qwen2.5:14b") is True
++        assert model_supports_tools_ollama("qwen2.5:32b") is True
++        assert model_supports_tools_ollama("qwen2.5-coder:7b") is True
++
++    def test_qwen3_capable(self):
++        assert model_supports_tools_ollama("qwen3:8b") is True
++        assert model_supports_tools_ollama("qwen3-coder:latest") is True
++
++    def test_qwen2_base_incapable(self):
++        # qwen2 (without .5) lacks tool support; do not confuse with qwen2.5.
++        assert model_supports_tools_ollama("qwen2:7b") is False
++
++    def test_deepseek_r1_incapable(self):
++        # The issue #208 reproducer.
++        assert model_supports_tools_ollama("deepseek-r1:14b") is False
++        assert model_supports_tools_ollama("deepseek-r1:7b") is False
++        assert model_supports_tools_ollama("deepseek-r1:32b") is False
++
++    def test_deepseek_r1_with_registry_prefix(self):
++        # Matches the error string Ollama actually returns to the user.
++        assert (
++            model_supports_tools_ollama("registry.ollama.ai/library/deepseek-r1:14b")
++            is False
++        )
++
++    def test_gemma_family_incapable(self):
++        assert model_supports_tools_ollama("gemma3:4b") is False
++        assert model_supports_tools_ollama("gemma3:12b") is False
++        assert model_supports_tools_ollama("gemma2:9b") is False
++
++    def test_gemma4_capable(self):
++        # Gemma 4 (2026-04) added native function calling — must not be
++        # confused with the still-incapable gemma2 / gemma3 families.
++        assert model_supports_tools_ollama("gemma4:e4b") is True
++        assert model_supports_tools_ollama("gemma4:e2b") is True
++        assert model_supports_tools_ollama("gemma4:26b") is True
++        assert model_supports_tools_ollama("gemma4:31b") is True
++        assert model_supports_tools_ollama("gemma4:latest") is True
++
++    def test_llama3_minor_versions_capable(self):
++        assert model_supports_tools_ollama("llama3.1:8b") is True
++        assert model_supports_tools_ollama("llama3.2:3b") is True
++        assert model_supports_tools_ollama("llama3.3:70b") is True
++
++    def test_llama3_base_incapable(self):
++        # llama3 (no minor) is a base text model without tool support.
++        assert model_supports_tools_ollama("llama3:8b") is False
++
++    def test_mistral_family_capable(self):
++        assert model_supports_tools_ollama("mistral:latest") is True
++        assert model_supports_tools_ollama("mistral-nemo:12b") is True
++        assert model_supports_tools_ollama("mixtral:8x7b") is True
++
++    def test_embedding_models_incapable(self):
++        assert model_supports_tools_ollama("nomic-embed-text:latest") is False
++        assert model_supports_tools_ollama("mxbai-embed-large:latest") is False
++
++    def test_unknown_model_returns_none(self):
++        assert model_supports_tools_ollama("brand-new-model:7b") is None
++        assert model_supports_tools_ollama("some-untracked-thing") is None
++
++    def test_handles_invalid_input(self):
++        assert model_supports_tools_ollama("") is None
++        assert model_supports_tools_ollama(None) is None  # type: ignore[arg-type]
++        assert model_supports_tools_ollama(":no-name") is None

@@ -1,0 +1,72 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-58"
+description = "Polish scRNA marker ranking workflow and gallery"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "baf44201fd0c64ade70a179e20e3a363dad639be"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/58"
+source_access = "auto"
+built_at = "2026-11-15T18:18:25.653455+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:deeea9ec3f16b99110545fd7023eb8210eb6729caf82744f1984791787fbaab7"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-04-07T10:34:40Z"
+diff_format = "unified"
+context_files = [
+    "knowledge_base/knowhows/KH-sc-markers-guardrails.md",
+    "knowledge_base/skill-guides/singlecell/sc-markers.md",
+    "omicsclaw/core/registry.py",
+    "skills/singlecell/_lib/markers.py",
+    "skills/singlecell/_lib/preflight.py",
+    "skills/singlecell/_lib/viz/__init__.py",
+    "skills/singlecell/_lib/viz/markers.py",
+    "skills/singlecell/scrna/sc-markers/SKILL.md",
+    "skills/singlecell/scrna/sc-markers/sc_markers.py",
+    "skills/singlecell/scrna/sc-markers/tests/test_sc_markers.py",
+    "tests/test_sc_preflight.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 1492
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

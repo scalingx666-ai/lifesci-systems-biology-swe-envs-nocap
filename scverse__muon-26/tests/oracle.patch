@@ -1,0 +1,238 @@
+diff --git a/.github/workflows/pythonpackage.yml b/.github/workflows/pythonpackage.yml
+index 394d5d97..9a8f48ad 100644
+--- a/.github/workflows/pythonpackage.yml
++++ b/.github/workflows/pythonpackage.yml
+@@ -8,7 +8,7 @@ jobs:
+     runs-on: ubuntu-latest
+     strategy:
+       matrix:
+-        python-version: [3.7, 3.8]
++        python-version: [3.8, 3.9]
+ 
+     steps:
+     - uses: actions/checkout@v2
+@@ -20,7 +20,7 @@ jobs:
+       run: |
+         python -m pip install --upgrade pip
+         python -m pip install umap-learn
+-        python setup.py install
++        python -m pip install .
+         # python -m pip install mofapy2
+         python -m pip install git+https://github.com/bioFAM/mofapy2@dev
+     - name: Lint with flake8
+diff --git a/.gitignore b/.gitignore
+index b6e47617..81d184df 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -117,6 +117,10 @@ venv.bak/
+ # Rope project settings
+ .ropeproject
+ 
++# KDevelop project settings
++*.kdev4
++.kdev4/
++
+ # mkdocs documentation
+ /site
+ 
+diff --git a/.readthedocs.yaml b/.readthedocs.yaml
+index 79c722fe..596de114 100644
+--- a/.readthedocs.yaml
++++ b/.readthedocs.yaml
+@@ -8,4 +8,7 @@ sphinx:
+ python:
+   version: 3.8
+   install:
+-    - requirements: docs/requirements.txt
++    - method: pip
++      path: .
++      extra_requirements:
++        - docs
+diff --git a/docs/requirements.txt b/docs/requirements.txt
+deleted file mode 100644
+index f4ae488d..00000000
+--- a/docs/requirements.txt
++++ /dev/null
+@@ -1,9 +0,0 @@
+-sphinx
+-sphinx_rtd_theme
+-readthedocs-sphinx-search
+-nbsphinx
+-sphinx_automodapi
+-
+-# Install muon and its dependencies
+-scanpy
+-.
+diff --git a/docs/source/install.rst b/docs/source/install.rst
+index 65108e84..e2d6f869 100644
+--- a/docs/source/install.rst
++++ b/docs/source/install.rst
+@@ -28,4 +28,8 @@ To use a pre-release version of ``muon``, install it from `from the GitHub repos
+ Troubleshooting
+ ---------------
+ 
+-Please see details on installing ``scanpy`` and its dependencies `here <https://scanpy.readthedocs.io/en/stable/installation.html>`_. If there are issues that have not beed described, addressed, or documented, please consider `opening an issue <https://github.com/gtca/muon/issues>`_.
+\ No newline at end of file
++Please see details on installing ``scanpy`` and its dependencies `here <https://scanpy.readthedocs.io/en/stable/installation.html>`_. If there are issues that have not beed described, addressed, or documented, please consider `opening an issue <https://github.com/gtca/muon/issues>`_.
++
++Hacking on muon
++-------------------
++For hacking on the package, it is most convenient to do a so-called development-mode install, which symlinks files in your Python package directory to your muon working directory, such that you do not need to reinstall after every change. We use `flit <https://flit.readthedocs.io/en/latest/index.html>`_ as our build system. After installing flit, you can run ``flit install -s`` from within the muon project directory to perform a development-mode install. Happy hacking!
+diff --git a/muon/__init__.py b/muon/__init__.py
+index babb20cb..2f7ec851 100644
+--- a/muon/__init__.py
++++ b/muon/__init__.py
+@@ -1,3 +1,5 @@
++"""Multimodal omics analysis framework"""
++
+ from ._core.mudata import MuData
+ from ._core import preproc as pp
+ from ._core import tools as tl
+@@ -9,4 +11,4 @@
+ from . import atac
+ from . import prot
+ 
+-name = "muon"
++__version__ = "0.1.0"
+diff --git a/pyproject.toml b/pyproject.toml
+index 07a22bb0..bc26c79f 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -1,26 +1,53 @@
+ [build-system]
+-# requires = ["flit"]
+-# build-backend = "flit.buildapi"
+-requires = ["poetry>=0.12"]
+-build-backend = "poetry.masonry.api"
+-
+-[tool.poetry]
+-name = "muon"
+-version = "0.1.0"
+-description = "Multimodal omics analysis framework"
+-authors = ["Danila Bredikhin <danila.bredikhin@embl.de>"]
+-
+-[tool.poetry.dependencies]
+-python = "*"
+-
+-[tool.poetry.dev-dependencies]
+-pytest = "^3.4"
++requires = ["flit_core >=2,<4"]
++build-backend = "flit_core.buildapi"
+ 
+ [tool.flit.metadata]
+ module = "muon"
+ author = "Danila Bredikhin"
+ author-email = "danila.bredikhin@embl.de"
++description-file = "README.md"
+ home-page = "https://github.com/gtca/muon"
++classifiers = [
++    "Programming Language :: Python :: 3",
++    "License :: OSI Approved :: BSD License",
++    "Operating System :: OS Independent",
++    "Development Status :: 3 - Alpha",
++    "Topic :: Scientific/Engineering :: Bio-Informatics",
++    "Intended Audience :: Science/Research"
++]
++requires-python = ">= 3.6"
++requires = [
++    "numpy",
++    "pandas",
++    "matplotlib",
++    "seaborn",
++    "h5py",
++    "anndata",
++    "scanpy",
++    "sklearn",
++    "umap-learn",
++    "numba",
++    "loompy",
++    "protobuf",
++    "tqdm",
++]
++
++[tool.flit.metadata.requires-extra]
++docs = [
++    "sphinx >= 4.0",
++    "sphinx-rtd-theme",
++    "readthedocs-sphinx-search",
++    "nbsphinx",
++    "sphinx_automodapi"
++]
++
++[tool.flit.metadata.urls]
++Documentation = "https://muon.readthedocs.io/en/latest/"
++
++[tool.flit.sdist]
++exclude = [".github"]
++
+ 
+ [tool.black]
+ line-length = 100
+diff --git a/requirements.txt b/requirements.txt
+deleted file mode 100644
+index e55b6dac..00000000
+--- a/requirements.txt
++++ /dev/null
+@@ -1,15 +0,0 @@
+-numpy==1.18.5
+-anndata==0.7.4
+-matplotlib==3.3.0
+-scipy==1.5.1
+-pandas==1.1.0
+-h5py==2.10.0
+-pybedtools==0.8.1
+-pytest==6.0.1
+-scanpy==1.5.1
+-pysam==0.16.0.1
+-mofapy2==0.5.8
+-mofax==0.3.2
+-tqdm==4.49.0
+-dtw-python==1.1.5
+-scikit-learn==0.23.1
+\ No newline at end of file
+diff --git a/setup.py b/setup.py
+deleted file mode 100644
+index 9043234c..00000000
+--- a/setup.py
++++ /dev/null
+@@ -1,40 +0,0 @@
+-import setuptools
+-import os
+-
+-with open(os.path.join(os.path.dirname(__file__), "README.md"), "r") as fh:
+-    long_description = fh.read()
+-
+-setuptools.setup(
+-    name="muon",
+-    version="0.1.0",
+-    author="Danila Bredikhin",
+-    author_email="danila.bredikhin@embl.de",
+-    description="Multimodal omics analysis framework",
+-    long_description=long_description,
+-    long_description_content_type="text/markdown",
+-    url="https://github.com/gtca/muon",
+-    packages=setuptools.find_packages(),
+-    classifiers=[
+-        "Programming Language :: Python :: 3",
+-        "License :: OSI Approved :: BSD License",
+-        "Operating System :: OS Independent",
+-        "Development Status :: 3 - Alpha",
+-    ],
+-    python_requires=">=3.6",
+-    install_requires=[
+-        "numpy",
+-        "pandas",
+-        "matplotlib",
+-        "seaborn",
+-        "h5py",
+-        "anndata",
+-        "scanpy",
+-        "sklearn",
+-        "umap-learn",
+-        "numba",
+-        "loompy",
+-        "protobuf",
+-        "tqdm",
+-    ],
+-    include_package_data=True,
+-)

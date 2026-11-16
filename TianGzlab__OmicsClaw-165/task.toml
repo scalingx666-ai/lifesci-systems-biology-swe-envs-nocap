@@ -1,0 +1,67 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-165"
+description = "chore: stop tracking build/routing-baselines and ignore .claude/"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "9de986f5b8bc45d41be1ca6cc216ac1b607269b5"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/165"
+source_access = "auto"
+built_at = "2026-11-15T18:17:27.095097+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:a3a94e776a8ed5baec0944b313eb5d42f86b66e8bc335301cf67635c08c5ee5a"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-05-11T03:57:21Z"
+diff_format = "unified"
+context_files = [
+    ".claude/scheduled_tasks.lock",
+    ".gitignore",
+    "build/routing-baselines/after_stage3.json",
+    "build/routing-baselines/after_stage4.json",
+    "build/routing-baselines/before.json",
+    "build/routing-baselines/ceiling.json",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 49
+difficulty = "medium"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

@@ -1,0 +1,75 @@
+version = "1.0"
+
+[task]
+name = "default/federicomarini__GeneTonic-16"
+description = "Graphsummary"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "GeneTonic",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "federicomarini/GeneTonic"
+ref = "9d48b7e898856e2fc1842b0e1e692789644e6fb0"
+reference = "https://github.com/federicomarini/GeneTonic/pull/16"
+source_access = "auto"
+built_at = "2026-11-15T19:34:34.108255+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:5fcd875647b1e7fd283cb09a520d707483f3bc7d7e8795df38d6a492243b7c7d"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2021-03-10T12:35:11Z"
+diff_format = "unified"
+context_files = [
+    "DESCRIPTION",
+    "NAMESPACE",
+    "NEWS.md",
+    "R/GeneTonic-extras.R",
+    "R/GeneTonic-pkg.R",
+    "R/GeneTonic.R",
+    "R/ggs_graph.R",
+    "R/gs_shaker.R",
+    "inst/extdata/tour_ggs.txt",
+    "man/ggs_backbone.Rd",
+    "man/ggs_graph.Rd",
+    "man/summarize_ggs_hubgenes.Rd",
+    "tests/testthat/test-ggs_graph.R",
+    "tests/testthat/test-gs_mds.R",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 785
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

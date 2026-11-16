@@ -1,0 +1,1555 @@
+diff --git a/skills/literature/SKILL.md b/skills/literature/SKILL.md
+index 657e01d6..a1fb78af 100644
+--- a/skills/literature/SKILL.md
++++ b/skills/literature/SKILL.md
+@@ -1,120 +1,93 @@
+ ---
+ name: literature
+-description: >-
+-  Parse scientific literature (PDFs, URLs, DOIs) to extract GEO accessions,
+-  metadata, and datasets. Use when users provide a paper and want to
+-  automatically extract data sources for downstream omics analysis.
+-version: 0.1.0
++description: Load when extracting GEO accessions, dataset metadata, and downloadable references from a scientific paper (PDF / URL / DOI / PubMed ID / raw text) for downstream omics analysis. Skip when the dataset is already in hand or when only routing a query (use `orchestrator`).
++version: 0.5.0
+ author: OmicsClaw
+ license: MIT
+-tags: [literature, pdf-parsing, geo, pubmed, data-download]
+-metadata:
+-  omicsclaw:
+-    domain: literature
+-    requires:
+-      bins:
+-      - python3
+-      env: []
+-      config: []
+-    emoji: "📄"
+-    homepage: https://github.com/OmicsClaw/OmicsClaw
+-    os: [macos, linux, windows]
+-    install:
+-    - kind: pip
+-      package: pypdf
+-      bins: []
+-    trigger_keywords:
+-    - parse paper
+-    - literature
+-    - GEO accession
+-    - download dataset
+-    - PDF extract
+-    - PubMed
+-    - DOI
+-    script: literature_parse.py
+-    allowed_extra_flags: []
+-    param_hints: {}
+-    saves_h5ad: false
+-    requires_preprocessed: false
++tags:
++- literature
++- pdf
++- doi
++- pubmed
++- geo
++- metadata
++requires:
++- requests
+ ---
+ 
+-# Literature Parsing Skill
++# literature
+ 
+-## Purpose
++## When to use
+ 
+-Parse scientific literature (PDFs, URLs, DOIs) to extract GEO accessions and metadata, then download datasets for downstream omics analysis.
++The user provides a scientific paper reference (PDF path, URL,
++DOI, PubMed ID, or raw text excerpt) and wants OmicsClaw to
++extract GEO accessions, dataset metadata, and (optionally)
++download referenced GEO datasets — so a downstream analysis skill
++can be invoked on real data.
+ 
+-## Methodology
++`--input-type` defaults to `auto` (sniffs from input shape).
++`--no-download` skips the GEO download step (metadata only).
+ 
+-### 1. Input Processing
++For dispatching a NL query to an analysis skill use `orchestrator`.
++For scaffolding a new skill from a paper use `omics-skill-builder`.
+ 
+-Accepts multiple input types:
+-- **URL**: PubMed, bioRxiv, journal article links
+-- **DOI**: Digital Object Identifier (e.g., 10.1038/s41586-021-03569-1)
+-- **PubMed ID**: PMID (e.g., 33234567)
+-- **PDF**: Uploaded scientific paper
+-- **Text**: Raw text containing GEO references
++## Inputs & Outputs
+ 
+-### 2. Metadata Extraction
++| Input | Format | Required |
++|---|---|---|
++| Reference | `--input <URL\|DOI\|PubMed\|PDF path\|text>` | yes (unless `--demo`) |
++| Input type | `--input-type {auto,url,doi,pubmed,file,text}` (default `auto`) | no |
++| Skip download | `--no-download` (extract metadata only) | no |
++| Data dir | `--data-dir <path>` (default `data/`) | no |
+ 
+-Extracts structured information:
+-- **GEO Accessions**: GSE (study-level), GSM (sample-level)
+-- **Organism**: Species (e.g., Homo sapiens, Mus musculus)
+-- **Tissue**: Tissue type or organ
+-- **Cell Type**: Cell type if specified
+-- **Technology**: Sequencing platform (10x, Visium, etc.)
++| Output | Path | Notes |
++|---|---|---|
++| Extracted metadata | `output_dir/extracted_metadata.json` | written at `literature_parse.py:80` |
++| Report | `output_dir/report.md` | written at `literature_parse.py:193` |
++| Result envelope | `output_dir/result.json` | written at `literature_parse.py:147` |
++| Downloaded GEO data | `<data-dir>/<GSE...>/...` | only when GEO accessions found AND `--no-download` not set |
+ 
+-### 3. Data Download
++## Flow
+ 
+-Downloads datasets from GEO:
+-- Resolves GSE to find all associated GSM samples
+-- Downloads expression matrices (.h5ad, .mtx, .csv)
+-- Organizes files by accession: `data/GSE123456/`
+-- Generates metadata.json with extracted information
++1. Parse `--input` (or `--demo`); raise `parser.error('the following arguments are required: --input (unless --demo is used)')` at `literature_parse.py:38` when missing.
++2. Detect input type (URL / DOI / PubMed / PDF / text) via `--input-type auto` or honour the explicit value.
++3. Call `parse_input` (`skills/literature/core/parser.py`); fetch / parse content.
++4. Call `extract_metadata` (`skills/literature/core/extractor.py`) → identify GEO accessions, dataset metadata, study type.
++5. If GEO accessions found AND not `--no-download`: call `download_geo_dataset` (`skills/literature/core/downloader.py`) → save to `--data-dir`.
++6. Write `extracted_metadata.json` (`literature_parse.py:80`) + `report.md` (`:193`) + `result.json` (`:147`).
+ 
+-### 4. Error Handling
++## Gotchas
+ 
+-- **Retry with fallbacks**: PDF parsing → text extraction → manual patterns
+-- **Partial results**: Returns successfully extracted data even if some downloads fail
+-- **Logging**: Detailed logs for debugging
++- **`--input` REQUIRED unless `--demo` — uses `parser.error` (exit 2).** `literature_parse.py:38` calls `parser.error('the following arguments are required: --input (unless --demo is used)')`. Different from most file-pipeline skills which raise `ValueError`.
++- **`--input-type auto` heuristics are positional, not URL-aware.** `core/parser.py:35-55` checks the bare-DOI regex `^10\.\d{4,}/\S+` first; URLs always hit the `startswith("http")` branch and resolve to `url`, even when they wrap a DOI (`https://doi.org/10.1038/...`). For PDF / file paths use `--input-type file` explicitly — `Path.exists()` has to succeed for auto-detection to pick `file`.
++- **GEO download requires internet access.** `download_geo_dataset` issues HTTP requests to GEO FTP. Air-gapped runs must pass `--no-download` or the run will hang / time out.
++- **PDF parsing requires `pypdf` / similar.** If the PDF parser dependency is missing, the run errors out — verify `skills/literature/requirements.txt` is satisfied.
++- **`extracted_metadata.json` is at `output_dir/` ROOT, not `tables/`.** This skill does NOT follow the `tables/<file>.csv` convention used by analysis skills.
++- **Empty / unparseable input ⇒ exit 1 (not 2).** `literature_parse.py:64` calls `sys.exit(1)` on internal parse failure (distinct from the `parser.error` exit-2 path for missing args).
+ 
+-## Output
+-
+-- **data/GSE*/**: Downloaded datasets organized by accession
+-- **output/literature-parse_*/report.md**: Extraction report
+-- **output/literature-parse_*/metadata.json**: Structured metadata
+-
+-## Usage
++## Key CLI
+ 
+ ```bash
+-# Parse from URL
+-python skills/literature/literature_parse.py \
+-  --input "https://pubmed.ncbi.nlm.nih.gov/12345" \
+-  --output output/literature_results
+-
+-# Parse from DOI
+-python skills/literature/literature_parse.py \
+-  --input "10.1038/s41586-021-03569-1" \
+-  --input-type doi \
+-  --output output/literature_results
+-
+-# Parse PDF
+-python skills/literature/literature_parse.py \
+-  --input paper.pdf \
+-  --input-type file \
+-  --output output/literature_results
+-```
++# Demo (built-in local text)
++python omicsclaw.py run literature --demo --output /tmp/lit_demo
+ 
+-## Integration
++# DOI
++python omicsclaw.py run literature \
++  --input "10.1038/s41586-021-03689-7" --output results/
+ 
+-After extraction, the bot automatically suggests appropriate analysis skills based on:
+-- Data type (spatial, single-cell, bulk)
+-- Organism and tissue
+-- Available files
++# PDF (use --input-type file)
++python omicsclaw.py run literature \
++  --input my_paper.pdf --input-type file --output results/
++
++# URL, metadata-only (no GEO download)
++python omicsclaw.py run literature \
++  --input "https://www.nature.com/articles/..." \
++  --output results/ --no-download
++```
+ 
+-## Dependencies
++## See also
+ 
+-- pypdf: PDF text extraction
+-- requests: HTTP requests
+-- beautifulsoup4: HTML parsing
+-- GEOparse: GEO data access (optional, fallback to direct API)
++- `references/parameters.md` — every CLI flag, input-type heuristics
++- `references/methodology.md` — GEO accession rules, parser fallbacks
++- `references/output_contract.md` — `extracted_metadata.json` schema
++- Adjacent skills: `orchestrator` (downstream — routes the resulting dataset to an analysis skill), `omics-skill-builder` (parallel — scaffold a new skill from a paper)
+diff --git a/skills/literature/parameters.yaml b/skills/literature/parameters.yaml
+new file mode 100644
+index 00000000..0ef19279
+--- /dev/null
++++ b/skills/literature/parameters.yaml
+@@ -0,0 +1,33 @@
++domain: literature
++requires:
++  bins:
++  - python3
++  env: []
++  config: []
++emoji: 📄
++homepage: https://github.com/OmicsClaw/OmicsClaw
++os:
++- macos
++- linux
++- windows
++install:
++- kind: pip
++  package: pypdf
++  bins: []
++trigger_keywords:
++- parse paper
++- literature
++- GEO accession
++- download dataset
++- PDF extract
++- PubMed
++- DOI
++script: literature_parse.py
++allowed_extra_flags:
++- --data-dir
++- --input-type
++- --no-download
++param_hints: {}
++saves_h5ad: false
++requires_preprocessed: false
++legacy_aliases: []
+diff --git a/skills/literature/references/methodology.md b/skills/literature/references/methodology.md
+new file mode 100644
+index 00000000..f80cc2fa
+--- /dev/null
++++ b/skills/literature/references/methodology.md
+@@ -0,0 +1,86 @@
++<!-- Generated by scripts/migrate_skill.py at 2026-05-10T14:18:59Z -->
++<!-- Kind: references/methodology.md | Source: SKILL.md -->
++
++## Purpose
++
++Parse scientific literature (PDFs, URLs, DOIs) to extract GEO accessions and metadata, then download datasets for downstream omics analysis.
++
++
++## Methodology
++
++### 1. Input Processing
++
++Accepts multiple input types:
++- **URL**: PubMed, bioRxiv, journal article links
++- **DOI**: Digital Object Identifier (e.g., 10.1038/s41586-021-03569-1)
++- **PubMed ID**: PMID (e.g., 33234567)
++- **PDF**: Uploaded scientific paper
++- **Text**: Raw text containing GEO references
++
++### 2. Metadata Extraction
++
++Extracts structured information:
++- **GEO Accessions**: GSE (study-level), GSM (sample-level)
++- **Organism**: Species (e.g., Homo sapiens, Mus musculus)
++- **Tissue**: Tissue type or organ
++- **Cell Type**: Cell type if specified
++- **Technology**: Sequencing platform (10x, Visium, etc.)
++
++### 3. Data Download
++
++Downloads datasets from GEO:
++- Resolves GSE to find all associated GSM samples
++- Downloads expression matrices (.h5ad, .mtx, .csv)
++- Organizes files by accession: `data/GSE123456/`
++- Generates metadata.json with extracted information
++
++### 4. Error Handling
++
++- **Retry with fallbacks**: PDF parsing → text extraction → manual patterns
++- **Partial results**: Returns successfully extracted data even if some downloads fail
++- **Logging**: Detailed logs for debugging
++
++
++## Output
++
++- **data/GSE*/**: Downloaded datasets organized by accession
++- **output/literature-parse_*/report.md**: Extraction report
++- **output/literature-parse_*/metadata.json**: Structured metadata
++
++
++## Usage
++
++```bash
++# Parse from URL
++python skills/literature/literature_parse.py \
++  --input "https://pubmed.ncbi.nlm.nih.gov/12345" \
++  --output output/literature_results
++
++# Parse from DOI
++python skills/literature/literature_parse.py \
++  --input "10.1038/s41586-021-03569-1" \
++  --input-type doi \
++  --output output/literature_results
++
++# Parse PDF
++python skills/literature/literature_parse.py \
++  --input paper.pdf \
++  --input-type file \
++  --output output/literature_results
++```
++
++
++## Integration
++
++After extraction, the bot automatically suggests appropriate analysis skills based on:
++- Data type (spatial, single-cell, bulk)
++- Organism and tissue
++- Available files
++
++
++## Dependencies
++
++- pypdf: PDF text extraction
++- requests: HTTP requests
++- beautifulsoup4: HTML parsing
++- GEOparse: GEO data access (optional, fallback to direct API)
+diff --git a/skills/literature/references/output_contract.md b/skills/literature/references/output_contract.md
+new file mode 100644
+index 00000000..5f35a1a3
+--- /dev/null
++++ b/skills/literature/references/output_contract.md
+@@ -0,0 +1,24 @@
++## Output Structure
++
++```
++output_directory/
++├── extracted_metadata.json
++├── report.md
++└── result.json
++
++<--data-dir>/
++└── <GSE.../>...   (only when GEO accessions found AND --no-download not set)
++```
++
++## File contents
++
++- `output_dir/extracted_metadata.json` — extracted metadata: GEO accessions, study type, sample counts, downloadable resource URLs. Written at `literature_parse.py:80`.
++- `output_dir/report.md` — Markdown summary with parsed input type, accession counts, download status. Written at `literature_parse.py:193`.
++- `output_dir/result.json` — `summary` includes `n_geo_accessions`, `download_attempted`, `input_type`, `accessions[]`. Written at `literature_parse.py:147`.
++- `<--data-dir>/<GSEid>/...` — downloaded GEO datasets, ONLY when GEO accessions are found AND `--no-download` is not passed. Default `--data-dir` is `data/`.
++
++## Notes
++
++- `extracted_metadata.json` is at the output_dir ROOT, NOT under `tables/`. This skill does not follow the analysis-skill convention.
++- GEO download requires internet access (the downloader hits GEO FTP / NCBI APIs). Use `--no-download` for air-gapped runs.
++- PDF parsing requires `pypdf` per the `requires.install` block in `parameters.yaml`.
+diff --git a/skills/literature/references/parameters.md b/skills/literature/references/parameters.md
+new file mode 100644
+index 00000000..4e5d749c
+--- /dev/null
++++ b/skills/literature/references/parameters.md
+@@ -0,0 +1,15 @@
++<!-- AUTO-GENERATED from parameters.yaml — do not edit by hand. -->
++<!-- Regenerate: python scripts/generate_parameters_md.py <skill_dir> -->
++
++
++# Parameters
++
++## Allowed extra CLI flags
++
++- `--data-dir`
++- `--input-type`
++- `--no-download`
++
++## Per-method parameter hints
++
++_No method-specific tuning hints._
+diff --git a/skills/orchestrator/SKILL.md b/skills/orchestrator/SKILL.md
+index f400f4cc..8c72c907 100644
+--- a/skills/orchestrator/SKILL.md
++++ b/skills/orchestrator/SKILL.md
+@@ -1,321 +1,90 @@
+ ---
+ name: orchestrator
+-description: >-
+-  Multi-omics query routing and pipeline orchestration across all OmicsClaw domains.
+-  Routes natural language queries to the correct analysis skill across spatial transcriptomics,
+-  single-cell omics, genomics, proteomics, and metabolomics.
+-version: 1.0.0
+-author: OmicsClaw Team
++description: Load when routing a natural-language omics query to the correct domain skill across spatial / singlecell / genomics / proteomics / metabolomics / bulkrna domains via keyword / LLM / hybrid matching. Skip when the target skill is already known — invoke that skill directly.
++version: 0.5.0
++author: OmicsClaw
+ license: MIT
+-tags: [orchestrator, routing, pipeline, multi-omics]
+-metadata:
+-  omicsclaw:
+-    domain: orchestrator
+-    allowed_extra_flags:
+-    - "--list-skills"
+-    - "--pipeline"
+-    - "--query"
+-    saves_h5ad: false
+-    requires:
+-      bins:
+-      - python3
+-      env: []
+-      config: []
+-    emoji: "🎯"
+-    homepage: https://github.com/OmicsClaw/OmicsClaw
+-    os: [macos, linux, windows]
+-    install:
+-    - kind: pip
+-      package: scanpy
+-      bins: []
+-    trigger_keywords:
+-    - which skill
+-    - route query
+-    - what should I run
+-    - orchestrate
+-    - pipeline
+-    - which analysis
+-    script: omics_orchestrator.py
+-    param_hints: {}
+-    requires_preprocessed: false
++tags:
++- orchestrator
++- routing
++- meta
++- multi-omics
++- registry
++requires:
++- pyyaml
+ ---
+ 
+-# 🎯 Multi-Omics Orchestrator
++# orchestrator
+ 
+-You are the **OmicsClaw Orchestrator**, the meta-skill that routes user queries to the correct analysis skill across all omics domains. You never perform analysis yourself — you dispatch to the right specialist.
++## When to use
+ 
+-## Why This Exists
++The user asks a natural-language omics question (e.g. "find spatial
++domains in my Visium data", "call CNVs from this BAM", "run DE on
++my proteomics CSV") and you need to dispatch to the correct skill
++across the 6 routed OmicsClaw domains (`_DOMAINS` at `omics_orchestrator.py:190`). Three routing modes:
+ 
+-<!-- ORCH-INTRO-START -->
+-- **Without it**: Users must know exact skill names and CLI flags across 89 skills in 8 domains
+-<!-- ORCH-INTRO-END -->
+-- **With it**: Natural language queries are automatically matched to the correct skill
+-- **Why OmicsClaw**: Single unified entry point for all multi-omics analysis capabilities
++- `keyword` (default) — fast lexical match against
++  `trigger_keywords` in every skill's `parameters.yaml`.
++- `llm` — LLM-based query → skill match (slower, more flexible).
++- `hybrid` — keyword first, LLM fallback when ambiguous.
+ 
+-## Supported Domains
++If the target skill is already known, invoke it directly — this
++skill exists to dispatch ambiguous queries, not as a wrapper.
++For scaffolding NEW skills use `omics-skill-builder`.
+ 
+-<!-- ORCH-DOMAINS-START -->
+-OmicsClaw currently supports **89 skills across 8 domains**:
++## Inputs & Outputs
+ 
+-1. **Spatial Transcriptomics** (17 skills) - `.h5ad`, `.h5`, `.zarr`, `.loom`
+-2. **Single-Cell Omics** (30 skills) - `.h5ad`, `.h5`, `.loom`, `.mtx`
+-3. **Genomics** (10 skills) - `.vcf`, `.bam`, `.cram`, `.fasta`, `.fastq`, `.bed`
+-4. **Proteomics** (8 skills) - `.mzml`, `.mzxml`, `.csv`
+-5. **Metabolomics** (8 skills) - `.mzml`, `.cdf`, `.csv`
+-6. **Bulk RNA-seq** (13 skills) - `.csv`, `.tsv`, `.fastq`
+-7. **Orchestrator** (2 skills) - `*` (all types)
+-8. **Literature** (1 skills) - `PDF`, `DOI`, `PubMed`, `URL`, text
+-<!-- ORCH-DOMAINS-END -->
++| Input | Format | Required |
++|---|---|---|
++| Query | `--query <text>` (natural language) | yes (unless `--demo`) |
++| Optional input file | `--input <path>` (used to bias domain detection) | no |
++| Routing mode | `--routing-mode {keyword,llm,hybrid}` (default `keyword`) | no |
+ 
+-<!-- Note: counts above are regenerated by scripts/generate_orchestrator_counts.py -->
++| Output | Path | Notes |
++|---|---|---|
++| Routing result | `result.json` | written via `out_json.write_text(json.dumps(result))` (`omics_orchestrator.py:409`) — includes selected skill, confidence, candidates |
++| Demo report | `demo_report.txt` | only when `--demo` (`omics_orchestrator.py:334`) |
+ 
+-## Workflow
++## Flow
+ 
+-1. **Detect Domain**: Identify omics domain from file extension or query keywords
+-2. **Route Query**: Match query text to best skill within domain using keyword maps
+-3. **Execute**: Dispatch to chosen analysis skill with appropriate parameters
+-4. **Monitor**: Track execution status and collect results
+-5. **Report**: Return structured output with skill name, confidence, and results
++1. Parse `--query` (or `--demo`).
++2. If `--input` is provided, call `detect_domain_from_path` (`omicsclaw.loaders`) to bias domain selection.
++3. Dispatch to `route_keyword` / `route_query_unified` per `--routing-mode` (`omics_orchestrator.py:24-26` imports).
++4. Resolve the chosen skill via `resolve_capability` (`omicsclaw.core.capability_resolver`); look up registry entry via `omicsclaw.core.registry.registry`.
++5. Write `result.json` (`omics_orchestrator.py:409`); print the selected skill name + suggested CLI invocation.
+ 
+-## Core Capabilities
++## Gotchas
+ 
+-### 1. Domain Detection
++- **`--query` REQUIRED unless `--demo`.** No explicit raise — argparse accepts a `None` query, the run still exits 0 and writes `result.json` with `detected_skill: null`, `coverage: "no_skill"`. Always pass `--query` for real use.
++- **`--routing-mode` is IGNORED when `--query` is set.** `omics_orchestrator.py:374-389` dispatches `--query` runs to `resolve_capability` (capability-resolver — keyword-based with no mode parameter). `--routing-mode` only takes effect for file-only routing (`:393` `route_query_with_mode`) and `--demo` (`:362` `run_demo`). For LLM-routed queries, call the unified router directly.
++- **Missing `LLM_API_KEY` SILENTLY falls back to keyword routing — no error.** `omicsclaw/routing/llm_router.py:48-50` logs a warning and returns `(None, 0.0)`; the orchestrator continues with keyword/capability routing. The run still exits 0 — inspect logs to confirm which mode actually fired.
++- **`keyword` mode depends on `trigger_keywords` in `parameters.yaml`.** Stale or missing keywords degrade routing quality silently. The 89 v2 skills' keyword tables are loaded on every call via the registry.
++- **No analysis is performed.** This skill only emits a routing decision in `result.json`; it does NOT execute the chosen downstream skill. The user (or a wrapping orchestration script) must invoke it.
++- **Demo and real-query outputs are mutually exclusive.** `--demo` writes ONLY `output_dir/demo_report.txt` and returns at `omics_orchestrator.py:363`; real `--query` / `--input` runs write ONLY `output_dir/result.json` (`:409`). The two never co-exist in the same run.
+ 
+-Automatically detect the omics domain from:
+-- **File extension**: `.h5ad` → spatial/singlecell, `.vcf` → genomics, `.mzml` → proteomics/metabolomics
+-- **Query keywords**: "spatially variable" → spatial, "variant calling" → genomics
+-
+-### 2. Query Routing
+-
+-Match natural language queries to skills using domain-specific keyword maps with confidence scoring.
+-
+-**Three routing modes available:**
+-
+-1. **Keyword Mode (default)**: Fast pattern matching using curated keyword maps
+-   - Matches query keywords to skill names
+-   - Confidence based on keyword length and position
+-   - No external dependencies, instant results
+-   - Best for: Standard queries with clear keywords
+-
+-2. **LLM Mode**: AI-powered semantic understanding
+-   - Uses language model to interpret query intent
+-   - Considers skill descriptions and context
+-   - Requires LLM API access
+-   - Best for: Complex or ambiguous queries
+-
+-3. **Hybrid Mode**: Combines keyword and LLM approaches
+-   - Falls back to LLM if keyword confidence is low
+-   - Balances speed and accuracy
+-   - Best for: Production systems with varied query types
+-
+-### 3. Pipeline Orchestration
+-
+-Execute multi-skill pipelines (e.g., preprocess → domains → de → genes → statistics).
+-
+-### 4. Skill Discovery
+-
+-List all available skills with status (ready/planned) and descriptions.
+-
+-## Routing Maps
+-
+-### Spatial Transcriptomics Keywords → Skills
+-
+-| Query Keywords | Skill | Description |
+-|----------------|-------|-------------|
+-| spatial domain, tissue region, niche | spatial-domain-identification | Tissue region/niche identification |
+-| cell type annotation | spatial-cell-annotation | Cell type annotation |
+-| deconvolution, cell proportion | spatial-deconvolution | Cell type deconvolution |
+-| spatial statistics, moran, autocorrelation | spatial-statistics | Spatial statistics |
+-| spatially variable gene | spatial-svg-detection | Spatially variable genes |
+-| differential expression, marker genes | spatial-de | Differential expression |
+-| condition comparison, pseudobulk | spatial-condition-comparison | Condition comparison |
+-| ligand receptor, cell communication | spatial-cell-communication | Cell-cell communication |
+-| rna velocity | spatial-velocity | RNA velocity |
+-| trajectory, pseudotime | spatial-trajectory | Trajectory inference |
+-| pathway enrichment, gsea | spatial-enrichment | Pathway enrichment |
+-| cnv, copy number | spatial-cnv | Copy number variation |
+-| batch correction, integration | spatial-integration | Multi-sample integration |
+-| spatial registration, alignment | spatial-registration | Spatial registration |
+-| preprocess, qc, normalization | spatial-preprocessing | Data preprocessing |
+-
+-### Single-Cell Omics Keywords → Skills
+-
+-| Query Keywords | Skill | Description |
+-|----------------|-------|-------------|
+-| qc metrics, quality control | sc-qc | QC metrics calculation |
+-| filter cells, gene filtering | sc-filter | Cell/gene filtering |
+-| ambient rna, cellbender | sc-ambient-removal | Ambient RNA removal |
+-| single cell, scrna-seq | sc-preprocessing | scRNA-seq preprocessing |
+-| doublet detection, scrublet | sc-doublet-detection | Doublet detection |
+-| trajectory, pseudotime, paga, dpt | sc-pseudotime | Trajectory inference |
+-| rna velocity, scvelo | sc-velocity | RNA velocity analysis |
+-| cell type annotation, celltypist | sc-cell-annotation | Cell type annotation |
+-| integration, batch correction, harmony | sc-batch-integration | Batch correction |
+-| differential expression, pseudobulk | sc-de | Differential expression |
+-| marker genes, find markers | sc-markers | Marker gene detection |
+-| cluster enrichment, marker enrichment, single-cell gsea | sc-enrichment | Statistical enrichment on marker / DE rankings |
+-| pathway scoring, signature score | sc-pathway-scoring | Per-cell pathway / signature activity scoring |
+-| gene regulatory network, grn, pyscenic | sc-grn | Gene regulatory network |
+-
+-### Genomics Keywords → Skills
+-
+-| Query Keywords | Skill | Description |
+-|----------------|-------|-------------|
+-| variant calling, snp | genomics-variant-calling | Variant calling |
+-| structural variant, sv | genomics-sv-detection | Structural variant detection |
+-| vcf operations | genomics-vcf-operations | VCF manipulation |
+-| alignment, read alignment | genomics-alignment | Read alignment |
+-| variant annotation | genomics-variant-annotation | Variant annotation |
+-| assembly, genome assembly | genomics-assembly | Genome assembly |
+-| phasing, haplotype | genomics-phasing | Haplotype phasing |
+-| cnv calling | genomics-cnv-calling | CNV analysis |
+-| quality control, fastq | genomics-qc | Sequencing QC |
+-| epigenomics, chip-seq, atac-seq | genomics-epigenomics | Epigenomics analysis |
+-
+-### Proteomics Keywords → Skills
+-
+-| Query Keywords | Skill | Description |
+-|----------------|-------|-------------|
+-| mass spec qc, ms qc | proteomics-ms-qc | Mass spectrometry QC |
+-| peptide identification | proteomics-identification | Peptide identification |
+-| protein quantification | proteomics-quantification | Protein quantification |
+-| differential abundance | proteomics-de | Differential abundance |
+-| ptm, post-translational | proteomics-ptm | PTM analysis |
+-| pathway enrichment | proteomics-enrichment | Pathway enrichment |
+-| structural proteomics | proteomics-structural | Structural proteomics |
+-| data import | proteomics-data-import | Data import |
+-
+-### Metabolomics Keywords → Skills
+-
+-| Query Keywords | Skill | Description |
+-|----------------|-------|-------------|
+-| peak detection | metabolomics-peak-detection | Peak detection |
+-| xcms preprocessing | metabolomics-xcms-preprocessing | XCMS preprocessing |
+-| metabolite annotation | metabolomics-annotation | Metabolite annotation |
+-| normalization | metabolomics-normalization | Data normalization |
+-| differential metabolite | metabolomics-de | Differential analysis |
+-| pathway enrichment | metabolomics-pathway-enrichment | Pathway enrichment |
+-| statistical analysis | metabolomics-statistics | Statistical analysis |
+-| quantification | metabolomics-quantification | Feature quantification |
+-
+-## CLI Usage
++## Key CLI
+ 
+ ```bash
+-# Route a natural language query (default: keyword mode)
+-python skills/orchestrator/omics_orchestrator.py \
+-  --query "find spatially variable genes" --output output/
+-
+-# Route by file type (auto-detect domain)
+-python skills/orchestrator/omics_orchestrator.py \
+-  --input data.h5ad --output output/
+-
+-# Specify routing mode: keyword (default), llm, or hybrid
+-python skills/orchestrator/omics_orchestrator.py \
+-  --query "find spatially variable genes" --output output/ --routing-mode keyword
+-
+-python skills/orchestrator/omics_orchestrator.py \
+-  --query "find spatially variable genes" --output output/ --routing-mode llm
++# Demo (synthetic queries)
++python omicsclaw.py run orchestrator --demo --output /tmp/orch_demo
+ 
+-python skills/orchestrator/omics_orchestrator.py \
+-  --query "find spatially variable genes" --output output/ --routing-mode hybrid
++# Keyword routing (default — fastest)
++python omicsclaw.py run orchestrator \
++  --query "find spatial domains in my Visium" --output results/
+ 
+-# Run demo to see routing across all domains
+-python skills/orchestrator/omics_orchestrator.py --demo --output output/
++# File-only routing with --routing-mode (LLM mode needs LLM_API_KEY)
++python omicsclaw.py run orchestrator \
++  --input mystery.csv --output results/ --routing-mode llm
++# Note: --routing-mode is IGNORED if --query is also set; file-only path uses it.
+ 
+-# Run demo with different routing modes
+-python skills/orchestrator/omics_orchestrator.py --demo --output output/ --routing-mode llm
+-
+-# List all available skills
+-python omicsclaw.py list
+-
+-# List skills in a specific domain
+-python omicsclaw.py list --domain spatial
++# Hybrid (file-only path, keyword first then LLM fallback)
++python omicsclaw.py run orchestrator \
++  --input data.csv --output results/ --routing-mode hybrid
+ ```
+ 
+-## Output Format
+-
+-The orchestrator returns structured JSON with:
+-
+-```json
+-{
+-  "query": "find spatially variable genes",
+-  "detected_domain": "spatial",
+-  "routed_skill": "spatial-svg-detection",
+-  "confidence": 0.95,
+-  "execution_status": "success",
+-  "output_dir": "/path/to/output"
+-}
+-```
+-
+-## Examples
+-
+-**Example 1: Spatial query routing (keyword mode)**
+-```bash
+-python skills/orchestrator/omics_orchestrator.py \
+-  --query "identify tissue regions in my spatial data" \
+-  --output output/domains/
+-# Routes to: spatial-domain-identification
+-```
+-
+-**Example 2: Single-cell query routing (keyword mode)**
+-```bash
+-python skills/orchestrator/omics_orchestrator.py \
+-  --query "detect doublets in single cell data" \
+-  --output output/doublets/
+-# Routes to: sc-doublet-detection
+-```
+-
+-**Example 3: File-based routing**
+-```bash
+-python skills/orchestrator/omics_orchestrator.py \
+-  --input data.vcf --output output/variants/
+-# Detects domain: genomics
+-# Routes to: genomics-vcf-operations
+-```
+-
+-**Example 4: LLM-powered routing**
+-```bash
+-python skills/orchestrator/omics_orchestrator.py \
+-  --query "I want to understand which genes show spatial patterns" \
+-  --output output/svg/ --routing-mode llm
+-# Uses LLM to interpret intent
+-# Routes to: spatial-svg-detection
+-```
+-
+-**Example 5: Hybrid routing**
+-```bash
+-python skills/orchestrator/omics_orchestrator.py \
+-  --query "analyze cell-cell interactions in my tissue" \
+-  --output output/comm/ --routing-mode hybrid
+-# Tries keyword first, falls back to LLM if needed
+-# Routes to: spatial-cell-communication
+-```
+-
+-**Example 6: Demo mode with different routing**
+-```bash
+-# Keyword routing demo
+-python skills/orchestrator/omics_orchestrator.py --demo --output output/demo_keyword/
+-
+-# LLM routing demo
+-python skills/orchestrator/omics_orchestrator.py --demo --output output/demo_llm/ --routing-mode llm
+-
+-# Hybrid routing demo
+-python skills/orchestrator/omics_orchestrator.py --demo --output output/demo_hybrid/ --routing-mode hybrid
+-```
+-
+-## Integration with OmicsClaw
+-
+-The orchestrator is the primary entry point for the OmicsClaw bot interfaces (Telegram, Feishu) and can be invoked via:
+-
+-- **CLI**: `python omicsclaw.py run orchestrator --query "..."`
+-- **Python API**: `from omicsclaw.routing.router import route_query_unified`
+-- **Bot**: Natural language messages automatically routed through orchestrator
+-
+-## Notes
++## See also
+ 
+-- Default domain fallback is `spatial` if detection fails
+-- Confidence scoring based on keyword match length and position
+-- Supports both exact skill names and natural language queries
+-<!-- ORCH-FOOTER-START -->
+-- All 89 skills across 8 domains are accessible through this single interface
+-<!-- ORCH-FOOTER-END -->
++- `references/parameters.md` — every CLI flag
++- `references/methodology.md` — keyword vs LLM vs hybrid trade-offs
++- `references/output_contract.md` — `result.json` schema
++- Adjacent skills: `omics-skill-builder` (parallel — scaffold NEW skills), every domain `INDEX.md` (downstream — once routing picks a domain, see its index)
+diff --git a/skills/orchestrator/omics-skill-builder/SKILL.md b/skills/orchestrator/omics-skill-builder/SKILL.md
+index ee5f6ddf..08f3c011 100644
+--- a/skills/orchestrator/omics-skill-builder/SKILL.md
++++ b/skills/orchestrator/omics-skill-builder/SKILL.md
+@@ -1,141 +1,95 @@
+ ---
+ name: omics-skill-builder
+-description: >-
+-  Create OmicsClaw-native skill scaffolds for new reusable workflows that are
+-  not yet represented in the current skill catalog.
+-version: 0.1.0
++description: Load when scaffolding a NEW OmicsClaw skill from a natural-language request — generates the skill directory layout (SKILL.md, parameters.yaml, references/, tests/) under the chosen domain. Skip when modifying an existing skill (edit its files directly) or when only routing a query (use `orchestrator`).
++version: 0.5.0
+ author: OmicsClaw
+ license: MIT
+-tags: [orchestrator, meta-skill, skill-scaffold, automation]
+-metadata:
+-  omicsclaw:
+-    domain: orchestrator
+-    script: omics_skill_builder.py
+-    requires:
+-      bins:
+-      - python3
+-      env: []
+-      config: []
+-    emoji: "🛠"
+-    homepage: https://github.com/TianGzlab/OmicsClaw
+-    os: [macos, linux]
+-    install:
+-    - kind: pip
+-      package: pyyaml
+-      bins: []
+-    trigger_keywords:
+-    - create omicsclaw skill
+-    - add new skill
+-    - scaffold skill
+-    - create reusable workflow
+-    - 新增 skill
+-    - 创建 skill
+-    - 封装成 skill
+-    allowed_extra_flags:
+-    - "--request"
+-    - "--skill-name"
+-    - "--domain"
+-    - "--summary"
+-    - "--trigger-keyword"
+-    - "--method"
+-    - "--input-format"
+-    - "--output-item"
+-    - "--no-tests"
+-    legacy_aliases: []
+-    saves_h5ad: false
+-    requires_preprocessed: false
+-    param_hints: {}
++tags:
++- orchestrator
++- scaffold
++- skill-builder
++- meta
++- code-generation
++requires:
++- pyyaml
+ ---
+ 
+-# 🛠 Omics Skill Builder
++# omics-skill-builder
+ 
+-You are **Omics Skill Builder**, the OmicsClaw meta-skill for turning a missing
+-analysis workflow into a reusable, repo-native skill scaffold.
++## When to use
+ 
+-## Why This Exists
++The user wants to add a NEW skill to the OmicsClaw catalog from a
++natural-language request. This skill produces a directory scaffold
++under the chosen `--domain` (`spatial` / `singlecell` / `genomics`
++/ `proteomics` / `metabolomics` / `bulkrna` / `orchestrator`) with
++the v2 layout: `SKILL.md`, `parameters.yaml`, `references/`,
++`tests/`, plus a reproducibility manifest.
+ 
+-- **Without it**: one-off analyses remain trapped in ad hoc prompts or notebooks.
+-- **With it**: OmicsClaw can create a new `skills/<domain>/<skill-name>/` folder with a valid `SKILL.md`, runnable entrypoint, test stub, and scaffold spec.
+-- **Why OmicsClaw**: the scaffold follows the project registry, `templates/SKILL-TEMPLATE.md`, and the CLI conventions already used by `oc run`.
++For modifying an existing skill, edit its files directly — this
++skill is for net-new additions only. For dispatching queries to
++existing skills, use `orchestrator`.
+ 
+-## When To Use
++## Inputs & Outputs
+ 
+-- The user explicitly asks to **add**, **create**, **package**, or **persist** a new OmicsClaw skill.
+-- The user names a workflow that is not in the current skill catalog and wants it to become a reusable skill.
+-- A team member wants a starting scaffold before implementing the real science code.
+-- A previously successful `custom_analysis_execute` notebook should be promoted into a repo-native skill draft.
++| Input | Format | Required |
++|---|---|---|
++| User request | `--request <text>` (natural-language description of the desired skill) | yes (unless `--demo`) |
++| Domain | `--domain {spatial,singlecell,genomics,proteomics,metabolomics,bulkrna,orchestrator}` (default `orchestrator`) | no |
++| Skill alias | `--skill-name <hyphenated>` | no |
++| Summary | `--summary <one-line>` | no |
++| Promote source | `--source-analysis-dir <path>` or `--promote-from-latest` | no |
++| Trigger keywords | `--trigger-keyword <kw>` (repeatable) | no |
++| Methods / formats | `--method <m>` / `--input-format <f>` / `--output-item <o>` (each repeatable) | no |
++| Skip tests | `--no-tests` | no |
+ 
+-Do **not** use this for one-off analyses. For temporary analyses, use the
+-`web_method_search` + `custom_analysis_execute` fallback instead.
++| Output | Path | Notes |
++|---|---|---|
++| Scaffold summary | `output_dir/SCAFFOLD_SUMMARY.md` | what was generated, written at `omics_skill_builder.py:129` |
++| Report | `output_dir/report.md` | written at `omics_skill_builder.py:130` |
++| Reproducibility | `output_dir/reproducibility/commands.sh` | replay command, written at `omics_skill_builder.py:132-137` |
++| Result envelope | `output_dir/result.json` | written at `omics_skill_builder.py:139-141` |
+ 
+-## What It Creates
++## Flow
+ 
+-1. `SKILL.md` generated from the OmicsClaw template structure.
+-2. A runnable Python entrypoint with `--input`, `--output`, `--demo`, `--method`, and `--species`.
+-3. A minimal `tests/` stub so the new skill has an executable validation hook.
+-4. `scaffold_spec.json` capturing the original creation intent.
++1. Parse `--request` (or `--demo`); raise `SystemExit("--request is required unless --demo is used.")` at `omics_skill_builder.py:75` when missing.
++2. Optionally promote a previous autonomous-analysis output via `--source-analysis-dir <path>` or `--promote-from-latest`.
++3. Call `create_skill_scaffold` (`omicsclaw.core.skill_scaffolder`); it writes the new skill directory under `skills/<domain>/<skill-name>/`.
++4. Write `SCAFFOLD_SUMMARY.md` + `report.md` + `reproducibility/commands.sh` + `result.json` into `--output`.
+ 
+-## Required Decisions
++## Gotchas
+ 
+-Before finalizing a new scaffold, capture:
++- **`--request` REQUIRED unless `--demo` — raises `SystemExit` (exit 1).** `omics_skill_builder.py:75` raises `SystemExit("--request is required unless --demo is used.")`. Different from most OmicsClaw skills which use `ValueError` / `parser.error`; the exit code is 1, not 2.
++- **`--domain` defaults to `orchestrator` — usually NOT what you want.** `omics_skill_builder.py:30` defaults to `orchestrator`; pass `--domain spatial` (or whichever) explicitly. Choices are 7 fixed values; an unknown domain is rejected by argparse.
++- **The new skill is written to `skills/<domain>/<skill-name>/`, not `--output`.** `--output` only receives the scaffold summary + report + commands.sh; the actual skill code goes under `skills/`. Don't confuse the two.
++- **`--trigger-keyword`, `--method`, `--input-format`, `--output-item` are REPEATABLE flags.** Pass `--trigger-keyword kw1 --trigger-keyword kw2` to add multiple. Single quoting won't help — argparse honours `action="append"`.
++- **`--promote-from-latest` requires a recent autonomous-analysis output.** If no recent output exists, the promotion silently no-ops.
++- **`--demo` lands in the orchestrator domain, NOT the implied target domain.** `omics_skill_builder.py:65` resolves `domain = args.domain or "spatial"`, but `args.domain` defaults to `"orchestrator"` (truthy), so the demo scaffold is written to `skills/orchestrator/spatial-cellcharter-domains/` rather than `skills/spatial/...`. For real scaffolds always pass `--domain <target>` explicitly.
+ 
+-- **Skill name**: short, lowercase, hyphenated alias
+-- **Domain**: one of `spatial`, `singlecell`, `genomics`, `proteomics`, `metabolomics`, `bulkrna`, `orchestrator`
+-- **Summary**: one sentence describing the reusable workflow
+-- **Methods**: the major backends or algorithm names
+-- **Trigger keywords**: 3-6 routing phrases users might say naturally
+-
+-## Workflow
+-
+-1. Resolve whether the user wants a reusable skill or a one-off analysis.
+-2. Normalize the requested skill name and target domain.
+-3. Generate the scaffold under `skills/<domain>/<skill-name>/`.
+-4. If a successful autonomous notebook is supplied, reuse its Python code and copy the source notebook into `references/`.
+-4. Refresh the registry so the new skill is discoverable immediately.
+-5. Return the created file paths and the next implementation steps.
+-
+-## CLI Reference
++## Key CLI
+ 
+ ```bash
+-oc run omics-skill-builder \
+-  --output output/skill_builder \
+-  --request "Create a CellCharter spatial domains skill" \
+-  --skill-name spatial-cellcharter-domains \
+-  --domain spatial \
+-  --summary "Spatial domain identification scaffold for CellCharter-based workflows." \
+-  --method cellcharter \
+-  --trigger-keyword "cellcharter domains"
+-
+-# Promote the most recent successful custom notebook into a skill draft
+-oc run omics-skill-builder \
+-  --output output/promoted_skill \
+-  --request "Package the last successful autonomous analysis into a reusable OmicsClaw skill" \
+-  --skill-name peak-detection-skill \
+-  --promote-from-latest
+-```
+-
+-## Example Queries
+-
+-- "Add a new OmicsClaw skill for CellCharter-based spatial domains."
+-- "Please scaffold a reusable phosphoproteomics kinase activity skill."
+-- "把这个 workflow 封装成一个新的 OmicsClaw skill。"
+-
+-## Output Contract
+-
+-The scaffolded skill folder will contain:
+-
+-```text
+-skills/<domain>/<skill-name>/
+-├── SKILL.md
+-├── <skill_name>.py
+-├── scaffold_spec.json
+-└── tests/
+-    ├── __init__.py
+-    └── test_<skill_name>.py
++# Demo (built-in scaffold example)
++python omicsclaw.py run omics-skill-builder --demo --output /tmp/builder_demo
++
++# Real scaffold for a spatial skill
++python omicsclaw.py run omics-skill-builder \
++  --request "Compute Moran's I per gene on Visium data" \
++  --domain spatial --skill-name spatial-moran \
++  --summary "Per-gene spatial autocorrelation via Moran's I" \
++  --trigger-keyword "Moran" --trigger-keyword "spatial autocorrelation" \
++  --method "moran-i" --input-format "h5ad" --output-item "tables/moran_per_gene.csv" \
++  --output /tmp/scaffold_out
++
++# Promote from a successful autonomous analysis
++python omicsclaw.py run omics-skill-builder \
++  --request "Promote the Moran analysis from yesterday into a real skill" \
++  --domain spatial --source-analysis-dir /path/to/autonomous_run \
++  --output /tmp/promoted
+ ```
+ 
+-## Guardrails
++## See also
+ 
+-- Create a new skill only when the user explicitly wants a reusable artifact.
+-- Do not overwrite an existing skill directory silently.
+-- Keep the scaffold OmicsClaw-native: valid frontmatter, stable CLI flags, standard output artifacts.
++- `references/parameters.md` — every CLI flag, repeatable behaviour
++- `references/methodology.md` — scaffold layout, when to scaffold vs edit
++- `references/output_contract.md` — `SCAFFOLD_SUMMARY.md` + `result.json` schema
++- Adjacent skills: `orchestrator` (parallel — routes queries to EXISTING skills)
+diff --git a/skills/orchestrator/omics-skill-builder/parameters.yaml b/skills/orchestrator/omics-skill-builder/parameters.yaml
+new file mode 100644
+index 00000000..b694495a
+--- /dev/null
++++ b/skills/orchestrator/omics-skill-builder/parameters.yaml
+@@ -0,0 +1,40 @@
++domain: orchestrator
++script: omics_skill_builder.py
++requires:
++  bins:
++  - python3
++  env: []
++  config: []
++emoji: 🛠
++homepage: https://github.com/TianGzlab/OmicsClaw
++os:
++- macos
++- linux
++install:
++- kind: pip
++  package: pyyaml
++  bins: []
++trigger_keywords:
++- create omicsclaw skill
++- add new skill
++- scaffold skill
++- create reusable workflow
++- 新增 skill
++- 创建 skill
++- 封装成 skill
++allowed_extra_flags:
++- --domain
++- --input-format
++- --method
++- --no-tests
++- --output-item
++- --promote-from-latest
++- --request
++- --skill-name
++- --source-analysis-dir
++- --summary
++- --trigger-keyword
++legacy_aliases: []
++saves_h5ad: false
++requires_preprocessed: false
++param_hints: {}
+diff --git a/skills/orchestrator/omics-skill-builder/references/methodology.md b/skills/orchestrator/omics-skill-builder/references/methodology.md
+new file mode 100644
+index 00000000..dc1df695
+--- /dev/null
++++ b/skills/orchestrator/omics-skill-builder/references/methodology.md
+@@ -0,0 +1,69 @@
++<!-- Generated by scripts/migrate_skill.py at 2026-05-10T14:18:59Z -->
++<!-- Kind: references/methodology.md | Source: SKILL.md -->
++
++## When To Use
++
++- The user explicitly asks to **add**, **create**, **package**, or **persist** a new OmicsClaw skill.
++- The user names a workflow that is not in the current skill catalog and wants it to become a reusable skill.
++- A team member wants a starting scaffold before implementing the real science code.
++- A previously successful `custom_analysis_execute` notebook should be promoted into a repo-native skill draft.
++
++Do **not** use this for one-off analyses. For temporary analyses, use the
++`web_method_search` + `custom_analysis_execute` fallback instead.
++
++
++## What It Creates
++
++1. `SKILL.md` generated from the OmicsClaw template structure.
++2. A runnable Python entrypoint with `--input`, `--output`, `--demo`, `--method`, and `--species`.
++3. A minimal `tests/` stub so the new skill has an executable validation hook.
++4. `scaffold_spec.json` capturing the original creation intent.
++
++
++## Required Decisions
++
++Before finalizing a new scaffold, capture:
++
++- **Skill name**: short, lowercase, hyphenated alias
++- **Domain**: one of `spatial`, `singlecell`, `genomics`, `proteomics`, `metabolomics`, `bulkrna`, `orchestrator`
++- **Summary**: one sentence describing the reusable workflow
++- **Methods**: the major backends or algorithm names
++- **Trigger keywords**: 3-6 routing phrases users might say naturally
++
++
++## Workflow
++
++1. Resolve whether the user wants a reusable skill or a one-off analysis.
++2. Normalize the requested skill name and target domain.
++3. Generate the scaffold under `skills/<domain>/<skill-name>/`.
++4. If a successful autonomous notebook is supplied, reuse its Python code and copy the source notebook into `references/`.
++4. Refresh the registry so the new skill is discoverable immediately.
++5. Return the created file paths and the next implementation steps.
++
++
++## CLI Reference
++
++```bash
++oc run omics-skill-builder \
++  --output output/skill_builder \
++  --request "Create a CellCharter spatial domains skill" \
++  --skill-name spatial-cellcharter-domains \
++  --domain spatial \
++  --summary "Spatial domain identification scaffold for CellCharter-based workflows." \
++  --method cellcharter \
++  --trigger-keyword "cellcharter domains"
++
++# Promote the most recent successful custom notebook into a skill draft
++oc run omics-skill-builder \
++  --output output/promoted_skill \
++  --request "Package the last successful autonomous analysis into a reusable OmicsClaw skill" \
++  --skill-name peak-detection-skill \
++  --promote-from-latest
++```
++
++
++## Guardrails
++
++- Create a new skill only when the user explicitly wants a reusable artifact.
++- Do not overwrite an existing skill directory silently.
++- Keep the scaffold OmicsClaw-native: valid frontmatter, stable CLI flags, standard output artifacts.
+diff --git a/skills/orchestrator/omics-skill-builder/references/output_contract.md b/skills/orchestrator/omics-skill-builder/references/output_contract.md
+new file mode 100644
+index 00000000..9aee2eab
+--- /dev/null
++++ b/skills/orchestrator/omics-skill-builder/references/output_contract.md
+@@ -0,0 +1,27 @@
++## Output Structure
++
++```
++output_directory/
++├── SCAFFOLD_SUMMARY.md
++├── report.md
++├── result.json
++└── reproducibility/
++    └── commands.sh
++
++skills/<domain>/<skill-name>/
++└── (the new skill directory — written by create_skill_scaffold)
++```
++
++## File contents
++
++- `output_dir/SCAFFOLD_SUMMARY.md` — human-readable summary of what was generated. Written at `omics_skill_builder.py:129`.
++- `output_dir/report.md` — Markdown report mirroring the scaffold + parameters. Written at `omics_skill_builder.py:130`.
++- `output_dir/reproducibility/commands.sh` — replay command including the original `--request` and resolved `--domain`. Written at `omics_skill_builder.py:132-137`.
++- `output_dir/result.json` — `summary` includes the new skill's domain, name, paths, and trigger keywords. Written at `omics_skill_builder.py:139-141`.
++- `skills/<domain>/<skill-name>/` — the actual NEW skill directory (SKILL.md + parameters.yaml + references/ + tests/), written by `create_skill_scaffold` from `omicsclaw.core.skill_scaffolder`.
++
++## Notes
++
++- The new-skill directory is at `skills/<domain>/<skill-name>/`, NOT under `--output`. `--output` only receives the scaffold summary + report.
++- Repeatable flags: `--trigger-keyword`, `--method`, `--input-format`, `--output-item` (each can be passed multiple times via `action="append"`).
++- `--source-analysis-dir <path>` and `--promote-from-latest` promote a previous autonomous-analysis output into the new skill.
+diff --git a/skills/orchestrator/omics-skill-builder/references/parameters.md b/skills/orchestrator/omics-skill-builder/references/parameters.md
+new file mode 100644
+index 00000000..1f5731a4
+--- /dev/null
++++ b/skills/orchestrator/omics-skill-builder/references/parameters.md
+@@ -0,0 +1,23 @@
++<!-- AUTO-GENERATED from parameters.yaml — do not edit by hand. -->
++<!-- Regenerate: python scripts/generate_parameters_md.py <skill_dir> -->
++
++
++# Parameters
++
++## Allowed extra CLI flags
++
++- `--domain`
++- `--input-format`
++- `--method`
++- `--no-tests`
++- `--output-item`
++- `--promote-from-latest`
++- `--request`
++- `--skill-name`
++- `--source-analysis-dir`
++- `--summary`
++- `--trigger-keyword`
++
++## Per-method parameter hints
++
++_No method-specific tuning hints._
+diff --git a/skills/orchestrator/parameters.yaml b/skills/orchestrator/parameters.yaml
+new file mode 100644
+index 00000000..94b6643b
+--- /dev/null
++++ b/skills/orchestrator/parameters.yaml
+@@ -0,0 +1,31 @@
++domain: orchestrator
++allowed_extra_flags:
++- --query
++- --routing-mode
++saves_h5ad: false
++requires:
++  bins:
++  - python3
++  env: []
++  config: []
++emoji: 🎯
++homepage: https://github.com/OmicsClaw/OmicsClaw
++os:
++- macos
++- linux
++- windows
++install:
++- kind: pip
++  package: pyyaml
++  bins: []
++trigger_keywords:
++- which skill
++- route query
++- what should I run
++- orchestrate
++- pipeline
++- which analysis
++script: omics_orchestrator.py
++param_hints: {}
++requires_preprocessed: false
++legacy_aliases: []
+diff --git a/skills/orchestrator/references/methodology.md b/skills/orchestrator/references/methodology.md
+new file mode 100644
+index 00000000..23f20fcf
+--- /dev/null
++++ b/skills/orchestrator/references/methodology.md
+@@ -0,0 +1,278 @@
++<!-- Generated by scripts/migrate_skill.py at 2026-05-10T14:18:59Z -->
++<!-- Kind: references/methodology.md | Source: SKILL.md -->
++
++## Supported Domains
++
++<!-- ORCH-DOMAINS-START -->
++OmicsClaw currently supports **89 skills across 8 domains**:
++
++1. **Spatial Transcriptomics** (17 skills) - `.h5ad`, `.h5`, `.zarr`, `.loom`
++2. **Single-Cell Omics** (30 skills) - `.h5ad`, `.h5`, `.loom`, `.mtx`
++3. **Genomics** (10 skills) - `.vcf`, `.bam`, `.cram`, `.fasta`, `.fastq`, `.bed`
++4. **Proteomics** (8 skills) - `.mzml`, `.mzxml`, `.csv`
++5. **Metabolomics** (8 skills) - `.mzml`, `.cdf`, `.csv`
++6. **Bulk RNA-seq** (13 skills) - `.csv`, `.tsv`, `.fastq`
++7. **Orchestrator** (2 skills) - `*` (all types)
++8. **Literature** (1 skills) - `PDF`, `DOI`, `PubMed`, `URL`, text
++<!-- ORCH-DOMAINS-END -->
++
++<!-- Note: counts above are regenerated by scripts/generate_orchestrator_counts.py -->
++
++
++## Workflow
++
++1. **Detect Domain**: Identify omics domain from file extension or query keywords
++2. **Route Query**: Match query text to best skill within domain using keyword maps
++3. **Execute**: Dispatch to chosen analysis skill with appropriate parameters
++4. **Monitor**: Track execution status and collect results
++5. **Report**: Return structured output with skill name, confidence, and results
++
++
++## Core Capabilities
++
++### 1. Domain Detection
++
++Automatically detect the omics domain from:
++- **File extension**: `.h5ad` → spatial/singlecell, `.vcf` → genomics, `.mzml` → proteomics/metabolomics
++- **Query keywords**: "spatially variable" → spatial, "variant calling" → genomics
++
++### 2. Query Routing
++
++Match natural language queries to skills using domain-specific keyword maps with confidence scoring.
++
++**Three routing modes available:**
++
++1. **Keyword Mode (default)**: Fast pattern matching using curated keyword maps
++   - Matches query keywords to skill names
++   - Confidence based on keyword length and position
++   - No external dependencies, instant results
++   - Best for: Standard queries with clear keywords
++
++2. **LLM Mode**: AI-powered semantic understanding
++   - Uses language model to interpret query intent
++   - Considers skill descriptions and context
++   - Requires LLM API access
++   - Best for: Complex or ambiguous queries
++
++3. **Hybrid Mode**: Combines keyword and LLM approaches
++   - Falls back to LLM if keyword confidence is low
++   - Balances speed and accuracy
++   - Best for: Production systems with varied query types
++
++### 3. Pipeline Orchestration
++
++Execute multi-skill pipelines (e.g., preprocess → domains → de → genes → statistics).
++
++### 4. Skill Discovery
++
++List all available skills with status (ready/planned) and descriptions.
++
++
++## Routing Maps
++
++### Spatial Transcriptomics Keywords → Skills
++
++| Query Keywords | Skill | Description |
++|----------------|-------|-------------|
++| spatial domain, tissue region, niche | spatial-domain-identification | Tissue region/niche identification |
++| cell type annotation | spatial-cell-annotation | Cell type annotation |
++| deconvolution, cell proportion | spatial-deconvolution | Cell type deconvolution |
++| spatial statistics, moran, autocorrelation | spatial-statistics | Spatial statistics |
++| spatially variable gene | spatial-svg-detection | Spatially variable genes |
++| differential expression, marker genes | spatial-de | Differential expression |
++| condition comparison, pseudobulk | spatial-condition-comparison | Condition comparison |
++| ligand receptor, cell communication | spatial-cell-communication | Cell-cell communication |
++| rna velocity | spatial-velocity | RNA velocity |
++| trajectory, pseudotime | spatial-trajectory | Trajectory inference |
++| pathway enrichment, gsea | spatial-enrichment | Pathway enrichment |
++| cnv, copy number | spatial-cnv | Copy number variation |
++| batch correction, integration | spatial-integration | Multi-sample integration |
++| spatial registration, alignment | spatial-registration | Spatial registration |
++| preprocess, qc, normalization | spatial-preprocessing | Data preprocessing |
++
++### Single-Cell Omics Keywords → Skills
++
++| Query Keywords | Skill | Description |
++|----------------|-------|-------------|
++| qc metrics, quality control | sc-qc | QC metrics calculation |
++| filter cells, gene filtering | sc-filter | Cell/gene filtering |
++| ambient rna, cellbender | sc-ambient-removal | Ambient RNA removal |
++| single cell, scrna-seq | sc-preprocessing | scRNA-seq preprocessing |
++| doublet detection, scrublet | sc-doublet-detection | Doublet detection |
++| trajectory, pseudotime, paga, dpt | sc-pseudotime | Trajectory inference |
++| rna velocity, scvelo | sc-velocity | RNA velocity analysis |
++| cell type annotation, celltypist | sc-cell-annotation | Cell type annotation |
++| integration, batch correction, harmony | sc-batch-integration | Batch correction |
++| differential expression, pseudobulk | sc-de | Differential expression |
++| marker genes, find markers | sc-markers | Marker gene detection |
++| cluster enrichment, marker enrichment, single-cell gsea | sc-enrichment | Statistical enrichment on marker / DE rankings |
++| pathway scoring, signature score | sc-pathway-scoring | Per-cell pathway / signature activity scoring |
++| gene regulatory network, grn, pyscenic | sc-grn | Gene regulatory network |
++
++### Genomics Keywords → Skills
++
++| Query Keywords | Skill | Description |
++|----------------|-------|-------------|
++| variant calling, snp | genomics-variant-calling | Variant calling |
++| structural variant, sv | genomics-sv-detection | Structural variant detection |
++| vcf operations | genomics-vcf-operations | VCF manipulation |
++| alignment, read alignment | genomics-alignment | Read alignment |
++| variant annotation | genomics-variant-annotation | Variant annotation |
++| assembly, genome assembly | genomics-assembly | Genome assembly |
++| phasing, haplotype | genomics-phasing | Haplotype phasing |
++| cnv calling | genomics-cnv-calling | CNV analysis |
++| quality control, fastq | genomics-qc | Sequencing QC |
++| epigenomics, chip-seq, atac-seq | genomics-epigenomics | Epigenomics analysis |
++
++### Proteomics Keywords → Skills
++
++| Query Keywords | Skill | Description |
++|----------------|-------|-------------|
++| mass spec qc, ms qc | proteomics-ms-qc | Mass spectrometry QC |
++| peptide identification | proteomics-identification | Peptide identification |
++| protein quantification | proteomics-quantification | Protein quantification |
++| differential abundance | proteomics-de | Differential abundance |
++| ptm, post-translational | proteomics-ptm | PTM analysis |
++| pathway enrichment | proteomics-enrichment | Pathway enrichment |
++| structural proteomics | proteomics-structural | Structural proteomics |
++| data import | proteomics-data-import | Data import |
++
++### Metabolomics Keywords → Skills
++
++| Query Keywords | Skill | Description |
++|----------------|-------|-------------|
++| peak detection | metabolomics-peak-detection | Peak detection |
++| xcms preprocessing | metabolomics-xcms-preprocessing | XCMS preprocessing |
++| metabolite annotation | metabolomics-annotation | Metabolite annotation |
++| normalization | metabolomics-normalization | Data normalization |
++| differential metabolite | metabolomics-de | Differential analysis |
++| pathway enrichment | metabolomics-pathway-enrichment | Pathway enrichment |
++| statistical analysis | metabolomics-statistics | Statistical analysis |
++| quantification | metabolomics-quantification | Feature quantification |
++
++
++## CLI Usage
++
++```bash
++# Route a natural language query (default: keyword mode)
++python skills/orchestrator/omics_orchestrator.py \
++  --query "find spatially variable genes" --output output/
++
++# Route by file type (auto-detect domain)
++python skills/orchestrator/omics_orchestrator.py \
++  --input data.h5ad --output output/
++
++# Specify routing mode: keyword (default), llm, or hybrid
++python skills/orchestrator/omics_orchestrator.py \
++  --query "find spatially variable genes" --output output/ --routing-mode keyword
++
++python skills/orchestrator/omics_orchestrator.py \
++  --query "find spatially variable genes" --output output/ --routing-mode llm
++
++python skills/orchestrator/omics_orchestrator.py \
++  --query "find spatially variable genes" --output output/ --routing-mode hybrid
++
++# Run demo to see routing across all domains
++python skills/orchestrator/omics_orchestrator.py --demo --output output/
++
++# Run demo with different routing modes
++python skills/orchestrator/omics_orchestrator.py --demo --output output/ --routing-mode llm
++
++# List all available skills
++python omicsclaw.py list
++
++# List skills in a specific domain
++python omicsclaw.py list --domain spatial
++```
++
++
++## Output Format
++
++The orchestrator returns structured JSON with:
++
++```json
++{
++  "query": "find spatially variable genes",
++  "detected_domain": "spatial",
++  "routed_skill": "spatial-svg-detection",
++  "confidence": 0.95,
++  "execution_status": "success",
++  "output_dir": "/path/to/output"
++}
++```
++
++
++## Examples
++
++**Example 1: Spatial query routing (keyword mode)**
++```bash
++python skills/orchestrator/omics_orchestrator.py \
++  --query "identify tissue regions in my spatial data" \
++  --output output/domains/
++# Routes to: spatial-domain-identification
++```
++
++**Example 2: Single-cell query routing (keyword mode)**
++```bash
++python skills/orchestrator/omics_orchestrator.py \
++  --query "detect doublets in single cell data" \
++  --output output/doublets/
++# Routes to: sc-doublet-detection
++```
++
++**Example 3: File-based routing**
++```bash
++python skills/orchestrator/omics_orchestrator.py \
++  --input data.vcf --output output/variants/
++# Detects domain: genomics
++# Routes to: genomics-vcf-operations
++```
++
++**Example 4: LLM-powered routing**
++```bash
++python skills/orchestrator/omics_orchestrator.py \
++  --query "I want to understand which genes show spatial patterns" \
++  --output output/svg/ --routing-mode llm
++# Uses LLM to interpret intent
++# Routes to: spatial-svg-detection
++```
++
++**Example 5: Hybrid routing**
++```bash
++python skills/orchestrator/omics_orchestrator.py \
++  --query "analyze cell-cell interactions in my tissue" \
++  --output output/comm/ --routing-mode hybrid
++# Tries keyword first, falls back to LLM if needed
++# Routes to: spatial-cell-communication
++```
++
++**Example 6: Demo mode with different routing**
++```bash
++# Keyword routing demo
++python skills/orchestrator/omics_orchestrator.py --demo --output output/demo_keyword/
++
++# LLM routing demo
++python skills/orchestrator/omics_orchestrator.py --demo --output output/demo_llm/ --routing-mode llm
++
++# Hybrid routing demo
++python skills/orchestrator/omics_orchestrator.py --demo --output output/demo_hybrid/ --routing-mode hybrid
++```
++
++
++## Integration with OmicsClaw
++
++The orchestrator is the primary entry point for the OmicsClaw bot interfaces (Telegram, Feishu) and can be invoked via:
++
++- **CLI**: `python omicsclaw.py run orchestrator --query "..."`
++- **Python API**: `from omicsclaw.routing.router import route_query_unified`
++- **Bot**: Natural language messages automatically routed through orchestrator
++
++
++## Notes
++
++- Default domain fallback is `spatial` if detection fails
++- Confidence scoring based on keyword match length and position
++- Supports both exact skill names and natural language queries
++<!-- ORCH-FOOTER-START -->
++- All 89 skills across 8 domains are accessible through this single interface
++<!-- ORCH-FOOTER-END -->
+diff --git a/skills/orchestrator/references/output_contract.md b/skills/orchestrator/references/output_contract.md
+new file mode 100644
+index 00000000..bfdca47d
+--- /dev/null
++++ b/skills/orchestrator/references/output_contract.md
+@@ -0,0 +1,39 @@
++## Output Structure
++
++Demo and real-query runs produce DIFFERENT outputs (mutually exclusive):
++
++```
++# --demo
++output_directory/
++└── demo_report.txt
++
++# --query / --input
++output_directory/
++└── result.json
++```
++
++## File contents
++
++- `result.json` — routing decision envelope. Schema:
++  ```json
++  {
++    "status": "success",
++    "data": {
++      "detected_domain": "<domain or null>",
++      "detected_skill":  "<skill name or null>",
++      "confidence":      0.0,
++      "coverage":        "exact_skill | partial | no_skill",
++      "should_search_web": false,
++      "missing_capabilities": []
++    }
++  }
++  ```
++  Written via `out_json.write_text(json.dumps(result, indent=2))` at `omics_orchestrator.py:409`.
++- `demo_report.txt` — synthetic query → skill mapping with confidence, written at `omics_orchestrator.py:334` only on `--demo` (the demo path returns at `:363` BEFORE `result.json` is written).
++
++## Notes
++
++- This skill does NOT execute the chosen downstream skill. It only emits the routing decision; the user (or wrapping orchestration script) must invoke the selected skill separately.
++- No `tables/`, `figures/`, or `report.md` — orchestrator output deviates from the standard analysis-skill convention.
++- Missing `LLM_API_KEY` for `--routing-mode llm` / `hybrid` SILENTLY falls back to keyword routing (`omicsclaw/routing/llm_router.py:48-50` logs a warning and returns `(None, 0.0)`). The run still exits 0; inspect logs to confirm which mode actually fired.
++- `--routing-mode` is IGNORED when `--query` is set (the `args.query` branch dispatches to `resolve_capability` which is keyword-only). It only takes effect for file-only routing and `--demo`.
+diff --git a/skills/orchestrator/references/parameters.md b/skills/orchestrator/references/parameters.md
+new file mode 100644
+index 00000000..b8991763
+--- /dev/null
++++ b/skills/orchestrator/references/parameters.md
+@@ -0,0 +1,14 @@
++<!-- AUTO-GENERATED from parameters.yaml — do not edit by hand. -->
++<!-- Regenerate: python scripts/generate_parameters_md.py <skill_dir> -->
++
++
++# Parameters
++
++## Allowed extra CLI flags
++
++- `--query`
++- `--routing-mode`
++
++## Per-method parameter hints
++
++_No method-specific tuning hints._

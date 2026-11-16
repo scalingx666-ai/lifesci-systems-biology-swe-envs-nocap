@@ -1,0 +1,65 @@
+version = "1.0"
+
+[task]
+name = "default/cailab-tamu__scTenifoldKnk-49"
+description = "Add GitHub Actions CI and release workflows"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "scTenifoldKnk",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "cailab-tamu/scTenifoldKnk"
+ref = "e46221bc988b9db878c84df979fd636b55b59861"
+reference = "https://github.com/cailab-tamu/scTenifoldKnk/pull/49"
+source_access = "auto"
+built_at = "2026-11-15T16:51:46.536276+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:ab27aa58343bae7f84c9b409ffa21326ca7795ec508af6aad90b6143a92711f6"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-09-29T18:35:32Z"
+diff_format = "unified"
+context_files = [
+    ".Rbuildignore",
+    ".github/workflows/R-CMD-check.yaml",
+    ".github/workflows/release.yaml",
+    "README.md",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 136
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

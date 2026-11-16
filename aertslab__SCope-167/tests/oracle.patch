@@ -1,0 +1,175 @@
+diff --git a/README.md b/README.md
+index 33750957..550c0fc4 100644
+--- a/README.md
++++ b/README.md
+@@ -7,6 +7,9 @@ Currently the data format supported by SCope is `.loom`. This file format for ve
+ ## Version History
+ 
+ August 22, 2018
++* Version 1.3.2
++   * Fix bug downloading sub loom when parent loom is a public one.
++   * Fix bug downloading sub loom when parent loom has been created with SCopeLoomR version < 0.0.5.6558.
+ * Version 1.3.1
+    * Fix bug when cluster markers not present in .loom.
+ * Version 1.3.0
+diff --git a/VERSION b/VERSION
+index 6261a05b..d5e98f72 100644
+--- a/VERSION
++++ b/VERSION
+@@ -1 +1 @@
+-1.3.1
+\ No newline at end of file
++1.3.2
+\ No newline at end of file
+diff --git a/opt/scopeserver/dataserver/modules/gserver/GServer.py b/opt/scopeserver/dataserver/modules/gserver/GServer.py
+index 642edf6e..af943b50 100644
+--- a/opt/scopeserver/dataserver/modules/gserver/GServer.py
++++ b/opt/scopeserver/dataserver/modules/gserver/GServer.py
+@@ -30,6 +30,7 @@
+ from scopeserver.utils import CellColorByFeatures as ccbf
+ from scopeserver.utils import Constant
+ from scopeserver.utils import SearchSpace as ss
++from scopeserver.utils.Loom import Loom
+ 
+ from pyscenic.genesig import GeneSignature
+ from pyscenic.aucell import create_rankings, enrichment, enrichment4cells
+@@ -42,7 +43,6 @@ class SCope(s_pb2_grpc.MainServicer):
+ 
+     app_name = 'SCope'
+     app_author = 'Aertslab'
+-    app_version = '1.0'
+ 
+     def __init__(self):
+         self.dfh = dfh.DataFileHandler(dev_env=SCope.dev_env)
+@@ -475,8 +475,12 @@ def downloadSubLoom(self, request, context):
+         loom = self.lfh.get_loom(loom_file_path=request.loomFilePath)
+         loom_connection = loom.get_connection()
+         meta_data = loom.get_meta_data()
+-        l = request.loomFilePath.split("/")
+-        file_name = l[1].split(".")[0]
++
++        file_name = request.loomFilePath
++        # Check if not a public loom file
++        if '/' in request.loomFilePath:
++            l = request.loomFilePath.split("/")
++            file_name = l[1].split(".")[0]
+ 
+         if(request.featureType == "clusterings"):
+             a = list(filter(lambda x : x['name'] == request.featureName, meta_data["clusterings"]))
+@@ -493,8 +497,8 @@ def downloadSubLoom(self, request, context):
+             sub_loom_file_attrs["title"] = sub_loom_file_name
+             sub_loom_file_attrs['CreationDate'] = timestamp()
+             sub_loom_file_attrs["LOOM_SPEC_VERSION"] = _version.__version__
+-            sub_loom_file_attrs["note"] = "This loom is a subset of {0} loom file".format(loom_connection.attrs["title"])
+-            sub_loom_file_attrs["MetaData"] = loom_connection.attrs["MetaData"]
++            sub_loom_file_attrs["note"] = "This loom is a subset of {0} loom file".format(Loom.clean_file_attr(file_attr=loom_connection.attrs["title"]))
++            sub_loom_file_attrs["MetaData"] = Loom.clean_file_attr(file_attr=loom_connection.attrs["MetaData"])
+             # - Use scan to subset cells (much faster than naive subsetting): avoid to load everything into memory
+             # - Loompy bug: loompy.create_append works but generate a file much bigger than its parent
+             #      So prepare all the data and create the loom afterwards
+diff --git a/opt/scopeserver/utils/DataFileHandler.py b/opt/scopeserver/utils/DataFileHandler.py
+index 3c948c35..c89a3a5c 100644
+--- a/opt/scopeserver/utils/DataFileHandler.py
++++ b/opt/scopeserver/utils/DataFileHandler.py
+@@ -9,7 +9,6 @@
+ 
+ app_name = 'SCope'
+ app_author = 'Aertslab'
+-app_version = '1.0'
+ 
+ platform_dirs = AppDirs(appname=app_name, appauthor=app_author)
+ 
+@@ -45,7 +44,6 @@ def __init__(self, dev_env):
+         self.logs_dir = DataFileHandler.get_data_dir_path_by_file_type(file_type="Logs")
+         self.create_global_dirs()
+         self.create_uuid_log()
+-        print("Starting DataFileHandler...")
+     
+     def get_gene_sets_dir(self):
+         return self.gene_sets_dir
+diff --git a/opt/scopeserver/utils/Loom.py b/opt/scopeserver/utils/Loom.py
+index ddbeb4d5..cd2919c9 100644
+--- a/opt/scopeserver/utils/Loom.py
++++ b/opt/scopeserver/utils/Loom.py
+@@ -33,6 +33,17 @@ def get_global_attribute_by_name(self, name):
+             raise AttributeError("The global attribute {0} does not exist in the .loom file.".format(name))
+         return self.loom_connection.attrs[name]
+ 
++    @staticmethod
++    def clean_file_attr(file_attr):
++        fa = file_attr
++        if type(file_attr) == np.ndarray:
++            fa = file_attr[0]
++        try:
++            fa = fa.decode("utf-8") 
++        except AttributeError:
++            pass
++        return fa
++
+     @staticmethod
+     def dfToNamedMatrix(df):
+         arr_ip = [tuple(i) for i in df.as_matrix()]
+diff --git a/opt/scopeserver/utils/LoomFileHandler.py b/opt/scopeserver/utils/LoomFileHandler.py
+index 8efbb3a4..efcc81bc 100644
+--- a/opt/scopeserver/utils/LoomFileHandler.py
++++ b/opt/scopeserver/utils/LoomFileHandler.py
+@@ -10,7 +10,6 @@ class LoomFileHandler():
+     def __init__(self):
+         self.active_looms = {}
+         self.loom_dir = dfh.DataFileHandler.get_data_dir_path_by_file_type(file_type="Loom")
+-        print("Starting LoomFileHandler...")
+     
+     def add_loom(self, partial_md5_hash, file_path, abs_file_path, loom_connection):
+         loom = Loom(partial_md5_hash=partial_md5_hash, file_path=file_path, abs_file_path=abs_file_path, loom_connection=loom_connection)
+diff --git a/opt/setup.py b/opt/setup.py
+index a78bcdd5..8888a0f8 100644
+--- a/opt/setup.py
++++ b/opt/setup.py
+@@ -5,7 +5,7 @@
+                         'scope-server = scopeserver.dataserver:dev'
+                         ]
+                     },
+-      version='1.3.1',
++      version='1.3.2',
+       description='SCope Data Server: a server to load and serve the data to the SCope Client',
+       url='',
+       author='Maxime De Waegeneer',
+@@ -15,7 +15,7 @@
+       install_requires=[
+           'grpcio>=1.7.0',
+           'grpcio-tools>=1.7.0',
+-          'loompy==2.0.2',
++          'loompy>=2.0.2',
+           'pandas',
+           'numpy',
+           'pyscenic',
+diff --git a/package.json b/package.json
+index 6f26e403..3ef74f35 100644
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "SCope",
+-  "version": "1.3.1",
++  "version": "1.3.2",
+   "description": "Visualization tool for large-scale and high dimensional single-cell data",
+   "main": "index.js",
+   "scripts": {
+diff --git a/src/components/common/ViewerSidebar.jsx b/src/components/common/ViewerSidebar.jsx
+index f2bf4605..9f84cb19 100644
+--- a/src/components/common/ViewerSidebar.jsx
++++ b/src/components/common/ViewerSidebar.jsx
+@@ -306,11 +306,11 @@ class ViewerSidebar extends Component {
+ 							)
+ 						if(this.state.processSubLoomPercentage > 0)
+ 							return (
+-								<Progress percent={this.state.processSubLoomPercentage} indicating progress disabled size='large'>>Processing...</Progress>
++								<Progress percent={this.state.processSubLoomPercentage} indicating progress disabled size='large'>Processing...</Progress>
+ 							)	
+ 						if(this.state.downloadSubLoomPercentage > 0)
+ 							return (
+-								<Progress percent={this.state.downloadSubLoomPercentage} indicating progress disabled size='large'>>Downloading...</Progress>
++								<Progress percent={this.state.downloadSubLoomPercentage} indicating progress disabled size='large'>Downloading...</Progress>
+ 							)
+ 					}
+ 				}

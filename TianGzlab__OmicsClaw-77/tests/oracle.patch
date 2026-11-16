@@ -1,0 +1,637 @@
+diff --git a/skills/singlecell/_lib/viz/r/density.R b/skills/singlecell/_lib/viz/r/density.R
+index c91a4a1d..1a75ba04 100644
+--- a/skills/singlecell/_lib/viz/r/density.R
++++ b/skills/singlecell/_lib/viz/r/density.R
+@@ -21,7 +21,8 @@ plot_cell_density <- function(data_dir, out_path, params) {
+     csv_candidates <- c(
+       "pseudotime_points.csv",
+       "annotation_embedding_points.csv",
+-      "embedding_points.csv"
++      "embedding_points.csv",
++      "cytotrace_embedding.csv"
+     )
+     csv_path <- NULL
+     for (f in csv_candidates) {
+diff --git a/skills/singlecell/_lib/viz/r/embedding.R b/skills/singlecell/_lib/viz/r/embedding.R
+index 1b8020e8..2398d1b5 100644
+--- a/skills/singlecell/_lib/viz/r/embedding.R
++++ b/skills/singlecell/_lib/viz/r/embedding.R
+@@ -15,7 +15,8 @@ plot_embedding_discrete <- function(data_dir, out_path, params) {
+   tryCatch({
+     # Try multiple CSV sources for embedding coordinates
+     candidates <- c("annotation_embedding_points.csv", "pseudotime_points.csv",
+-                     "embedding_points.csv")
++                     "embedding_points.csv", "cytotrace_embedding.csv",
++                     "umap_points.csv")
+     csv_path <- NULL
+     for (f in candidates) {
+       p <- file.path(data_dir, f)
+@@ -35,6 +36,10 @@ plot_embedding_discrete <- function(data_dir, out_path, params) {
+       colnames(df)[colnames(df) == "UMAP_1"] <- "dim1"
+       colnames(df)[colnames(df) == "UMAP_2"] <- "dim2"
+     }
++    if (!"dim1" %in% colnames(df) && "UMAP1" %in% colnames(df)) {
++      colnames(df)[colnames(df) == "UMAP1"] <- "dim1"
++      colnames(df)[colnames(df) == "UMAP2"] <- "dim2"
++    }
+ 
+     # Determine color column
+     color_col <- params[["color_by"]]
+@@ -99,7 +104,8 @@ plot_embedding_discrete <- function(data_dir, out_path, params) {
+ plot_embedding_feature <- function(data_dir, out_path, params) {
+   tryCatch({
+     candidates <- c("annotation_embedding_points.csv", "pseudotime_points.csv",
+-                     "embedding_points.csv")
++                     "embedding_points.csv", "cytotrace_embedding.csv",
++                     "umap_points.csv")
+     csv_path <- NULL
+     for (f in candidates) {
+       p <- file.path(data_dir, f)
+@@ -119,6 +125,10 @@ plot_embedding_feature <- function(data_dir, out_path, params) {
+       colnames(df)[colnames(df) == "UMAP_1"] <- "dim1"
+       colnames(df)[colnames(df) == "UMAP_2"] <- "dim2"
+     }
++    if (!"dim1" %in% colnames(df) && "UMAP1" %in% colnames(df)) {
++      colnames(df)[colnames(df) == "UMAP1"] <- "dim1"
++      colnames(df)[colnames(df) == "UMAP2"] <- "dim2"
++    }
+ 
+     # Determine feature column — try multiple common names
+     feature_col <- params[["feature"]]
+@@ -130,7 +140,9 @@ plot_embedding_feature <- function(data_dir, out_path, params) {
+         # Try any numeric column that isn't a coordinate
+         skip <- c("cell_id", "dim1", "dim2", "coord1", "coord2", "UMAP_1", "UMAP_2")
+         num_cols <- setdiff(colnames(df), skip)
+-        num_cols <- num_cols[sapply(df[num_cols], function(x) is.numeric(x) || all(grepl("^[0-9.eE+-]+$", x[!is.na(x)])))]
++        if (length(num_cols) > 0) {
++          num_cols <- num_cols[sapply(df[num_cols], function(x) is.numeric(x) || all(grepl("^[0-9.eE+-]+$", x[!is.na(x)])))]
++        }
+         if (length(num_cols) > 0) feature_col <- num_cols[1]
+         else stop("No continuous feature column found \u2014 pass feature=<colname>")
+       } else {
+diff --git a/skills/singlecell/scrna/sc-ambient-removal/sc_ambient.py b/skills/singlecell/scrna/sc-ambient-removal/sc_ambient.py
+index 83d79787..a05ba4ef 100644
+--- a/skills/singlecell/scrna/sc-ambient-removal/sc_ambient.py
++++ b/skills/singlecell/scrna/sc-ambient-removal/sc_ambient.py
+@@ -58,8 +58,9 @@
+ SKILL_VERSION = "0.6.0"
+ 
+ R_ENHANCED_PLOTS: dict[str, str] = {
+-    "plot_embedding_discrete": "r_embedding_discrete.png",
+-    "plot_embedding_feature": "r_embedding_feature.png",
++    # ambient-removal exports gene_expression.csv with before/after counts for top genes.
++    # No UMAP/embedding at this pre-QC stage — embedding renderers not appropriate.
++    "plot_feature_violin": "r_ambient_violin.png",
+ }
+ 
+ 
+@@ -712,6 +713,39 @@ def _write_figure_data(output_dir: Path, adata_before, adata_after, *, summary:
+     files["correction_summary"] = "correction_summary.csv"
+     count_summary.to_csv(figure_data_dir / files["correction_summary"], index=False)
+ 
++    # Write gene_expression.csv for plot_feature_violin R renderer.
++    # Compares before/after expression for top high-expression genes.
++    try:
++        import scipy.sparse as sp_local
++        # Get top genes by mean expression in after matrix
++        X_after = adata_after.X
++        if sp_local.issparse(X_after):
++            X_after = X_after.toarray()
++        gene_means = np.asarray(X_after).mean(axis=0)
++        top_idx = np.argsort(gene_means)[::-1][:10]
++        top_genes = adata_after.var_names[top_idx].tolist()
++
++        sample_n = min(adata_after.n_obs, 500)
++        rng = np.random.default_rng(42)
++        cell_idx = rng.choice(adata_after.n_obs, size=sample_n, replace=False)
++        cell_ids = adata_after.obs_names[cell_idx].tolist()
++
++        X_sub_after = np.asarray(X_after)[cell_idx][:, top_idx]
++
++        long_rows = []
++        for gi, gene in enumerate(top_genes):
++            for ci, cell_id in enumerate(cell_ids):
++                long_rows.append({
++                    "cell_id": cell_id,
++                    "gene": f"{gene}_after",
++                    "expression": float(X_sub_after[ci, gi]),
++                })
++        gene_expr_df = pd.DataFrame(long_rows)
++        gene_expr_df.to_csv(figure_data_dir / "gene_expression.csv", index=False)
++        files["gene_expression"] = "gene_expression.csv"
++    except Exception:
++        pass
++
+     (figure_data_dir / "manifest.json").write_text(
+         json.dumps({"skill": SKILL_NAME, "available_files": files}, indent=2, ensure_ascii=False),
+         encoding="utf-8",
+diff --git a/skills/singlecell/scrna/sc-batch-integration/sc_integrate.py b/skills/singlecell/scrna/sc-batch-integration/sc_integrate.py
+index 70760477..5474e664 100644
+--- a/skills/singlecell/scrna/sc-batch-integration/sc_integrate.py
++++ b/skills/singlecell/scrna/sc-batch-integration/sc_integrate.py
+@@ -50,10 +50,10 @@
+ SCRIPT_REL_PATH = "skills/singlecell/scrna/sc-batch-integration/sc_integrate.py"
+ 
+ R_ENHANCED_PLOTS = {
++    # batch-integration exports umap_points.csv with batch/cluster labels.
++    # plot_embedding_discrete colors by batch or cluster column.
++    # plot_cell_barplot and plot_cell_sankey removed — no cell_type_counts.csv here.
+     "plot_embedding_discrete": "r_embedding_discrete.png",
+-    "plot_embedding_feature": "r_embedding_feature.png",
+-    "plot_cell_barplot": "r_cell_barplot.png",
+-    "plot_cell_sankey": "r_cell_sankey.png",
+ }
+ 
+ METHOD_REGISTRY: dict[str, MethodConfig] = {
+diff --git a/skills/singlecell/scrna/sc-de/sc_de.py b/skills/singlecell/scrna/sc-de/sc_de.py
+index c59d2189..538ae1fe 100644
+--- a/skills/singlecell/scrna/sc-de/sc_de.py
++++ b/skills/singlecell/scrna/sc-de/sc_de.py
+@@ -349,12 +349,55 @@ def run_de_mast_method(adata, *, groupby: str, group1: str | None, group2: str |
+     }
+ 
+ 
++def _build_gene_expression_csv(
++    adata,
++    gene_list: list[str],
++    max_cells: int = 2000,
++) -> pd.DataFrame | None:
++    """Build long-format gene expression CSV for R correlation renderer.
++
++    Returns DataFrame with columns: cell_id, gene, expression.
++    Subsamples to ``max_cells`` if the dataset is large.
++    """
++    try:
++        import scipy.sparse as sp
++
++        genes_in_adata = [g for g in gene_list if g in adata.var_names]
++        if len(genes_in_adata) < 2:
++            return None
++
++        # Subsample cells to keep CSV manageable
++        n_cells = adata.n_obs
++        if n_cells > max_cells:
++            rng = np.random.default_rng(42)
++            idx = rng.choice(n_cells, size=max_cells, replace=False)
++            sub = adata[idx, genes_in_adata]
++        else:
++            sub = adata[:, genes_in_adata]
++
++        X = sub.X
++        if sp.issparse(X):
++            X = X.toarray()
++
++        cell_ids = sub.obs_names.tolist()
++        records = []
++        for gi, gene in enumerate(genes_in_adata):
++            for ci, cell_id in enumerate(cell_ids):
++                records.append({"cell_id": cell_id, "gene": gene, "expression": float(X[ci, gi])})
++        return pd.DataFrame(records)
++    except Exception as exc:  # noqa: BLE001
++        logger.warning("gene_expression.csv build failed: %s", exc)
++        return None
++
++
+ def _write_figure_data(
+     output_dir: Path,
+     *,
+     exploratory_top: pd.DataFrame | None = None,
+     group_summary: pd.DataFrame | None = None,
+     pseudobulk_summary: pd.DataFrame | None = None,
++    adata=None,
++    gene_col: str = "names",
+ ) -> None:
+     figure_data_dir = output_dir / "figure_data"
+     figure_data_dir.mkdir(exist_ok=True)
+@@ -371,6 +414,16 @@ def _write_figure_data(
+         path = figure_data_dir / "pseudobulk_summary.csv"
+         pseudobulk_summary.to_csv(path, index=False)
+         manifest["pseudobulk_summary"] = path.name
++
++    # Export gene_expression.csv for R correlation renderer (plot_feature_cor)
++    if adata is not None and exploratory_top is not None and not exploratory_top.empty:
++        top_genes = exploratory_top[gene_col].dropna().unique().tolist()[:20]
++        gene_expr_df = _build_gene_expression_csv(adata, top_genes)
++        if gene_expr_df is not None and not gene_expr_df.empty:
++            path = figure_data_dir / "gene_expression.csv"
++            gene_expr_df.to_csv(path, index=False)
++            manifest["gene_expression"] = path.name
++
+     (figure_data_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+ 
+ 
+@@ -461,7 +514,7 @@ def generate_scanpy_figures(adata, full_df: pd.DataFrame, top_df: pd.DataFrame,
+     except Exception as exc:
+         logger.warning("DE group summary failed: %s", exc)
+ 
+-    _write_figure_data(output_dir, exploratory_top=top_df, group_summary=summary_df)
++    _write_figure_data(output_dir, exploratory_top=top_df, group_summary=summary_df, adata=adata, gene_col="names")
+     return figures
+ 
+ 
+@@ -472,6 +525,7 @@ def generate_tabular_de_figures(
+     *,
+     group_col: str,
+     gene_col: str,
++    adata=None,
+ ) -> list[str]:
+     figures: list[str] = []
+     summary_df = _group_summary(full_df, top_df, group_col=group_col, gene_col=gene_col)
+@@ -487,7 +541,7 @@ def generate_tabular_de_figures(
+             figures.append(str(p))
+     except Exception as exc:
+         logger.warning("DE group summary failed: %s", exc)
+-    _write_figure_data(output_dir, exploratory_top=top_df, group_summary=summary_df)
++    _write_figure_data(output_dir, exploratory_top=top_df, group_summary=summary_df, adata=adata, gene_col=gene_col)
+     return figures
+ 
+ 
+@@ -723,7 +777,7 @@ def main():
+         top_df = full_df.sort_values(["padj", "pvalue"], na_position="last").groupby("group", observed=False).head(args.n_top_genes)
+         full_df.to_csv(tables_dir / "de_full.csv", index=False)
+         top_df.to_csv(tables_dir / "markers_top.csv", index=False)
+-        generate_tabular_de_figures(full_df, top_df, output_dir, group_col="group", gene_col="gene")
++        generate_tabular_de_figures(full_df, top_df, output_dir, group_col="group", gene_col="gene", adata=adata)
+     else:
+         full_df, summary = run_de_scanpy(
+             adata,
+diff --git a/skills/singlecell/scrna/sc-filter/sc_filter.py b/skills/singlecell/scrna/sc-filter/sc_filter.py
+index fc728eb7..834069ca 100644
+--- a/skills/singlecell/scrna/sc-filter/sc_filter.py
++++ b/skills/singlecell/scrna/sc-filter/sc_filter.py
+@@ -67,8 +67,9 @@
+ SKILL_VERSION = "0.4.0"
+ 
+ R_ENHANCED_PLOTS: dict[str, str] = {
++    # sc-filter runs before clustering — no cell-type compositions yet.
++    # plot_feature_violin reads gene_expression.csv (QC metrics in long format).
+     "plot_feature_violin": "r_feature_violin.png",
+-    "plot_cell_barplot": "r_cell_barplot.png",
+ }
+ 
+ 
+@@ -367,6 +368,23 @@ def generate_filter_figures(_adata, output_dir: Path, *, gallery_context: dict)
+     gallery_context["retention_df"].to_csv(figures_dir / "retention_summary.csv", index=False)
+     gallery_context["state_df"].to_csv(figures_dir / "filter_state.csv", index=False)
+     gallery_context["reason_df"].to_csv(figures_dir / "filter_reasons.csv", index=False)
++
++    # Write gene_expression.csv in long format for plot_feature_violin R renderer.
++    # Uses QC metric columns from filter_state.csv (n_genes_by_counts, total_counts, etc.)
++    state_df = gallery_context.get("state_df")
++    if isinstance(state_df, pd.DataFrame) and not state_df.empty:
++        metric_cols = [c for c in state_df.columns if c not in ("state",) and state_df[c].dtype.kind in ("f", "i", "u")]
++        if metric_cols:
++            # Add a synthetic cell_id index if not present
++            if "cell_id" not in state_df.columns:
++                state_df = state_df.copy()
++                state_df.insert(0, "cell_id", [f"cell_{i}" for i in range(len(state_df))])
++            long_rows = []
++            for col in metric_cols:
++                for _, row in state_df[["cell_id", col]].iterrows():
++                    long_rows.append({"cell_id": row["cell_id"], "gene": col, "expression": row[col]})
++            pd.DataFrame(long_rows).to_csv(figures_dir / "gene_expression.csv", index=False)
++            gallery_context["figure_data_files"]["gene_expression"] = "gene_expression.csv"
+     (figures_dir / "manifest.json").write_text(
+         json.dumps(
+             {
+diff --git a/skills/singlecell/scrna/sc-gene-programs/sc_gene_programs.py b/skills/singlecell/scrna/sc-gene-programs/sc_gene_programs.py
+index 27048bc4..32128cc6 100644
+--- a/skills/singlecell/scrna/sc-gene-programs/sc_gene_programs.py
++++ b/skills/singlecell/scrna/sc-gene-programs/sc_gene_programs.py
+@@ -53,8 +53,8 @@
+ 
+ # R Enhanced plotting configuration
+ R_ENHANCED_PLOTS = {
+-    "plot_embedding_discrete": "r_embedding_discrete.png",
+-    "plot_embedding_feature": "r_embedding_feature.png",
++    # gene-programs exports program usage as gene_expression.csv (programs as features).
++    # No UMAP/embedding data — embedding renderers are not appropriate here.
+     "plot_feature_violin": "r_feature_violin.png",
+     "plot_feature_cor": "r_feature_cor.png",
+ }
+@@ -280,6 +280,23 @@ def _write_figure_data(
+         files["program_correlation"] = "program_correlation.csv"
+         corr.to_csv(fd_dir / files["program_correlation"])
+ 
++    # Write gene_expression.csv in long format for plot_feature_violin / plot_feature_cor.
++    # Pivots program_usage wide -> long, treating each program as a "gene" feature.
++    if not usage_df.empty:
++        try:
++            # Sample cells to keep CSV manageable
++            sample_n = min(len(usage_df), 1000)
++            sampled = usage_df.sample(n=sample_n, random_state=42) if len(usage_df) > sample_n else usage_df
++            # usage_df index is cell_id
++            long_rows = []
++            for prog in sampled.columns:
++                for cell_id, val in sampled[prog].items():
++                    long_rows.append({"cell_id": str(cell_id), "gene": prog, "expression": float(val)})
++            pd.DataFrame(long_rows).to_csv(fd_dir / "gene_expression.csv", index=False)
++            files["gene_expression"] = "gene_expression.csv"
++        except Exception:
++            pass
++
+     manifest = {"skill": SKILL_NAME, "available_files": files}
+     (fd_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+     return files
+diff --git a/skills/singlecell/scrna/sc-grn/sc_grn.py b/skills/singlecell/scrna/sc-grn/sc_grn.py
+index f3317cb2..6972b112 100644
+--- a/skills/singlecell/scrna/sc-grn/sc_grn.py
++++ b/skills/singlecell/scrna/sc-grn/sc_grn.py
+@@ -68,8 +68,10 @@
+ 
+ # R Enhanced plotting configuration
+ R_ENHANCED_PLOTS = {
+-    "plot_embedding_discrete": "r_embedding_discrete.png",
+-    "plot_embedding_feature": "r_embedding_feature.png",
++    # sc-grn exports AUC scores as gene_expression.csv (regulons as features).
++    # No UMAP/embedding CSV — embedding renderers not appropriate here.
++    "plot_feature_violin": "r_regulon_violin.png",
++    "plot_feature_cor": "r_regulon_cor.png",
+ }
+ 
+ 
+@@ -214,6 +216,20 @@ def _write_figure_data(
+         files["auc_matrix"] = "auc_matrix.csv"
+         auc_matrix.to_csv(figure_data_dir / files["auc_matrix"])
+ 
++        # Write gene_expression.csv in long format for plot_feature_violin/plot_feature_cor.
++        # Pivots AUC matrix wide -> long, treating each regulon/TF as a "gene" feature.
++        try:
++            sample_n = min(len(auc_matrix), 1000)
++            sampled = auc_matrix.sample(n=sample_n, random_state=42) if len(auc_matrix) > sample_n else auc_matrix
++            long_rows = []
++            for tf in sampled.columns:
++                for cell_id, val in sampled[tf].items():
++                    long_rows.append({"cell_id": str(cell_id), "gene": tf, "expression": float(val)})
++            pd.DataFrame(long_rows).to_csv(figure_data_dir / "gene_expression.csv", index=False)
++            files["gene_expression"] = "gene_expression.csv"
++        except Exception:
++            pass
++
+     manifest = {"skill": SKILL_NAME, "available_files": files}
+     (figure_data_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+     return files
+diff --git a/skills/singlecell/scrna/sc-in-silico-perturbation/sc_in_silico_perturbation.py b/skills/singlecell/scrna/sc-in-silico-perturbation/sc_in_silico_perturbation.py
+index 50dc587d..1de69261 100644
+--- a/skills/singlecell/scrna/sc-in-silico-perturbation/sc_in_silico_perturbation.py
++++ b/skills/singlecell/scrna/sc-in-silico-perturbation/sc_in_silico_perturbation.py
+@@ -52,8 +52,9 @@
+ SKILL_VERSION = "0.2.0"
+ 
+ R_ENHANCED_PLOTS: dict[str, str] = {
+-    "plot_embedding_discrete": "r_embedding_discrete.png",
+-    "plot_embedding_feature": "r_embedding_feature.png",
++    # sc-ISP exports diff_regulation.csv as de_top_markers.csv alias for volcano.
++    # No UMAP/embedding CSV at this stage.
++    "plot_de_volcano": "r_isp_volcano.png",
+ }
+ 
+ 
+@@ -424,6 +425,28 @@ def _write_figure_data(output_dir: Path, diff_df: pd.DataFrame) -> dict[str, str
+         diff_df.to_csv(fd_dir / fname, index=False)
+         files["diff_regulation"] = fname
+ 
++        # Write de_top_markers.csv alias for plot_de_volcano renderer.
++        # Maps ISP columns to expected DE column schema.
++        try:
++            alias_df = diff_df.copy()
++            # Rename to scanpy-style DE columns expected by de.R
++            col_map = {}
++            if "gene" in alias_df.columns and "names" not in alias_df.columns:
++                col_map["gene"] = "names"
++            if "FC" in alias_df.columns and "logfoldchanges" not in alias_df.columns:
++                col_map["FC"] = "logfoldchanges"
++            if "p.adj" in alias_df.columns and "pvals_adj" not in alias_df.columns:
++                col_map["p.adj"] = "pvals_adj"
++            elif "p_value" in alias_df.columns and "pvals_adj" not in alias_df.columns:
++                col_map["p_value"] = "pvals_adj"
++            if col_map:
++                alias_df = alias_df.rename(columns=col_map)
++            alias_df["group"] = "KO"
++            alias_df.to_csv(fd_dir / "de_top_markers.csv", index=False)
++            files["de_top_markers"] = "de_top_markers.csv"
++        except Exception:
++            pass
++
+     manifest = {"skill": SKILL_NAME, "available_files": files}
+     (fd_dir / "manifest.json").write_text(
+         json.dumps(manifest, indent=2), encoding="utf-8"
+diff --git a/skills/singlecell/scrna/sc-metacell/sc_metacell.py b/skills/singlecell/scrna/sc-metacell/sc_metacell.py
+index 7444c60a..4dae803d 100644
+--- a/skills/singlecell/scrna/sc-metacell/sc_metacell.py
++++ b/skills/singlecell/scrna/sc-metacell/sc_metacell.py
+@@ -38,9 +38,10 @@
+ 
+ # R Enhanced plotting configuration
+ R_ENHANCED_PLOTS = {
++    # centroid_points.csv is exported as embedding_points.csv (x→dim1, y→dim2).
++    # plot_embedding_discrete colors by the metacell label column.
++    # plot_cell_barplot removed — no cell_type_counts.csv at this stage.
+     "plot_embedding_discrete": "r_embedding_discrete.png",
+-    "plot_embedding_feature": "r_embedding_feature.png",
+-    "plot_cell_barplot": "r_cell_barplot.png",
+ }
+ 
+ 
+@@ -198,6 +199,16 @@ def _write_figure_data(output_dir: Path, *, points_df: pd.DataFrame, summary_df:
+     if not points_df.empty:
+         files["centroid_points"] = "centroid_points.csv"
+         points_df.to_csv(fd_dir / files["centroid_points"], index=False)
++
++        # Write embedding_points.csv with normalized dim1/dim2 for R embedding renderers.
++        embed_df = points_df.copy()
++        if "x" in embed_df.columns and "dim1" not in embed_df.columns:
++            embed_df = embed_df.rename(columns={"x": "dim1", "y": "dim2"})
++        if "cell_id" not in embed_df.columns:
++            embed_df.insert(0, "cell_id", embed_df.index.astype(str))
++        embed_df.to_csv(fd_dir / "embedding_points.csv", index=False)
++        files["embedding_points"] = "embedding_points.csv"
++
+     files["metacell_summary"] = "metacell_summary.csv"
+     summary_df.to_csv(fd_dir / files["metacell_summary"], index=False)
+ 
+diff --git a/skills/singlecell/scrna/sc-pathway-scoring/sc_pathway_scoring.py b/skills/singlecell/scrna/sc-pathway-scoring/sc_pathway_scoring.py
+index 8a07cf62..13eaa881 100644
+--- a/skills/singlecell/scrna/sc-pathway-scoring/sc_pathway_scoring.py
++++ b/skills/singlecell/scrna/sc-pathway-scoring/sc_pathway_scoring.py
+@@ -62,9 +62,9 @@
+ SCRIPT_REL_PATH = "skills/singlecell/scrna/sc-pathway-scoring/sc_pathway_scoring.py"
+ 
+ R_ENHANCED_PLOTS = {
+-    "plot_embedding_discrete": "r_embedding_discrete.png",
+-    "plot_embedding_feature": "r_embedding_feature.png",
+-    "plot_feature_violin": "r_feature_violin.png",
++    # pathway-scoring exports gene_expression.csv (pathway score per cell, long format).
++    # No UMAP/embedding CSV — embedding renderers not appropriate at this stage.
++    "plot_feature_violin": "r_pathway_violin.png",
+ }
+ R_SCRIPTS_DIR = Path(__file__).resolve().parent / "rscripts"
+ SHARED_PARAM_KEYS = ("method", "gene_sets", "groupby", "top_pathways")
+@@ -745,6 +745,19 @@ def _write_figure_data(output_dir: Path, summary: dict, overlap_df: pd.DataFrame
+             data.to_csv(output_path, index=keep_index)
+             manifest[filename] = output_path.name
+ 
++    # Write gene_expression.csv for plot_feature_violin renderer.
++    # Renames gene_set -> gene and score -> expression from top_pathway_scores_long.csv.
++    long_df = summary.get("top_pathway_scores_long_df", pd.DataFrame())
++    if isinstance(long_df, pd.DataFrame) and not long_df.empty:
++        try:
++            expr_df = long_df[["cell_id", "gene_set", "score"]].rename(
++                columns={"gene_set": "gene", "score": "expression"}
++            )
++            expr_df.to_csv(figure_data_dir / "gene_expression.csv", index=False)
++            manifest["gene_expression.csv"] = "gene_expression.csv"
++        except Exception:
++            pass
++
+     (figure_data_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+ 
+ 
+diff --git a/skills/singlecell/scrna/sc-perturb/sc_perturb.py b/skills/singlecell/scrna/sc-perturb/sc_perturb.py
+index 5d740c13..af6b9d5f 100644
+--- a/skills/singlecell/scrna/sc-perturb/sc_perturb.py
++++ b/skills/singlecell/scrna/sc-perturb/sc_perturb.py
+@@ -42,8 +42,9 @@
+ 
+ # R Enhanced plotting configuration
+ R_ENHANCED_PLOTS = {
+-    "plot_embedding_discrete": "r_embedding_discrete.png",
+-    "plot_embedding_feature": "r_embedding_feature.png",
++    # sc-perturb exports cell_type_counts.csv (class counts) for barplot renderer.
++    # No UMAP/embedding CSV — embedding renderers not appropriate here.
++    "plot_cell_barplot": "r_perturbation_barplot.png",
+ }
+ 
+ 
+@@ -286,6 +287,28 @@ def main() -> int:
+     global_counts.to_csv(figure_data_dir / "mixscape_global_classes.csv", index=False)
+     class_counts.to_csv(figure_data_dir / "mixscape_class_counts.csv", index=False)
+ 
++    # Write cell_type_counts.csv for plot_cell_barplot R renderer.
++    # Renames 'class' -> 'cell_type' and adds proportion_pct column.
++    try:
++        ct_df = class_counts.rename(columns={"class": "cell_type"}).copy()
++        total = ct_df["n_cells"].sum()
++        ct_df["proportion_pct"] = (ct_df["n_cells"] / total * 100).round(2) if total > 0 else 0.0
++        ct_df.to_csv(figure_data_dir / "cell_type_counts.csv", index=False)
++    except Exception:
++        pass
++
++    manifest = {
++        "skill": SKILL_NAME,
++        "available_files": {
++            "mixscape_class_counts": "mixscape_class_counts.csv",
++            "mixscape_global_classes": "mixscape_global_classes.csv",
++            "cell_type_counts": "cell_type_counts.csv",
++        },
++    }
++    (figure_data_dir / "manifest.json").write_text(
++        __import__("json").dumps(manifest, indent=2), encoding="utf-8"
++    )
++
+     fig, ax = plt.subplots(figsize=(8, 4))
+     global_counts.plot.bar(x="global_class", y="n_cells", ax=ax, color="#1f78b4")
+     ax.set_title("Mixscape global classes")
+diff --git a/skills/singlecell/scrna/sc-preprocessing/sc_preprocess.py b/skills/singlecell/scrna/sc-preprocessing/sc_preprocess.py
+index 863da429..37643b52 100644
+--- a/skills/singlecell/scrna/sc-preprocessing/sc_preprocess.py
++++ b/skills/singlecell/scrna/sc-preprocessing/sc_preprocess.py
+@@ -53,9 +53,10 @@
+ SKILL_VERSION = "0.4.0"
+ SCRIPT_REL_PATH = "skills/singlecell/scrna/sc-preprocessing/sc_preprocess.py"
+ 
+-R_ENHANCED_PLOTS = {
+-    "plot_embedding_discrete": "r_embedding_discrete.png",
+-    "plot_embedding_feature": "r_embedding_feature.png",
++R_ENHANCED_PLOTS: dict[str, str] = {
++    # sc-preprocessing runs before clustering — no cluster labels yet.
++    # HVG expression summary is the most useful R Enhanced view at this stage.
++    "plot_feature_violin": "r_hvg_violin.png",
+ }
+ 
+ METHOD_REGISTRY: dict[str, MethodConfig] = {
+@@ -619,6 +620,45 @@ def _export_figure_data(adata, output_dir: Path, summary: dict, recipe: Visualiz
+             df.to_csv(figure_data_dir / filename, index=False)
+             available_files[key] = filename
+ 
++    # Write embedding_points.csv for plot_embedding_discrete/feature R renderers.
++    # At preprocessing stage UMAP is not yet computed; use PC1/PC2 as proxy dimensions.
++    pca_df = context.get("pca_embedding_df")
++    if isinstance(pca_df, pd.DataFrame) and not pca_df.empty and "PC1" in pca_df.columns and "PC2" in pca_df.columns:
++        embed_df = pca_df[["cell_id", "PC1", "PC2"]].copy()
++        embed_df = embed_df.rename(columns={"PC1": "dim1", "PC2": "dim2"})
++        # Add cluster col from adata.obs if available
++        if adata is not None:
++            for col in ("leiden", "louvain", "cluster"):
++                if col in adata.obs.columns:
++                    id_to_col = adata.obs[col].astype(str).to_dict()
++                    embed_df["cluster"] = embed_df["cell_id"].map(id_to_col).fillna("unknown")
++                    break
++        embed_df.to_csv(figure_data_dir / "embedding_points.csv", index=False)
++        available_files["embedding_points"] = "embedding_points.csv"
++
++    # Write gene_expression.csv (long format) for plot_feature_violin.
++    # Exports top HVGs expression per cell, sampled to keep CSV size reasonable.
++    if adata is not None and "highly_variable" in adata.var.columns:
++        try:
++            import scipy.sparse as sp
++            hvg_genes = adata.var_names[adata.var["highly_variable"]].tolist()[:20]
++            if len(hvg_genes) >= 2:
++                n_cells = adata.n_obs
++                rng = np.random.default_rng(42)
++                idx = rng.choice(n_cells, size=min(n_cells, 1000), replace=False)
++                sub = adata[idx, hvg_genes]
++                X = sub.X
++                if sp.issparse(X):
++                    X = X.toarray()
++                records = []
++                for gi, gene in enumerate(hvg_genes):
++                    for ci, cell_id in enumerate(sub.obs_names.tolist()):
++                        records.append({"cell_id": cell_id, "gene": gene, "expression": float(X[ci, gi])})
++                pd.DataFrame(records).to_csv(figure_data_dir / "gene_expression.csv", index=False)
++                available_files["gene_expression"] = "gene_expression.csv"
++        except Exception as exc:
++            logger.warning("gene_expression.csv export failed: %s", exc)
++
+     manifest = {
+         "skill": SKILL_NAME,
+         "recipe_id": recipe.recipe_id,
+diff --git a/skills/singlecell/scrna/sc-qc/sc_qc.py b/skills/singlecell/scrna/sc-qc/sc_qc.py
+index 9359b501..e2584dc3 100644
+--- a/skills/singlecell/scrna/sc-qc/sc_qc.py
++++ b/skills/singlecell/scrna/sc-qc/sc_qc.py
+@@ -52,9 +52,10 @@
+ SKILL_VERSION = "0.2.0"
+ SCRIPT_REL_PATH = "skills/singlecell/scrna/sc-qc/sc_qc.py"
+ 
+-R_ENHANCED_PLOTS = {
+-    "plot_embedding_discrete": "r_embedding_discrete.png",
+-    "plot_cell_barplot": "r_cell_barplot.png",
++R_ENHANCED_PLOTS: dict[str, str] = {
++    # sc-qc runs before clustering — no embeddings or cell-type compositions yet.
++    # plot_feature_violin reads qc_metrics_per_cell.csv written by _export_figure_data.
++    "plot_feature_violin": "r_qc_violin.png",
+ }
+ QC_METHOD = "qc_metrics"
+ METHOD_PARAM_DEFAULTS = {
+@@ -299,6 +300,20 @@ def _export_figure_data(output_dir: Path, summary: dict, recipe: VisualizationRe
+             df.to_csv(figure_data_dir / filename, index=False)
+             available_files[key] = filename
+ 
++    # Write gene_expression.csv in long format for plot_feature_violin R renderer.
++    # Pivots qc_metrics_per_cell wide -> long so metrics appear as "genes" (features).
++    qc_df = context.get("qc_metrics_df")
++    if isinstance(qc_df, pd.DataFrame) and not qc_df.empty and "cell_id" in qc_df.columns:
++        metric_cols = [c for c in qc_df.columns if c != "cell_id"]
++        if metric_cols:
++            long_rows = []
++            for col in metric_cols:
++                for _, row in qc_df[["cell_id", col]].iterrows():
++                    long_rows.append({"cell_id": row["cell_id"], "gene": col, "expression": row[col]})
++            long_df = pd.DataFrame(long_rows)
++            long_df.to_csv(figure_data_dir / "gene_expression.csv", index=False)
++            available_files["gene_expression"] = "gene_expression.csv"
++
+     manifest = {
+         "skill": SKILL_NAME,
+         "recipe_id": recipe.recipe_id,

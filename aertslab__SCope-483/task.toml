@@ -1,0 +1,63 @@
+version = "1.0"
+
+[task]
+name = "default/aertslab__SCope-483"
+description = "Add new github action for security audits"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "SCope",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aertslab/SCope"
+ref = "b0d3352c1256ede196f422f99f4933f82a9091cd"
+reference = "https://github.com/aertslab/SCope/pull/483"
+source_access = "auto"
+built_at = "2026-11-15T19:37:00.929217+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:4ee63de7ba1344c101a5190e7f7774b6c0298ca1c39edaba4a0cf927c42c2647"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2021-07-30T14:32:05Z"
+diff_format = "unified"
+context_files = [
+    ".github/workflows/continuous-integration-client.yml",
+    ".github/workflows/security.yml",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 36
+difficulty = "medium"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

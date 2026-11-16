@@ -1,0 +1,68 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-72"
+description = "Accept --r-enhanced flag in all 29 scRNA skills"
+
+[metadata]
+difficulty = "small"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "fd9209d06d7bd3bbeee1c89487fcace54a751e2b"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/72"
+source_access = "auto"
+built_at = "2026-11-15T18:18:15.790978+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:ffaffc79de12e576a1d62abba9f2a23344a88d26b034b359760630d249e5350d"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-04-12T06:47:23Z"
+diff_format = "unified"
+context_files = [
+    "skills/singlecell/scrna/sc-count/sc_count.py",
+    "skills/singlecell/scrna/sc-drug-response/sc_drug_response.py",
+    "skills/singlecell/scrna/sc-fastq-qc/sc_fastq_qc.py",
+    "skills/singlecell/scrna/sc-multi-count/sc_multi_count.py",
+    "skills/singlecell/scrna/sc-perturb-prep/sc_perturb_prep.py",
+    "skills/singlecell/scrna/sc-standardize-input/sc_standardize_input.py",
+    "skills/singlecell/scrna/sc-velocity-prep/sc_velocity_prep.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 14
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

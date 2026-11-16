@@ -1,0 +1,1039 @@
+diff --git a/knowledge_base/skill-guides/singlecell/sc-cell-annotation.md b/knowledge_base/skill-guides/singlecell/sc-cell-annotation.md
+index 6caa755c..b4b482fd 100644
+--- a/knowledge_base/skill-guides/singlecell/sc-cell-annotation.md
++++ b/knowledge_base/skill-guides/singlecell/sc-cell-annotation.md
+@@ -28,7 +28,7 @@ Common OmicsClaw path:
+ | Method | Best first use | Main public controls | Main caveat |
+ |--------|----------------|----------------------|-------------|
+ | `manual` | explicit relabeling when you already know what each cluster should be called | `cluster_key`, `manual_map` / `manual_map_file` | quality depends entirely on the supplied mapping |
+-| `markers` | quick label proposal when clusters are already interpretable | `cluster_key` | depends strongly on upstream cluster quality |
++| `markers` | quick label proposal when clusters are already interpretable | `cluster_key`, `marker_file` | built-in markers cover human blood/brain/tissue; use `--marker-file` for other organisms or specialized tissues |
+ | `celltypist` | best first automated model-based annotation | `model`, `celltypist_majority_voting` | model choice is tissue-dependent |
+ | `popv` | labeled H5AD reference mapping | `reference`, `cluster_key` | tries official PopV first, then falls back to lightweight mapping |
+ | `knnpredict` | lightweight AnnData-first reference mapping | `reference`, `cluster_key` | quality depends entirely on the external reference |
+@@ -44,9 +44,18 @@ Start with:
+ - whether it depends on a model (`model`) or a reference (`reference`)
+ - whether CellTypist smoothing is enabled (`celltypist_majority_voting`)
+ 
++## Troubleshooting: All Cells Labeled "Unknown"
++
++If all cells are annotated as "Unknown" with the `markers` method:
++
++1. **Wrong tissue/organism**: Built-in markers cover human PBMC, brain, and general tissue. For mouse data or specialized tissues, provide `--marker-file` with appropriate gene names, or switch to `celltypist` with a tissue-specific model.
++2. **Gene naming mismatch**: Human genes are UPPERCASE (CD3D), mouse genes are Title case (Cd3d). The skill auto-detects this and attempts case-insensitive matching, but custom markers are more reliable.
++3. **Better alternatives**: For automated annotation, `celltypist` with the right model is usually more reliable than marker scoring. Use `--method celltypist --model <model>` and list models with `celltypist.models.models_description()`.
++
+ ## What To Say After The Run
+ 
+ - Check the annotated embedding and label distribution first.
+ - If labels look implausible, question the reference/model before trusting the result.
++- If all or most labels are "Unknown", guide the user to provide custom markers or switch methods (see troubleshooting above).
+ - If labels are still ambiguous, go back to `sc-markers` for supporting evidence.
+ - If the next question is biological comparison between labeled groups, continue to `sc-de`.
+diff --git a/skills/singlecell/_lib/__init__.py b/skills/singlecell/_lib/__init__.py
+index c78f6fb7..4926317d 100644
+--- a/skills/singlecell/_lib/__init__.py
++++ b/skills/singlecell/_lib/__init__.py
+@@ -1,9 +1,5 @@
+ """Single-cell analysis utilities for OmicsClaw."""
+ 
+-import os
+-
+-os.environ.setdefault("NUMBA_DISABLE_JIT", "1")
+-
+ from .gallery import PlotArtifact, PlotSpec, VisualizationRecipe, render_plot_specs
+ from .upstream import FastqSample
+ from .viz import save_figure
+diff --git a/skills/singlecell/_lib/adata_utils.py b/skills/singlecell/_lib/adata_utils.py
+index 3058b32a..9cac38c5 100644
+--- a/skills/singlecell/_lib/adata_utils.py
++++ b/skills/singlecell/_lib/adata_utils.py
+@@ -10,9 +10,6 @@
+ 
+ import numpy as np
+ import pandas as pd
+-
+-os.environ.setdefault("NUMBA_DISABLE_JIT", "1")
+-
+ import scanpy as sc
+ 
+ if TYPE_CHECKING:
+diff --git a/skills/singlecell/_lib/annotation.py b/skills/singlecell/_lib/annotation.py
+index 44e95570..fa6eafdb 100644
+--- a/skills/singlecell/_lib/annotation.py
++++ b/skills/singlecell/_lib/annotation.py
+@@ -1099,8 +1099,21 @@ def apply_popv_annotation(
+     reference_file = Path(reference_path)
+     if not reference_file.exists():
+         raise FileNotFoundError(
+-            f"PopV reference file {reference_file} does not exist. "
+-            "Provide a labeled reference in H5AD format via --reference."
++            f"PopV reference file '{reference_file}' does not exist.\n"
++            "The popv method requires a labeled reference H5AD file with a 'cell_type' column in .obs.\n"
++            "\n"
++            "How to get a reference:\n"
++            "  1. Download from CZ CELLxGENE Census: https://cellxgene.cziscience.com/\n"
++            "     - Search for your tissue/organism, download as .h5ad\n"
++            "  2. Use the Human Cell Atlas: https://www.humancellatlas.org/\n"
++            "  3. For mouse: Tabula Muris https://tabula-muris.ds.czbiohub.org/\n"
++            "\n"
++            "Then run:\n"
++            "  --method popv --reference /path/to/your_reference.h5ad\n"
++            "\n"
++            "Alternative methods that don't need a reference file:\n"
++            "  --method markers --marker-file my_markers.json  (custom marker genes)\n"
++            "  --method celltypist --model <model_name>.pkl    (pretrained models, no reference needed)"
+         )
+ 
+     try:
+@@ -1152,7 +1165,21 @@ def apply_knnpredict_annotation(
+     reference_file = Path(reference_path)
+     if not reference_file.exists():
+         raise FileNotFoundError(
+-            f"KNNPredict reference file {reference_file} does not exist. Provide a labeled reference in H5AD format."
++            f"KNNPredict reference file '{reference_file}' does not exist.\n"
++            "The knnpredict method requires a labeled reference H5AD file with a 'cell_type' column in .obs.\n"
++            "\n"
++            "How to get a reference:\n"
++            "  1. Download from CZ CELLxGENE Census: https://cellxgene.cziscience.com/\n"
++            "     - Search for your tissue/organism, download as .h5ad\n"
++            "  2. Use the Human Cell Atlas: https://www.humancellatlas.org/\n"
++            "  3. For mouse: Tabula Muris https://tabula-muris.ds.czbiohub.org/\n"
++            "\n"
++            "Then run:\n"
++            "  --method knnpredict --reference /path/to/your_reference.h5ad\n"
++            "\n"
++            "Alternative methods that don't need a reference file:\n"
++            "  --method markers --marker-file my_markers.json  (custom marker genes)\n"
++            "  --method celltypist --model <model_name>.pkl    (pretrained models, no reference needed)"
+         )
+     reference_adata = sc.read_h5ad(reference_file)
+     metadata = _apply_lightweight_reference_mapping(
+diff --git a/skills/singlecell/scrna/sc-cell-annotation/SKILL.md b/skills/singlecell/scrna/sc-cell-annotation/SKILL.md
+index 35cd49e4..eccfde79 100644
+--- a/skills/singlecell/scrna/sc-cell-annotation/SKILL.md
++++ b/skills/singlecell/scrna/sc-cell-annotation/SKILL.md
+@@ -18,6 +18,7 @@ metadata:
+       - "--method"
+       - "--model"
+       - "--reference"
++      - "--marker-file"
+       - "--celltypist-majority-voting"
+       - "--no-celltypist-majority-voting"
+     param_hints:
+@@ -30,12 +31,15 @@ metadata:
+           - "--method manual: explicit relabeling from user-provided cluster mappings."
+           - "--manual-map example: `0=T cell;1,2=Myeloid`."
+       markers:
+-        priority: "cluster_key"
+-        params: ["cluster_key"]
+-        defaults: {cluster_key: auto}
++        priority: "cluster_key -> marker_file"
++        params: ["cluster_key", "marker_file"]
++        defaults: {cluster_key: auto, marker_file: null}
+         requires: ["normalized_expression", "cluster_labels_in_obs"]
+         tips:
+           - "--method markers: use when clusters already exist and you want a quick label proposal from known markers."
++          - "Built-in markers cover blood (PBMC), brain, and general tissue cell types (human gene symbols)."
++          - "For non-human organisms or specialized tissues, provide --marker-file markers.json."
++          - "If ALL cells are 'Unknown', it means marker genes were not found — see Reference Data Guide below."
+       celltypist:
+         priority: "model -> celltypist_majority_voting"
+         params: ["model", "celltypist_majority_voting"]
+@@ -114,6 +118,7 @@ This skill annotates cells or clusters. It does not replace marker discovery or
+ - `--cluster-key`
+ - `--model`
+ - `--reference`
++- `--marker-file`
+ - `--celltypist-majority-voting`
+ 
+ ## Output Contract
+@@ -143,6 +148,77 @@ Successful runs write:
+ 4. `tables/annotation_summary.csv`
+ 5. `processed.h5ad`
+ 
++## Reference Data Guide
++
++### Which method should I use?
++
++| Scenario | Recommended method | Example |
++|---|---|---|
++| **PBMC / immune cells (human)** | `markers` (default) or `celltypist` | `--method markers` |
++| **Immune cells (any tissue, human)** | `celltypist` | `--method celltypist --model Immune_All_Low.pkl` |
++| **Mouse data** | `celltypist` with mouse model, or custom markers | `--method celltypist --model Mouse_Isocortex_Hippocampus.pkl` |
++| **Specialized tissue (brain, lung, etc.)** | `celltypist` with tissue model, or `--marker-file` | `--method celltypist --model Human_Lung_Atlas.pkl` |
++| **Have a labeled reference dataset** | `knnpredict` or `popv` | `--method knnpredict --reference ref.h5ad` |
++| **R environment available** | `singler` or `scmap` | `--method singler --reference HPCA` |
++
++### Custom marker file format
++
++JSON format (recommended):
++```json
++{
++  "T cell": ["CD3D", "CD3E", "CD4"],
++  "B cell": ["MS4A1", "CD79A", "CD79B"],
++  "Macrophage": ["CD68", "CD163"]
++}
++```
++
++CSV format:
++```
++T cell,CD3D;CD3E;CD4
++B cell,MS4A1;CD79A;CD79B
++Macrophage,CD68;CD163
++```
++
++### CellTypist models
++
++List all available models:
++```python
++import celltypist
++celltypist.models.models_description()
++```
++
++Common models:
++- `Immune_All_Low.pkl` / `Immune_All_High.pkl` — pan-immune (human)
++- `Human_Lung_Atlas.pkl` — human lung
++- `Cells_Intestinal_Tract.pkl` — human intestinal
++- `Human_AdultAged_Hippocampus.pkl` — human brain
++- `Mouse_Isocortex_Hippocampus.pkl` — mouse brain
++- `Developing_Mouse_Brain.pkl` — developing mouse brain
++- `Pan_Fetal_Human.pkl` — human fetal tissues
++
++Download a specific model:
++```python
++celltypist.models.download_models(model="Immune_All_Low.pkl")
++```
++
++### Reference H5AD for knnpredict / popv
++
++Your reference must be an H5AD file with:
++- Normalized expression in `.X`
++- A `cell_type` column in `.obs` (or another label column)
++
++Sources for labeled references:
++- [CZ CELLxGENE Census](https://cellxgene.cziscience.com/) — download tissue-specific datasets
++- [Human Cell Atlas](https://www.humancellatlas.org/learn-more/data-access/) — curated atlases
++- [Tabula Muris](https://tabula-muris.ds.czbiohub.org/) — mouse atlas
++
++### Species and gene naming
++
++- **Human** genes are typically UPPERCASE: `CD3D`, `MS4A1`, `EPCAM`
++- **Mouse** genes are typically Title case: `Cd3d`, `Ms4a1`, `Epcam`
++- The `markers` method will auto-detect species mismatch and attempt case-insensitive matching
++- For best results with mouse data, use `celltypist` with a mouse-specific model or provide a custom `--marker-file` with mouse gene names
++
+ ## Guardrails
+ 
+ - Treat `method` and its corresponding `model` / `reference` / `cluster_key` as the key scientific choices.
+diff --git a/skills/singlecell/scrna/sc-cell-annotation/sc_annotate.py b/skills/singlecell/scrna/sc-cell-annotation/sc_annotate.py
+index 8726ba2a..9be1443a 100644
+--- a/skills/singlecell/scrna/sc-cell-annotation/sc_annotate.py
++++ b/skills/singlecell/scrna/sc-cell-annotation/sc_annotate.py
+@@ -12,8 +12,8 @@
+ import sys
+ from pathlib import Path
+ 
+-os.environ.setdefault("MPLCONFIGDIR", "/tmp/omicsclaw_mpl")
+-os.environ.setdefault("NUMBA_CACHE_DIR", "/tmp/omicsclaw_numba_cache")
++from omicsclaw.common.runtime_env import ensure_runtime_cache_dirs as _ensure_runtime_cache_dirs
++_ensure_runtime_cache_dirs()
+ 
+ import matplotlib
+ matplotlib.use("Agg")
+@@ -158,6 +158,34 @@ def write_standard_run_artifacts(output_dir: Path, result_payload: dict, summary
+ 
+ SUPPORTED_METHODS = tuple(METHOD_REGISTRY.keys())
+ 
++BUILTIN_MARKERS_HUMAN: dict[str, list[str]] = {
++    # --- Blood / PBMC ---
++    "CD4+ T cell": ["CD3D", "CD3E", "CD4", "IL7R"],
++    "CD8+ T cell": ["CD3D", "CD3E", "CD8A", "CD8B"],
++    "Regulatory T cell": ["FOXP3", "IL2RA", "CTLA4"],
++    "B cell": ["MS4A1", "CD79A", "CD79B", "CD19"],
++    "Plasma cell": ["MZB1", "SDC1", "IGHA1", "JCHAIN"],
++    "NK cell": ["GNLY", "NKG7", "KLRD1", "NCAM1"],
++    "CD14+ Monocyte": ["CD14", "LYZ", "S100A9", "S100A8"],
++    "CD16+ Monocyte": ["FCGR3A", "MS4A7"],
++    "Dendritic cell": ["FCER1A", "CD1C", "CLEC10A"],
++    "Platelet": ["PPBP", "PF4"],
++    # --- Brain ---
++    "Neuron": ["SNAP25", "SYT1", "RBFOX3", "STMN2"],
++    "Astrocyte": ["AQP4", "GFAP", "SLC1A3"],
++    "Oligodendrocyte": ["MBP", "PLP1", "MOG"],
++    "Microglia": ["CX3CR1", "P2RY12", "CSF1R"],
++    "OPC": ["PDGFRA", "CSPG4", "OLIG2"],
++    # --- General tissue / stroma ---
++    "Epithelial": ["EPCAM", "KRT18", "KRT19"],
++    "Fibroblast": ["COL1A1", "COL1A2", "DCN", "LUM"],
++    "Endothelial": ["PECAM1", "VWF", "CDH5"],
++    "Smooth muscle cell": ["ACTA2", "TAGLN", "MYH11"],
++    "Macrophage": ["CD68", "CD163", "MRC1"],
++    "Mast cell": ["KIT", "TPSAB1", "TPSB2"],
++}
++
++# Legacy alias kept for backward compatibility in tests/external callers
+ PBMC_MARKERS = {
+     "CD4 T": ["CD3D", "CD4"],
+     "CD8 T": ["CD3D", "CD8A"],
+@@ -167,6 +195,66 @@ def write_standard_run_artifacts(output_dir: Path, result_payload: dict, summary
+ }
+ 
+ 
++def _load_marker_file(path: str | Path) -> dict[str, list[str]]:
++    """Load custom marker genes from a JSON or CSV file.
++
++    JSON format::
++
++        {"T cell": ["CD3D", "CD3E"], "B cell": ["MS4A1", "CD79A"]}
++
++    CSV format (two columns, no header or header ``cell_type,markers``)::
++
++        T cell,CD3D;CD3E;CD4
++        B cell,MS4A1;CD79A
++    """
++    p = Path(path)
++    if not p.exists():
++        raise FileNotFoundError(f"Marker file not found: {p}")
++    text = p.read_text(encoding="utf-8").strip()
++    if p.suffix == ".json":
++        markers = json.loads(text)
++    else:
++        markers: dict[str, list[str]] = {}
++        for line in text.splitlines():
++            line = line.strip()
++            if not line or line.startswith("#") or line.lower().startswith("cell_type"):
++                continue
++            parts = line.split(",", 1)
++            if len(parts) != 2:
++                continue
++            cell_type = parts[0].strip().strip('"').strip("'")
++            genes = [g.strip().strip('"').strip("'") for g in parts[1].replace(";", ",").split(",") if g.strip()]
++            if cell_type and genes:
++                markers[cell_type] = genes
++    if not markers:
++        raise ValueError(f"No valid marker entries found in {p}")
++    return markers
++
++
++def _detect_species_hint(var_names) -> str:
++    """Heuristic species detection from gene naming convention.
++
++    Human genes: UPPER (CD3D, MS4A1).  Mouse genes: Title case (Cd3d, Ms4a1).
++    """
++    sample = list(var_names[:min(500, len(var_names))])
++    if not sample:
++        return "unknown"
++    upper_count = sum(1 for g in sample if g == g.upper())
++    title_count = sum(1 for g in sample if g != g.upper() and g[0].isupper())
++    ratio_upper = upper_count / len(sample)
++    ratio_title = title_count / len(sample)
++    if ratio_upper > 0.7:
++        return "human"
++    if ratio_title > 0.5:
++        return "mouse"
++    return "unknown"
++
++
++def _build_case_insensitive_map(var_names) -> dict[str, str]:
++    """Map UPPER gene names -> actual var_names for case-insensitive matching."""
++    return {g.upper(): g for g in var_names}
++
++
+ # ---------------------------------------------------------------------------
+ # Method implementations
+ # ---------------------------------------------------------------------------
+@@ -232,19 +320,77 @@ def _resolve_cluster_key(adata, cluster_key: str | None) -> str | None:
+     return candidates[0] if candidates else None
+ 
+ 
+-def annotate_markers(adata, markers=None, cluster_key: str = "leiden"):
+-    """Marker-based annotation."""
+-    if markers is None:
+-        markers = PBMC_MARKERS
++def annotate_markers(adata, markers=None, cluster_key: str = "leiden", marker_file: str | None = None):
++    """Marker-based annotation with gene-overlap detection and species awareness."""
++    # ---- 1. Resolve marker source ----
++    if marker_file:
++        markers = _load_marker_file(marker_file)
++        marker_source = f"custom file: {marker_file}"
++    elif markers is not None:
++        marker_source = "caller-provided"
++    else:
++        markers = BUILTIN_MARKERS_HUMAN
++        marker_source = "built-in (human, multi-tissue)"
++
+     expression_source, expr = "adata.X", adata
+ 
+     if cluster_key not in adata.obs:
+         raise ValueError(
+-            f"Marker-based annotation requires an existing cluster/label column. `{cluster_key}` was not found in adata.obs."
++            f"Marker-based annotation requires an existing cluster/label column. "
++            f"`{cluster_key}` was not found in adata.obs."
++        )
++
++    # ---- 2. Gene overlap diagnostic ----
++    all_marker_genes = sorted({g for genes in markers.values() for g in genes})
++    expr_var_names = set(expr.var_names)
++    matched_genes = [g for g in all_marker_genes if g in expr_var_names]
++    overlap_rate = len(matched_genes) / len(all_marker_genes) if all_marker_genes else 0.0
++
++    case_remap: dict[str, str] | None = None
++    species_hint = _detect_species_hint(expr.var_names)
++
++    if overlap_rate == 0:
++        # Attempt case-insensitive rescue (human markers vs mouse gene names)
++        upper_map = _build_case_insensitive_map(expr.var_names)
++        case_matched = [g for g in all_marker_genes if g.upper() in upper_map]
++        if case_matched:
++            case_remap = {g: upper_map[g.upper()] for g in all_marker_genes if g.upper() in upper_map}
++            logger.warning(
++                "0/%d marker genes matched by exact name, but %d/%d matched case-insensitively. "
++                "Dataset appears to use %s gene naming (detected species: %s). "
++                "Proceeding with case-insensitive matching.",
++                len(all_marker_genes), len(case_matched), len(all_marker_genes),
++                "Title-case" if species_hint == "mouse" else "non-UPPER",
++                species_hint,
++            )
++        else:
++            logger.warning(
++                "NONE of the %d built-in marker genes were found in the dataset (%d genes). "
++                "Detected species hint: %s. Marker source: %s.\n"
++                "  This usually means the built-in markers do not match your tissue/organism.\n"
++                "  Solutions:\n"
++                "    1. Provide custom markers:  --marker-file markers.json\n"
++                "    2. Use CellTypist:          --method celltypist --model <model_name>\n"
++                "    3. Use reference mapping:    --method knnpredict --reference <ref.h5ad>\n"
++                "  See SKILL.md 'Reference Data Guide' for download instructions.",
++                len(all_marker_genes), len(expr_var_names), species_hint, marker_source,
++            )
++    elif overlap_rate < 0.3:
++        logger.warning(
++            "Only %d/%d (%.0f%%) marker genes found in the dataset. "
++            "Annotation quality may be limited. Species hint: %s.",
++            len(matched_genes), len(all_marker_genes), overlap_rate * 100, species_hint,
++        )
++    else:
++        logger.info(
++            "Marker gene overlap: %d/%d (%.0f%%). Species hint: %s. Source: %s.",
++            len(matched_genes), len(all_marker_genes), overlap_rate * 100,
++            species_hint, marker_source,
+         )
+ 
+-    cluster_annotations = {}
+-    expr_var_names = expr.var_names
++    # ---- 3. Score each cluster ----
++    cluster_annotations: dict[str, str] = {}
++    cluster_scores: dict[str, float] = {}
+     for cluster in adata.obs[cluster_key].astype(str).unique():
+         cluster_mask = adata.obs[cluster_key].astype(str) == cluster
+         cluster_data = adata[cluster_mask]
+@@ -252,24 +398,57 @@ def annotate_markers(adata, markers=None, cluster_key: str = "leiden"):
+         best_type = "Unknown"
+         best_score = 0.0
+         for cell_type, marker_genes in markers.items():
+-            available = [g for g in marker_genes if g in expr_var_names]
++            if case_remap:
++                available = [case_remap[g] for g in marker_genes if g in case_remap]
++            else:
++                available = [g for g in marker_genes if g in expr_var_names]
+             if not available:
+                 continue
+-            scores = np.asarray(cluster_data[:, available].X.mean()).item()
+-            if scores > best_score:
+-                best_score = float(scores)
++            score = float(np.asarray(cluster_data[:, available].X.mean()).item())
++            if score > best_score:
++                best_score = score
+                 best_type = cell_type
+ 
+         cluster_annotations[cluster] = best_type
++        cluster_scores[cluster] = best_score
++
++    # ---- 4. Detect all-Unknown and warn ----
++    unknown_clusters = [c for c, t in cluster_annotations.items() if t == "Unknown"]
++    if len(unknown_clusters) == len(cluster_annotations):
++        logger.error(
++            "ALL %d clusters were annotated as 'Unknown' — the markers did not match any genes "
++            "in this dataset. This is almost certainly because the built-in markers are not "
++            "appropriate for your tissue type or organism.\n"
++            "  Recommended actions:\n"
++            "    1. --marker-file markers.json   (provide tissue-specific markers)\n"
++            "    2. --method celltypist --model <model>   (100+ pre-trained models)\n"
++            "       Run: python -c \"import celltypist; celltypist.models.models_description()\" to list models\n"
++            "    3. --method knnpredict --reference <ref.h5ad>   (your own labeled reference)\n"
++            "  See SKILL.md 'Reference Data Guide' for details.",
++            len(cluster_annotations),
++        )
++    elif unknown_clusters:
++        logger.warning(
++            "%d/%d clusters annotated as 'Unknown' (clusters: %s). "
++            "Consider providing more specific markers via --marker-file.",
++            len(unknown_clusters), len(cluster_annotations),
++            ", ".join(unknown_clusters[:10]),
++        )
+ 
+     adata.obs["cell_type"] = adata.obs[cluster_key].astype(str).map(cluster_annotations)
+-    adata.obs["annotation_score"] = np.nan
++    adata.obs["annotation_score"] = adata.obs[cluster_key].astype(str).map(cluster_scores).astype(float)
+     _record_annotation_execution(
+         adata,
+         requested_method="markers",
+         actual_method="markers",
+     )
+-    logger.info("Annotated %d clusters", len(cluster_annotations))
++    logger.info(
++        "Annotated %d clusters (%d cell types, %d Unknown). Marker source: %s.",
++        len(cluster_annotations),
++        len(set(cluster_annotations.values()) - {"Unknown"}),
++        len(unknown_clusters),
++        marker_source,
++    )
+     return _annotation_summary(
+         adata,
+         requested_method="markers",
+@@ -541,7 +720,7 @@ def annotate_scmap(adata, reference: str = "HPCA"):
+         manual_map=args.manual_map,
+         manual_map_file=args.manual_map_file,
+     ),
+-    "markers": lambda adata, args: annotate_markers(adata, cluster_key=args.cluster_key),
++    "markers": lambda adata, args: annotate_markers(adata, cluster_key=args.cluster_key, marker_file=getattr(args, "marker_file", None)),
+     "celltypist": lambda adata, args: annotate_celltypist(adata, args.model, majority_voting=bool(args.celltypist_majority_voting)),
+     "popv": lambda adata, args: annotate_popv(adata, args.reference, cluster_key=args.cluster_key),
+     "knnpredict": lambda adata, args: annotate_knnpredict(adata, args.reference, cluster_key=args.cluster_key),
+@@ -885,6 +1064,48 @@ def write_report(output_dir: Path, summary: dict, input_file: str | None, params
+     for k, v in params.items():
+         body_lines.append(f"- `{k}`: {v}")
+ 
++    # Detect all-Unknown and add targeted guidance
++    unk_count = summary.get("cell_type_counts", {}).get("Unknown", 0)
++    total_types = len(summary.get("cell_type_counts", {}))
++    if unk_count and unk_count == total_types:
++        body_lines.extend([
++            "",
++            "## ⚠ Troubleshooting: All Cells Labeled Unknown\n",
++            "All clusters were annotated as **Unknown**. This means the marker genes used do not match",
++            "the genes in your dataset. Common causes and solutions:\n",
++            "### Cause 1: Wrong tissue type",
++            "The default built-in markers cover blood (PBMC), brain, and general tissue (human).",
++            "If your data is from a different tissue, provide custom markers:\n",
++            "```bash",
++            "# Create a JSON file with markers for your tissue:",
++            '# my_markers.json: {"Hepatocyte": ["ALB","APOB"], "Cholangiocyte": ["KRT19","SOX9"]}',
++            f"python {SCRIPT_REL_PATH} --input <data.h5ad> --output <dir> --method markers --marker-file my_markers.json",
++            "```\n",
++            "### Cause 2: Mouse or non-human organism",
++            "Built-in markers use human gene symbols (UPPERCASE). Mouse genes are Title case (Cd3d vs CD3D).",
++            "The skill attempts automatic case-insensitive matching, but for best results:\n",
++            "```bash",
++            "# Use CellTypist with a mouse-specific model:",
++            f"python {SCRIPT_REL_PATH} --input <data.h5ad> --output <dir> --method celltypist --model Mouse_Isocortex_Hippocampus.pkl",
++            "```\n",
++            "### Cause 3: Try a different annotation method",
++            "- **CellTypist** (no reference needed, 100+ pretrained models):",
++            '  `python -c "import celltypist; celltypist.models.models_description()"` to list models',
++            "- **knnpredict / popv** (needs a labeled reference H5AD):",
++            "  Download from [CZ CELLxGENE](https://cellxgene.cziscience.com/)",
++            "- **singler / scmap** (needs R environment):",
++            "  Uses celldex atlases (HPCA, ImmGen, etc.)\n",
++        ])
++    elif unk_count:
++        body_lines.extend([
++            "",
++            f"## Note: {unk_count} of {total_types} Cell Types are Unknown\n",
++            "Some clusters could not be confidently assigned. Consider:",
++            "- Providing more tissue-specific markers via `--marker-file`",
++            "- Using a different annotation method (celltypist, knnpredict)",
++            "- Reviewing cluster quality with `sc-markers`\n",
++        ])
++
+     body_lines.extend(
+         [
+             "",
+@@ -953,6 +1174,7 @@ def main():
+     parser.add_argument("--cluster-key", default=None, help="Cluster/label column for marker summaries and marker-based annotation")
+     parser.add_argument("--manual-map", default=None, help="Inline manual mapping like '0=T cell;1,2=Myeloid'")
+     parser.add_argument("--manual-map-file", default=None, help="Path to manual mapping file (json/csv/tsv/txt)")
++    parser.add_argument("--marker-file", default=None, help="Path to custom marker gene file (JSON or CSV) for the markers method")
+     parser.add_argument(
+         "--celltypist-majority-voting",
+         action=argparse.BooleanOptionalAction,
+@@ -1046,6 +1268,25 @@ def main():
+     logger.info("Saved to %s", output_h5ad)
+ 
+     checksum = sha256_file(input_file) if input_file and Path(input_file).exists() else ""
++
++    # Diagnostic fields for bot/agent to detect annotation quality issues
++    _unk = summary.get("cell_type_counts", {}).get("Unknown", 0)
++    _total = len(summary.get("cell_type_counts", {}))
++    _all_unknown = _unk > 0 and _unk == _total
++    annotation_diagnostics = {
++        "unknown_count": _unk,
++        "total_type_count": _total,
++        "all_unknown": _all_unknown,
++    }
++    if _all_unknown:
++        annotation_diagnostics["suggested_actions"] = [
++            "Provide custom marker genes via --marker-file markers.json",
++            "Switch to CellTypist: --method celltypist --model <tissue_model>.pkl",
++            "Use a labeled reference: --method knnpredict --reference <ref.h5ad>",
++            "List CellTypist models: python -c \"import celltypist; celltypist.models.models_description()\"",
++            "Download references from https://cellxgene.cziscience.com/",
++        ]
++
+     result_data = {
+         "method": summary.get("actual_method", method),
+         "requested_method": summary.get("requested_method", method),
+@@ -1056,6 +1297,7 @@ def main():
+         "input_contract": input_contract,
+         "matrix_contract": matrix_contract,
+         **summary,
++        "annotation_diagnostics": annotation_diagnostics,
+         "visualization": {
+             "recipe_id": "standard-sc-cell-annotation-gallery",
+             "cluster_column": gallery_context.get("cluster_key"),
+@@ -1072,9 +1314,42 @@ def main():
+     }
+     write_standard_run_artifacts(output_dir, result_payload, summary)
+ 
++    # ---- User-facing stdout summary (small-white-friendly) ----
++    n_types = summary["n_cell_types"]
++    unk_count = summary.get("cell_type_counts", {}).get("Unknown", 0)
++    total_types = len(summary.get("cell_type_counts", {}))
+     print(f"Success: {SKILL_NAME}")
+     print(f"  Output: {output_dir}")
+-    print(f"Annotation complete: {summary['n_cell_types']} cell types identified")
++    print(f"  Method: {summary.get('actual_method', method)}")
++    print(f"  Cell types identified: {n_types}")
++    if summary.get("used_fallback"):
++        print(f"  NOTE: Requested '{summary.get('requested_method')}' but fell back to "
++              f"'{summary.get('actual_method')}' — {summary.get('fallback_reason', 'see log')}")
++    if unk_count and unk_count == total_types:
++        print()
++        print("  *** ALL cells were labeled 'Unknown' — annotation did not work for this dataset. ***")
++        print("  This usually means the built-in marker genes don't match your tissue or organism.")
++        print()
++        print("  How to fix:")
++        print("    Option 1 — Provide your own markers (easiest):")
++        print('      Create a JSON file, e.g. my_markers.json:')
++        print('        {"T cell": ["CD3D","CD3E"], "Epithelial": ["EPCAM","KRT18"]}')
++        print("      Then rerun:")
++        print(f"        python {SCRIPT_REL_PATH} --input <your.h5ad> --output {output_dir} --method markers --marker-file my_markers.json")
++        print()
++        print("    Option 2 — Use CellTypist (100+ pretrained models, no reference needed):")
++        print("      List available models:")
++        print('        python -c "import celltypist; celltypist.models.models_description()"')
++        print("      Pick a model for your tissue, then:")
++        print(f"        python {SCRIPT_REL_PATH} --input <your.h5ad> --output {output_dir} --method celltypist --model Immune_All_Low.pkl")
++        print()
++        print("    Option 3 — Use a labeled reference dataset:")
++        print("      Download a reference H5AD from https://cellxgene.cziscience.com/")
++        print("      Then:")
++        print(f"        python {SCRIPT_REL_PATH} --input <your.h5ad> --output {output_dir} --method knnpredict --reference ref.h5ad")
++        print()
++    elif unk_count:
++        print(f"  WARNING: {unk_count}/{total_types} cell types are 'Unknown'. Consider providing more specific markers via --marker-file.")
+ 
+ 
+ if __name__ == "__main__":
+diff --git a/skills/singlecell/scrna/sc-cell-communication/sc_cell_communication.py b/skills/singlecell/scrna/sc-cell-communication/sc_cell_communication.py
+index c126c84a..93aa7abe 100644
+--- a/skills/singlecell/scrna/sc-cell-communication/sc_cell_communication.py
++++ b/skills/singlecell/scrna/sc-cell-communication/sc_cell_communication.py
+@@ -11,9 +11,6 @@
+ import tempfile
+ from pathlib import Path
+ 
+-os.environ.setdefault("NUMBA_DISABLE_JIT", "1")
+-os.environ.setdefault("MPLCONFIGDIR", str(Path(tempfile.gettempdir()) / "omicsclaw_mpl"))
+-
+ import matplotlib
+ matplotlib.use("Agg")
+ import numpy as np
+diff --git a/templates/singlecell/README.md b/templates/singlecell/README.md
+index bf53ceb6..539d04ea 100644
+--- a/templates/singlecell/README.md
++++ b/templates/singlecell/README.md
+@@ -12,7 +12,8 @@ Recommended reading order:
+ 2. `SC-METHOD-MATRIX-RULES.md`
+ 3. `SC-PREFLIGHT-RULES.md`
+ 4. `SC-OUTPUT-CONTRACT.md`
+-5. `SC-SKILL-TEMPLATE.md`
++5. `SC-USER-EXPERIENCE-RULES.md`
++6. `SC-SKILL-TEMPLATE.md`
+ 
+ Keep using the generic `templates/SKILL-TEMPLATE.md` for shared OmicsClaw structure.
+ This folder only adds single-cell-specific rules that should not pollute other domains.
+diff --git a/templates/singlecell/SC-DEVELOPMENT-CHECKLIST.md b/templates/singlecell/SC-DEVELOPMENT-CHECKLIST.md
+index 503679e5..5764c698 100644
+--- a/templates/singlecell/SC-DEVELOPMENT-CHECKLIST.md
++++ b/templates/singlecell/SC-DEVELOPMENT-CHECKLIST.md
+@@ -2,20 +2,55 @@
+ 
+ Use this checklist before saying a single-cell skill is aligned with OmicsClaw.
+ 
++## Matrix & Contract
++
+ - [ ] output object is named `processed.h5ad`
+ - [ ] `omicsclaw_input_contract` is written
+ - [ ] `omicsclaw_matrix_contract` is written
+ - [ ] `X` is declared as either `raw_counts` or `normalized_expression`
+ - [ ] `layers["counts"]` is present whenever raw counts matter
+ - [ ] `adata.raw` is a raw-count snapshot when writing AnnData
++
++## Runtime Environment
++
++- [ ] no `os.environ.setdefault("NUMBA_DISABLE_JIT", "1")` in skill code or shared `_lib` modules — this corrupts numba after scanpy has already initialized the JIT compiler, causing cold-start crashes (`AttributeError: 'function' object has no attribute 'get_call_template'`). Only `tests/conftest.py` may set it (separate process).
++- [ ] no bare `os.environ.setdefault("NUMBA_CACHE_DIR", ...)` or `os.environ.setdefault("MPLCONFIGDIR", ...)` — use `omicsclaw.common.runtime_env.ensure_runtime_cache_dirs()` instead for unified cache management
++- [ ] no `os.environ` manipulation of library internals (`NUMBA_*`, `OMP_*`, `MKL_*`) after the affected library has already been imported
++
++## Preflight & Validation
++
+ - [ ] preflight checks matrix semantics before running a method
+ - [ ] normalized-only methods do not silently accept count-oriented `X`
+ - [ ] count-based methods do not silently sum normalized values
++- [ ] preflight guidance is good enough for a user who does not already know the scRNA workflow
++
++## Parameters & Methods
++
+ - [ ] `SKILL.md` states the matrix expectations honestly
+ - [ ] method-specific parameters are mapped honestly when multiple methods exist
+ - [ ] critical selector parameters such as `use_rep` / `groupby` / `batch_key` are treated as first-class user-facing parameters when they change the analysis result
++- [ ] users can override all defaults via CLI flags (`--marker-file`, `--reference`, `--model`, etc.)
++
++## Documentation
++
+ - [ ] guardrail and skill-guide mention the same matrix expectations
+ - [ ] guardrail and skill-guide explain upstream step, key defaults, and usual next step in beginner-friendly language
+-- [ ] preflight guidance is good enough for a user who does not already know the scRNA workflow
++- [ ] `SKILL.md` includes Reference Data Guide (or equivalent) when external data is needed
++- [ ] `SKILL.md` includes method selection table for multi-method skills
++
++## Output & Consistency
++
+ - [ ] figures, tables, `figure_data`, and `result.json` match the same analysis result
+ - [ ] tests cover at least one contract-success path and one contract-mismatch path
++
++## User Experience (see SC-USER-EXPERIENCE-RULES.md)
++
++- [ ] skill detects feature/gene overlap with defaults before running analysis
++- [ ] skill detects species/organism mismatch when using species-specific defaults
++- [ ] skill detects degenerate output (all Unknown, all NaN, empty, single group) and reports it
++- [ ] **stdout**: failure message includes numbered fix options with copy-pasteable example commands
++- [ ] **report.md**: includes Troubleshooting section when output is degenerate
++- [ ] **result.json**: includes diagnostic fields (`all_unknown`, `suggested_actions`) for bot/agent
++- [ ] error messages for missing references include download URLs and alternative methods
++- [ ] knowledge_base skill-guide includes troubleshooting for the most common failure mode
++- [ ] fallbacks are transparent: logged at WARNING, recorded in summary, shown in stdout and report.md
+diff --git a/templates/singlecell/SC-SKILL-TEMPLATE.md b/templates/singlecell/SC-SKILL-TEMPLATE.md
+index 2e3b2bc3..d226e293 100644
+--- a/templates/singlecell/SC-SKILL-TEMPLATE.md
++++ b/templates/singlecell/SC-SKILL-TEMPLATE.md
+@@ -60,6 +60,52 @@ They should also mention:
+ - what the key parameters mean in plain language
+ - what the usual next step is after the skill finishes
+ 
++## Required Additions For User Experience
++
++See `SC-USER-EXPERIENCE-RULES.md` for the full specification. Key requirements:
++
++### Input Compatibility Detection
++
++- If the skill uses built-in defaults (marker genes, gene sets, models), it must check feature overlap BEFORE running
++- If the skill uses species-specific defaults, it must detect species and attempt auto-adaptation
++- If a reference file is required, the error message must include download URLs and alternatives
++
++### Degenerate Output Detection
++
++Every skill must detect when its output is degenerate and report at **all three layers**:
++
++1. **stdout (print)**: numbered fix options with example commands — this is what CLI users actually read
++2. **report.md**: Troubleshooting section with causes, solutions, and example commands
++3. **result.json**: machine-readable diagnostic fields + `suggested_actions` list for bot/agent
++
++### Reference Data Guide
++
++If the skill depends on external data (reference H5AD, pretrained models, gene sets, R packages), `SKILL.md` must include a "Reference Data Guide" section covering:
++
++- Which method needs what
++- Where to download it (specific URLs)
++- How to choose the right one for their tissue/organism
++- Example commands
++- Alternative methods that don't need external data
++
++### Method Selection Table
++
++For multi-method skills, `SKILL.md` must include a decision table mapping common scenarios to recommended methods with example commands.
++
++### Override Flags
++
++Users must be able to override every default via a CLI flag. Never assume the built-in default is correct for every dataset. Common patterns:
++- `--marker-file` for custom marker genes
++- `--reference` for custom reference datasets
++- `--model` for custom pretrained models
++- `--gene-sets` for custom gene set files
++
++## Required Additions For Runtime Environment
++
++- Use `omicsclaw.common.runtime_env.ensure_runtime_cache_dirs()` for cache setup — do **not** manually `setdefault` `NUMBA_CACHE_DIR` or `MPLCONFIGDIR`
++- **Never** set `NUMBA_DISABLE_JIT` in skill code or shared library modules — it corrupts numba after scanpy has already initialized the JIT compiler, causing `AttributeError` crashes on cold start. Only `tests/conftest.py` may set it (separate process).
++- Never manipulate `os.environ` for library internals (`NUMBA_*`, `OMP_*`, `MKL_*`) after the affected library has already been imported in the same process
++
+ ## Anti-Patterns
+ 
+ Do not do these:
+@@ -69,3 +115,9 @@ Do not do these:
+ - persist `scaled_expression` as the public output meaning of `X`
+ - expose only a generic parameter set when different methods have different real tuning knobs
+ - assume the user already understands the full scRNA workflow and skip upstream/downstream guidance
++- silently skip features/genes that don't match and produce empty results with no warning
++- produce degenerate output (all Unknown, all NaN, empty) without telling the user what went wrong and how to fix it
++- print "Success" when the result is clearly wrong — detect and flag it
++- write error messages that say "file not found" without telling the user where to get the file
++- fall back to a different method silently without logging and recording the fallback
++- set `NUMBA_DISABLE_JIT=1` in any module that may be imported after scanpy/numba — this is the #1 cause of cold-start crashes
+diff --git a/templates/singlecell/SC-USER-EXPERIENCE-RULES.md b/templates/singlecell/SC-USER-EXPERIENCE-RULES.md
+new file mode 100644
+index 00000000..72b130b4
+--- /dev/null
++++ b/templates/singlecell/SC-USER-EXPERIENCE-RULES.md
+@@ -0,0 +1,239 @@
++# Singlecell User Experience Rules
++
++The core principle: **any data a user throws at a skill should either produce correct results or produce clear, actionable guidance to fix it**. Never produce wrong/empty results silently.
++
++This document codifies the UX patterns every scRNA skill must implement. The baseline user is a **beginner who does not know which parameters to set, which reference to download, or why the result looks wrong**.
++
++## 1. Input Compatibility Detection
++
++Every skill that depends on specific features in the input data (marker genes, gene sets, reference labels, splicing layers, etc.) must **detect and report compatibility before running the analysis**.
++
++### Required checks
++
++| Check | When | Example |
++|-------|------|---------|
++| **Feature overlap** | Skill uses a built-in or default gene/feature list | markers method: check how many marker genes exist in `adata.var_names` |
++| **Species/organism hint** | Skill uses species-specific defaults | Detect UPPER (human) vs Title-case (mouse) gene naming |
++| **Reference availability** | Skill requires an external reference file | popv/knnpredict: check file exists before running |
++| **Layer availability** | Skill requires specific AnnData layers | velocity: check spliced/unspliced layers exist |
++| **Metadata availability** | Skill requires specific `.obs` columns | DE: check groupby column exists with >1 group |
++
++### Implementation pattern
++
++```python
++# 1. Check overlap BEFORE running the analysis
++all_required = set(expected_features)
++available = all_required & set(adata.var_names)
++overlap_rate = len(available) / len(all_required)
++
++# 2. Warn at graduated levels
++if overlap_rate == 0:
++    logger.warning("NONE of the expected features found. <actionable guidance>")
++elif overlap_rate < 0.3:
++    logger.warning("Only %.0f%% of expected features found. <guidance>", overlap_rate * 100)
++else:
++    logger.info("Feature overlap: %.0f%%. Proceeding.", overlap_rate * 100)
++```
++
++### Species auto-detection pattern
++
++When a skill uses species-specific defaults (human gene names, mouse gene names), detect the naming convention and attempt automatic adaptation:
++
++```python
++def _detect_species_hint(var_names) -> str:
++    """Human=UPPER (CD3D), Mouse=Title (Cd3d)."""
++    sample = list(var_names[:500])
++    upper_ratio = sum(1 for g in sample if g == g.upper()) / len(sample)
++    if upper_ratio > 0.7:
++        return "human"
++    title_ratio = sum(1 for g in sample if g != g.upper() and g[0].isupper()) / len(sample)
++    if title_ratio > 0.5:
++        return "mouse"
++    return "unknown"
++```
++
++When species mismatch is detected, attempt **case-insensitive rescue** before giving up.
++
++## 2. Failure Detection and Actionable Guidance
++
++Every skill must detect when its output is degenerate (all Unknown, all NaN, empty results, single cluster, etc.) and provide **specific, actionable guidance** — not just "annotation failed".
++
++### The three-layer guidance rule
++
++Every failure must be reported at **all three layers** that a user might see:
++
++| Layer | Who sees it | What to include |
++|-------|-------------|-----------------|
++| **stdout (print)** | Direct CLI user | Full step-by-step fix instructions with example commands |
++| **report.md** | User reading the output folder | Troubleshooting section with causes + solutions + example commands |
++| **result.json** | Bot/agent/downstream code | Machine-readable diagnostic fields + suggested_actions list |
++
++### stdout pattern (for CLI users who don't read logs)
++
++```python
++# BAD - user has no idea what to do:
++print(f"Annotation complete: {n_types} cell types identified")
++
++# GOOD - user knows exactly what went wrong and how to fix it:
++if all_failed:
++    print()
++    print("  *** ALL cells were labeled 'Unknown' — annotation did not work. ***")
++    print("  This usually means ...")
++    print()
++    print("  How to fix:")
++    print("    Option 1 — ...")
++    print("      Example command: ...")
++    print("    Option 2 — ...")
++```
++
++Key rules for stdout guidance:
++- Use `***` to visually highlight the problem — users skim terminal output
++- State **why** it failed in one plain sentence
++- List **numbered options** from easiest to hardest
++- Include **copy-pasteable example commands** for each option
++- Mention the **exact flag name** (`--marker-file`, `--reference`, `--model`)
++
++### report.md pattern
++
++```python
++if all_failed:
++    body_lines.extend([
++        "",
++        "## Troubleshooting: <Problem Description>\n",
++        "### Cause 1: <most common cause>",
++        "<explanation + example command>",
++        "### Cause 2: <second cause>",
++        "<explanation + example command>",
++        "### Alternative methods",
++        "<list methods that don't have this problem>",
++    ])
++```
++
++### result.json diagnostic pattern
++
++```python
++result_data["annotation_diagnostics"] = {
++    "all_unknown": True,           # machine-readable failure flag
++    "unknown_count": 10,
++    "total_count": 10,
++    "suggested_actions": [         # bot can present these to user
++        "Provide custom markers via --marker-file markers.json",
++        "Switch to CellTypist: --method celltypist --model <model>.pkl",
++    ],
++}
++```
++
++The `suggested_actions` list lets the bot/agent **automatically detect and relay guidance** without parsing log text.
++
++## 3. Reference Data Guidance
++
++Any skill that depends on external reference data (reference H5AD, pretrained models, gene set databases, R packages) must tell the user **exactly where to get it and how to use it**.
++
++### Required information
++
++| Item | Must provide |
++|------|-------------|
++| **What is needed** | File format, required columns/fields, size estimate |
++| **Where to download** | Specific URL(s), not just "download a reference" |
++| **How to choose** | Which reference/model for which tissue/organism |
++| **Example command** | Copy-pasteable command using the downloaded file |
++| **Alternatives** | Methods that don't need this reference |
++
++### Where to provide this guidance
++
++1. **SKILL.md** — "Reference Data Guide" section (always present)
++2. **Error messages** — when reference file is missing or incompatible
++3. **stdout** — when analysis fails due to missing/wrong reference
++4. **knowledge_base skill-guide** — troubleshooting section
++
++### Error message pattern for missing references
++
++```python
++# BAD:
++raise FileNotFoundError(f"Reference file {path} does not exist.")
++
++# GOOD:
++raise FileNotFoundError(
++    f"Reference file '{path}' does not exist.\n"
++    "This method requires a labeled reference H5AD with a 'cell_type' column.\n"
++    "\n"
++    "How to get a reference:\n"
++    "  1. CZ CELLxGENE: https://cellxgene.cziscience.com/\n"
++    "  2. Human Cell Atlas: https://www.humancellatlas.org/\n"
++    "  3. Mouse: Tabula Muris https://tabula-muris.ds.czbiohub.org/\n"
++    "\n"
++    "Then: --method <method> --reference /path/to/ref.h5ad\n"
++    "\n"
++    "Alternatives that don't need a reference:\n"
++    "  --method markers --marker-file my_markers.json\n"
++    "  --method celltypist --model <model>.pkl"
++)
++```
++
++## 4. Default Behavior Design
++
++### Principle: defaults should work for the most common case
++
++- If a skill has a default value (e.g., default marker set, default model), it should be **broad enough to cover common cases**, not narrow to one specific tissue type
++- If the default cannot be broad (e.g., gene sets are inherently tissue-specific), the skill must **detect failure early and guide the user to provide custom input**
++
++### Principle: never fail silently
++
++- If a default doesn't match the data, the skill must **warn or error**, never silently produce empty/wrong results
++- "Silent skip" (`continue` without logging) is forbidden when it can cause the entire analysis to produce no results
++
++### Principle: provide escape hatches
++
++Every skill with defaults must provide a way for users to override them:
++- `--marker-file` for custom marker genes
++- `--reference` for custom reference datasets
++- `--model` for custom pretrained models
++- `--gene-sets` for custom gene set files
++
++## 5. Fallback Transparency
++
++When a skill falls back from one method to another (e.g., CellTypist → markers), it must:
++
++1. **Log the fallback** at WARNING level with the reason
++2. **Record it in the summary** (`used_fallback`, `fallback_reason`)
++3. **Show it in stdout** so the user knows what actually ran
++4. **Include it in report.md** with guidance on how to fix the original method
++5. **Propagate quality checks** — if the fallback method also fails (e.g., markers returns all Unknown after CellTypist failed), that failure must still be detected and reported
++
++## 6. Method Selection Guidance
++
++For multi-method skills, help users choose the right method:
++
++### In SKILL.md
++
++Include a decision table:
++
++```markdown
++| Scenario | Recommended method | Example |
++|----------|-------------------|---------|
++| Have PBMC/immune data (human) | markers or celltypist | --method markers |
++| Have specialized tissue | celltypist with tissue model | --method celltypist --model Human_Lung_Atlas.pkl |
++| Have mouse data | celltypist with mouse model | --method celltypist --model Mouse_Isocortex_Hippocampus.pkl |
++| Have labeled reference | knnpredict | --method knnpredict --reference ref.h5ad |
++```
++
++### In knowledge_base skill-guide
++
++Include a troubleshooting section for the most common failure mode.
++
++## 7. Checklist (add to SC-DEVELOPMENT-CHECKLIST.md)
++
++```
++# User Experience
++- [ ] skill detects feature/gene overlap with defaults before running
++- [ ] skill detects species/organism mismatch when using species-specific defaults
++- [ ] skill detects degenerate output (all Unknown, all NaN, empty) and reports at stdout + report.md + result.json
++- [ ] stdout failure message includes numbered fix options with example commands
++- [ ] report.md includes Troubleshooting section when output is degenerate
++- [ ] result.json includes diagnostic fields (e.g., all_unknown, suggested_actions) for bot/agent
++- [ ] error messages for missing references include download URLs and alternatives
++- [ ] SKILL.md includes Reference Data Guide (or equivalent) when external data is needed
++- [ ] knowledge_base skill-guide includes troubleshooting for the most common failure
++- [ ] users can override all defaults via CLI flags (--marker-file, --reference, --model, etc.)
++- [ ] fallbacks are transparent: logged, recorded in summary, shown in stdout
++```

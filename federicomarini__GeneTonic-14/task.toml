@@ -1,0 +1,65 @@
+version = "1.0"
+
+[task]
+name = "default/federicomarini__GeneTonic-14"
+description = "Gsheatmap extraparams"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "GeneTonic",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "federicomarini/GeneTonic"
+ref = "fac5651707720783465cb3e76052abe38caf70f4"
+reference = "https://github.com/federicomarini/GeneTonic/pull/14"
+source_access = "auto"
+built_at = "2026-11-15T19:34:36.449753+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:08f77c3e783c01ebf56e5965eb53a03a337294f0e439c4672639682cf3ba35bf"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2021-03-03T22:00:13Z"
+diff_format = "unified"
+context_files = [
+    "DESCRIPTION",
+    "NEWS.md",
+    "R/gs_heatmap.R",
+    "man/gs_heatmap.Rd",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 24
+difficulty = "medium"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

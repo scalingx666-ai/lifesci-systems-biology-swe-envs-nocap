@@ -1,0 +1,458 @@
+diff --git a/bot/core.py b/bot/core.py
+index 425278f6..b4fa9df1 100644
+--- a/bot/core.py
++++ b/bot/core.py
+@@ -2194,12 +2194,18 @@ def _add_check(line: str) -> None:
+ 
+ 
+ def _build_param_hint(skill_key: str, method: str, cmd: list[str]) -> str:
+-    """Build a parameter summary block from SKILL.md-declared param_hints.
++    """Build a two-tier parameter card from SKILL.md-declared param_hints.
+ 
+     Reads ``param_hints`` from the registry (loaded from each skill's SKILL.md
+     YAML frontmatter). Returns a markdown-formatted string to prepend to the
+     tool result. Returns empty string if the skill has no hints for *method*.
+ 
++    Two-tier layout (when SKILL.md declares ``advanced_params``):
++    - 核心参数: everyday knobs the user should know about
++    - 高级参数: filter/threshold/algorithm-tuning params, shown but not
++      highlighted, so power users can discover them without overwhelming
++      first-time users
++
+     Adding hints for a new skill or method requires only editing its SKILL.md —
+     no changes to bot/core.py are needed.
+     """
+@@ -2215,19 +2221,37 @@ def _build_param_hint(skill_key: str, method: str, cmd: list[str]) -> str:
+         if arg.startswith("--") and i + 1 < len(cmd) and not cmd[i + 1].startswith("--"):
+             params_found[arg.lstrip("-").replace("-", "_")] = cmd[i + 1]
+ 
+-    # Build the hint block
+-    lines = [
+-        f"📋 **Running {skill_key} with method={method_lower}**",
+-        "",
+-        "**Current Parameters:**",
+-    ]
+-    for key in tip_info.get("params", []):
+-        lines.append(f"  - `{key}`: {params_found.get(key, 'default')}")
++    defaults_map: dict = tip_info.get("defaults", {})
++
++    def _fmt_param(key: str) -> str:
++        """Return key=value — actual cmd value if present, else declared default."""
++        if key in params_found:
++            return f"{key}={params_found[key]}"
++        dval = defaults_map.get(key)
++        return f"{key}={dval}" if dval is not None else f"{key}=default"
++
++    core_keys: list[str] = tip_info.get("params", [])
++    adv_keys: list[str] = tip_info.get("advanced_params", [])
++
++    lines = [f"📋 **{skill_key} · {method_lower}**", ""]
++
++    if core_keys:
++        lines.append("核心参数: " + " | ".join(_fmt_param(k) for k in core_keys))
++    if adv_keys:
++        lines.append("高级参数: " + " | ".join(_fmt_param(k) for k in adv_keys))
++
++    priority = tip_info.get("priority", "")
++    if priority:
++        lines.append(f"调参优先级: {priority.replace(' -> ', ' → ')}")
+ 
+-    lines.append("")
+-    lines.append(f"**Tuning Priority:** {tip_info.get('priority', 'N/A')}")
+     for t in tip_info.get("tips", []):
+-        lines.append(f"  - {t}")
++        lines.append(f"  · {t}")
++
++    lines.append("")
++    lines.append(
++        "[PARAM CARD: show the parameter lines above verbatim to the user — "
++        "do not paraphrase, abbreviate, or omit the 高级参数 line]"
++    )
+     lines.append("")
+     return "\n".join(lines)
+ 
+diff --git a/skills/singlecell/scrna/sc-batch-integration/SKILL.md b/skills/singlecell/scrna/sc-batch-integration/SKILL.md
+index 79d7e099..9ea9ac04 100644
+--- a/skills/singlecell/scrna/sc-batch-integration/SKILL.md
++++ b/skills/singlecell/scrna/sc-batch-integration/SKILL.md
+@@ -30,56 +30,64 @@ metadata:
+     param_hints:
+       harmony:
+         priority: "batch_key"
+-        params: ["batch_key", "harmony_theta", "integration_pcs"]
++        params: ["batch_key"]
++        advanced_params: ["harmony_theta", "integration_pcs"]
+         defaults: {batch_key: "batch", harmony_theta: 2.0, integration_pcs: 50}
+         requires: ["existing_PCA_or_computeable_PCA", "harmonypy"]
+         tips:
+           - "--method harmony: Default integration path in the current wrapper."
+       scvi:
+         priority: "batch_key -> n_epochs -> no_gpu"
+-        params: ["batch_key", "n_epochs", "n_latent", "no_gpu"]
++        params: ["batch_key", "n_epochs"]
++        advanced_params: ["n_latent", "no_gpu"]
+         defaults: {batch_key: "batch", n_epochs: 400, n_latent: 30, no_gpu: false}
+         requires: ["scvi", "torch"]
+         tips:
+           - "--n-epochs: Main runtime/optimization knob for scVI."
+       scanvi:
+         priority: "batch_key -> n_epochs -> no_gpu"
+-        params: ["batch_key", "labels_key", "n_epochs", "n_latent", "no_gpu"]
++        params: ["batch_key", "labels_key", "n_epochs"]
++        advanced_params: ["n_latent", "no_gpu"]
+         defaults: {batch_key: "batch", labels_key: null, n_epochs: 200, n_latent: 30, no_gpu: false}
+         requires: ["scvi", "torch", "labels_in_obs"]
+         tips:
+           - "If no labels are available, the current wrapper falls back to `scvi`."
+       bbknn:
+         priority: "batch_key"
+-        params: ["batch_key", "bbknn_neighbors_within_batch"]
++        params: ["batch_key"]
++        advanced_params: ["bbknn_neighbors_within_batch"]
+         defaults: {batch_key: "batch", bbknn_neighbors_within_batch: 3}
+         requires: ["bbknn", "existing_PCA_or_computeable_PCA"]
+         tips:
+           - "--method bbknn: Lightweight graph correction path."
+       scanorama:
+         priority: "batch_key"
+-        params: ["batch_key", "scanorama_knn"]
++        params: ["batch_key"]
++        advanced_params: ["scanorama_knn"]
+         defaults: {batch_key: "batch", scanorama_knn: 20}
+         requires: ["scanorama"]
+         tips:
+           - "--method scanorama: Panorama-stitching integration path."
+       fastmnn:
+         priority: "batch_key"
+-        params: ["batch_key", "integration_features", "integration_pcs"]
++        params: ["batch_key"]
++        advanced_params: ["integration_features", "integration_pcs"]
+         defaults: {batch_key: "batch", integration_features: 2000, integration_pcs: 30}
+         requires: ["R_batchelor_stack"]
+         tips:
+           - "--method fastmnn: R-backed batchelor fastMNN path via the shared H5AD bridge."
+       seurat_cca:
+         priority: "batch_key"
+-        params: ["batch_key", "integration_features", "integration_pcs"]
++        params: ["batch_key"]
++        advanced_params: ["integration_features", "integration_pcs"]
+         defaults: {batch_key: "batch", integration_features: 2000, integration_pcs: 30}
+         requires: ["R_Seurat_stack"]
+         tips:
+           - "--method seurat_cca: R-backed Seurat CCA integration path via the shared H5AD bridge."
+       seurat_rpca:
+         priority: "batch_key"
+-        params: ["batch_key", "integration_features", "integration_pcs"]
++        params: ["batch_key"]
++        advanced_params: ["integration_features", "integration_pcs"]
+         defaults: {batch_key: "batch", integration_features: 2000, integration_pcs: 30}
+         requires: ["R_Seurat_stack"]
+         tips:
+diff --git a/skills/singlecell/scrna/sc-cell-communication/SKILL.md b/skills/singlecell/scrna/sc-cell-communication/SKILL.md
+index 80b51362..16592027 100644
+--- a/skills/singlecell/scrna/sc-cell-communication/SKILL.md
++++ b/skills/singlecell/scrna/sc-cell-communication/SKILL.md
+@@ -46,23 +46,26 @@ metadata:
+         tips:
+           - "--method liana: Best first rich backend in the current wrapper."
+       cellphonedb:
+-        priority: "cell_type_key -> species -> cellphonedb_threshold -> cellphonedb_iterations"
+-        params: ["cell_type_key", "species", "cellphonedb_counts_data", "cellphonedb_iterations", "cellphonedb_threshold", "cellphonedb_threads", "cellphonedb_pvalue"]
++        priority: "cell_type_key -> species"
++        params: ["cell_type_key", "species"]
++        advanced_params: ["cellphonedb_threshold", "cellphonedb_iterations", "cellphonedb_pvalue", "cellphonedb_threads", "cellphonedb_counts_data"]
+         defaults: {cell_type_key: "cell_type", species: "human", cellphonedb_counts_data: "hgnc_symbol", cellphonedb_iterations: 1000, cellphonedb_threshold: 0.1, cellphonedb_threads: 4, cellphonedb_pvalue: 0.05}
+         requires: ["normalized_expression", "cellphonedb", "cell_type_labels_in_obs", "human_species"]
+         tips:
+           - "--method cellphonedb: Uses the official CellPhoneDB statistical backend exposed by the current wrapper."
+           - "--cellphonedb-threshold and --cellphonedb-iterations are the main public CellPhoneDB tuning knobs in OmicsClaw."
+       cellchat_r:
+-        priority: "cell_type_key -> species -> cellchat_prob_type -> cellchat_min_cells"
+-        params: ["cell_type_key", "species", "cellchat_prob_type", "cellchat_min_cells"]
++        priority: "cell_type_key -> species"
++        params: ["cell_type_key", "species"]
++        advanced_params: ["cellchat_prob_type", "cellchat_min_cells"]
+         defaults: {cell_type_key: "cell_type", species: "human", cellchat_prob_type: "triMean", cellchat_min_cells: 10}
+         requires: ["normalized_expression", "R_CellChat_stack", "cell_type_labels_in_obs"]
+         tips:
+           - "--method cellchat_r: R-backed CellChat path with pathway and centrality outputs."
+       nichenet_r:
+-        priority: "cell_type_key -> condition_key -> receiver -> senders -> nichenet_top_ligands"
+-        params: ["cell_type_key", "condition_key", "condition_oi", "condition_ref", "receiver", "senders", "nichenet_top_ligands", "nichenet_expression_pct", "nichenet_lfc_cutoff", "species"]
++        priority: "cell_type_key -> condition_key -> receiver -> senders"
++        params: ["cell_type_key", "condition_key", "condition_oi", "condition_ref", "receiver", "senders"]
++        advanced_params: ["nichenet_top_ligands", "nichenet_expression_pct", "nichenet_lfc_cutoff", "species"]
+         defaults: {cell_type_key: "cell_type", condition_key: "condition", condition_oi: "stim", condition_ref: "ctrl", receiver: "", senders: "", nichenet_top_ligands: 20, nichenet_expression_pct: 0.10, nichenet_lfc_cutoff: 0.25, species: "human"}
+         requires: ["raw_counts_available", "R_nichenetr_stack", "cell_type_labels_in_obs", "condition_labels_in_obs", "human_species"]
+         tips:
+diff --git a/skills/singlecell/scrna/sc-clustering/SKILL.md b/skills/singlecell/scrna/sc-clustering/SKILL.md
+index 9c93dbb6..ce4932bb 100644
+--- a/skills/singlecell/scrna/sc-clustering/SKILL.md
++++ b/skills/singlecell/scrna/sc-clustering/SKILL.md
+@@ -28,28 +28,32 @@ metadata:
+     param_hints:
+       umap:
+         priority: "use_rep -> cluster_method -> n_neighbors/resolution"
+-        params: ["use_rep", "cluster_method", "n_neighbors", "n_pcs", "resolution", "umap_min_dist", "umap_spread"]
++        params: ["use_rep", "cluster_method", "n_neighbors", "resolution"]
++        advanced_params: ["n_pcs", "umap_min_dist", "umap_spread"]
+         defaults: {cluster_method: leiden, n_neighbors: 15, n_pcs: 50, resolution: 1.0, umap_min_dist: 0.5, umap_spread: 1.0}
+         requires: ["normalized_expression", "embedding_or_pca"]
+         tips:
+           - "`use_rep` is the most important selector if multiple embeddings are available."
+       tsne:
+         priority: "use_rep -> cluster_method -> n_neighbors/resolution"
+-        params: ["use_rep", "cluster_method", "n_neighbors", "n_pcs", "resolution", "tsne_perplexity", "tsne_metric"]
++        params: ["use_rep", "cluster_method", "n_neighbors", "resolution"]
++        advanced_params: ["n_pcs", "tsne_perplexity", "tsne_metric"]
+         defaults: {cluster_method: leiden, n_neighbors: 15, n_pcs: 50, resolution: 1.0, tsne_perplexity: 30.0, tsne_metric: euclidean}
+         requires: ["normalized_expression", "embedding_or_pca"]
+         tips:
+           - "`tsne` is mainly for visualization; the clustering still comes from the neighbor graph."
+       diffmap:
+         priority: "use_rep -> cluster_method -> n_neighbors/resolution"
+-        params: ["use_rep", "cluster_method", "n_neighbors", "n_pcs", "resolution", "diffmap_n_comps"]
++        params: ["use_rep", "cluster_method", "n_neighbors", "resolution"]
++        advanced_params: ["n_pcs", "diffmap_n_comps"]
+         defaults: {cluster_method: leiden, n_neighbors: 15, n_pcs: 50, resolution: 1.0, diffmap_n_comps: 15}
+         requires: ["normalized_expression", "embedding_or_pca"]
+         tips:
+           - "`diffmap` often emphasizes continuous trajectories more than compact clusters."
+       phate:
+         priority: "use_rep -> cluster_method -> n_neighbors/resolution"
+-        params: ["use_rep", "cluster_method", "n_neighbors", "n_pcs", "resolution", "phate_knn", "phate_decay"]
++        params: ["use_rep", "cluster_method", "n_neighbors", "resolution"]
++        advanced_params: ["n_pcs", "phate_knn", "phate_decay"]
+         defaults: {cluster_method: leiden, n_neighbors: 15, n_pcs: 50, resolution: 1.0, phate_knn: 15, phate_decay: 40}
+         requires: ["normalized_expression", "embedding_or_pca", "phate"]
+         tips:
+diff --git a/skills/singlecell/scrna/sc-de/SKILL.md b/skills/singlecell/scrna/sc-de/SKILL.md
+index 0d3cc397..b26a33cc 100644
+--- a/skills/singlecell/scrna/sc-de/SKILL.md
++++ b/skills/singlecell/scrna/sc-de/SKILL.md
+@@ -29,35 +29,40 @@ metadata:
+       wilcoxon:
+         priority: "groupby -> n_top_genes -> group1/group2"
+         params: ["groupby", "n_top_genes", "group1", "group2"]
+-        defaults: {groupby: "leiden", n_top_genes: 10}
++        advanced_params: ["padj_threshold", "log2fc_threshold"]
++        defaults: {groupby: "leiden", n_top_genes: 10, padj_threshold: 0.05, log2fc_threshold: 1.0}
+         requires: ["preprocessed_anndata", "scanpy"]
+         tips:
+           - "--method wilcoxon: Default exploratory marker-ranking path."
+       t-test:
+         priority: "groupby -> n_top_genes -> group1/group2"
+         params: ["groupby", "n_top_genes", "group1", "group2"]
+-        defaults: {groupby: "leiden", n_top_genes: 10}
++        advanced_params: ["padj_threshold", "log2fc_threshold"]
++        defaults: {groupby: "leiden", n_top_genes: 10, padj_threshold: 0.05, log2fc_threshold: 1.0}
+         requires: ["preprocessed_anndata", "scanpy"]
+         tips:
+           - "--method t-test: Parametric alternative to Wilcoxon."
+       logreg:
+         priority: "groupby -> logreg_solver -> n_top_genes"
+         params: ["groupby", "logreg_solver", "n_top_genes"]
+-        defaults: {groupby: "leiden", logreg_solver: "lbfgs", n_top_genes: 10}
++        advanced_params: ["padj_threshold", "log2fc_threshold"]
++        defaults: {groupby: "leiden", logreg_solver: "lbfgs", n_top_genes: 10, padj_threshold: 0.05, log2fc_threshold: 1.0}
+         requires: ["preprocessed_anndata", "scanpy"]
+         tips:
+           - "--method logreg: Logistic-regression ranking, useful when you want genes that best separate one group from the others."
+       mast:
+         priority: "groupby -> group1/group2 -> n_top_genes"
+         params: ["groupby", "group1", "group2", "n_top_genes"]
+-        defaults: {groupby: "leiden", n_top_genes: 10}
++        advanced_params: ["padj_threshold", "log2fc_threshold"]
++        defaults: {groupby: "leiden", n_top_genes: 10, padj_threshold: 0.05, log2fc_threshold: 1.0}
+         requires: ["R_MAST_stack", "log_normalized_expression_matrix"]
+         tips:
+           - "--method mast: R-backed MAST hurdle-model path on log-normalized expression."
+       deseq2_r:
+-        priority: "groupby -> group1/group2 -> sample_key -> celltype_key -> pseudobulk thresholds"
+-        params: ["groupby", "group1", "group2", "sample_key", "celltype_key", "pseudobulk_min_cells", "pseudobulk_min_counts"]
+-        defaults: {sample_key: "sample_id", celltype_key: "cell_type", pseudobulk_min_cells: 10, pseudobulk_min_counts: 1000}
++        priority: "groupby -> group1/group2 -> sample_key -> celltype_key"
++        params: ["groupby", "group1", "group2", "sample_key", "celltype_key"]
++        advanced_params: ["pseudobulk_min_cells", "pseudobulk_min_counts", "padj_threshold", "log2fc_threshold"]
++        defaults: {sample_key: "sample_id", celltype_key: "cell_type", pseudobulk_min_cells: 10, pseudobulk_min_counts: 1000, padj_threshold: 0.05, log2fc_threshold: 1.0}
+         requires: ["raw_counts_or_raw_layer", "biological_replicates", "R_DESeq2_stack"]
+         tips:
+           - "--method deseq2_r: Sample-aware pseudobulk path."
+diff --git a/skills/singlecell/scrna/sc-doublet-detection/SKILL.md b/skills/singlecell/scrna/sc-doublet-detection/SKILL.md
+index a4fe761f..9e34d786 100644
+--- a/skills/singlecell/scrna/sc-doublet-detection/SKILL.md
++++ b/skills/singlecell/scrna/sc-doublet-detection/SKILL.md
+@@ -24,8 +24,9 @@ metadata:
+       - "--r-enhanced"
+     param_hints:
+       scrublet:
+-        priority: "expected_doublet_rate -> batch_key -> threshold"
+-        params: ["expected_doublet_rate", "batch_key", "threshold"]
++        priority: "expected_doublet_rate -> batch_key"
++        params: ["expected_doublet_rate", "batch_key"]
++        advanced_params: ["threshold"]
+         defaults: {expected_doublet_rate: 0.06, threshold: auto}
+         requires: ["scrublet", "raw_count_like_input"]
+         tips:
+diff --git a/skills/singlecell/scrna/sc-enrichment/SKILL.md b/skills/singlecell/scrna/sc-enrichment/SKILL.md
+index f03f7987..28c0bdf0 100644
+--- a/skills/singlecell/scrna/sc-enrichment/SKILL.md
++++ b/skills/singlecell/scrna/sc-enrichment/SKILL.md
+@@ -36,8 +36,9 @@ metadata:
+       - "--r-enhanced"
+     param_hints:
+       ora:
+-        priority: "gene_sets/gene_set_db/gene_set_from_markers -> engine -> upstream ranking source -> groupby/ranking_method -> ora thresholds"
+-        params: ["gene_sets", "gene_set_db", "gene_set_from_markers", "marker_group", "marker_top_n", "engine", "groupby", "ranking_method", "ora_padj_cutoff", "ora_log2fc_cutoff", "ora_max_genes", "species", "top_terms"]
++        priority: "gene_sets/gene_set_db/gene_set_from_markers -> engine -> groupby/ranking_method"
++        params: ["gene_sets", "gene_set_db", "gene_set_from_markers", "marker_group", "marker_top_n", "engine", "groupby", "ranking_method"]
++        advanced_params: ["ora_padj_cutoff", "ora_log2fc_cutoff", "ora_max_genes", "species", "top_terms"]
+         defaults: {engine: "auto", ranking_method: "wilcoxon", ora_padj_cutoff: 0.05, ora_log2fc_cutoff: 0.25, ora_max_genes: 200, species: "human", top_terms: 18}
+         requires: ["gene_set_source", "normalized_expression_or_upstream_ranking"]
+         tips:
+@@ -45,8 +46,9 @@ metadata:
+           - "If you only provide a processed h5ad, the wrapper can auto-rank cluster markers first using `ranking_method`."
+           - "If you already ran `sc-markers` or `sc-de`, passing that output directory lets the wrapper reuse exported rankings."
+       gsea:
+-        priority: "gene_sets/gene_set_db/gene_set_from_markers -> engine -> upstream ranking source -> groupby/ranking_method -> gsea ranking controls"
+-        params: ["gene_sets", "gene_set_db", "gene_set_from_markers", "marker_group", "marker_top_n", "engine", "groupby", "ranking_method", "gsea_ranking_metric", "gsea_min_size", "gsea_max_size", "gsea_permutation_num", "gsea_weight", "gsea_seed", "species", "top_terms"]
++        priority: "gene_sets/gene_set_db/gene_set_from_markers -> engine -> groupby/ranking_method"
++        params: ["gene_sets", "gene_set_db", "gene_set_from_markers", "marker_group", "marker_top_n", "engine", "groupby", "ranking_method"]
++        advanced_params: ["gsea_ranking_metric", "gsea_min_size", "gsea_max_size", "gsea_permutation_num", "gsea_weight", "gsea_seed", "species", "top_terms"]
+         defaults: {engine: "auto", ranking_method: "wilcoxon", gsea_ranking_metric: "auto", gsea_min_size: 5, gsea_max_size: 500, gsea_permutation_num: 100, gsea_weight: 1.0, gsea_seed: 123, species: "human", top_terms: 18}
+         requires: ["gene_set_source", "full_ranked_gene_list"]
+         tips:
+diff --git a/skills/singlecell/scrna/sc-markers/SKILL.md b/skills/singlecell/scrna/sc-markers/SKILL.md
+index 30c514b1..50fe18f4 100644
+--- a/skills/singlecell/scrna/sc-markers/SKILL.md
++++ b/skills/singlecell/scrna/sc-markers/SKILL.md
+@@ -24,22 +24,25 @@ metadata:
+     param_hints:
+       wilcoxon:
+         priority: "groupby -> n_genes -> n_top"
+-        params: ["groupby", "n_genes", "n_top", "min_in_group_fraction", "min_fold_change", "max_out_group_fraction"]
+-        defaults: {n_genes: all, n_top: 10, min_in_group_fraction: 0.25, min_fold_change: 0.25, max_out_group_fraction: 0.5}
++        params: ["groupby", "n_genes", "n_top"]
++        advanced_params: ["min_fold_change", "min_in_group_fraction", "max_out_group_fraction"]
++        defaults: {n_genes: all, n_top: 10, min_fold_change: 0.25, min_in_group_fraction: 0.25, max_out_group_fraction: 0.5}
+         requires: ["normalized_expression", "group_labels_in_obs"]
+         tips:
+           - "--method wilcoxon: safest first-pass default for cluster marker ranking."
+       t-test:
+         priority: "groupby -> n_genes -> n_top"
+-        params: ["groupby", "n_genes", "n_top", "min_in_group_fraction", "min_fold_change", "max_out_group_fraction"]
+-        defaults: {n_genes: all, n_top: 10, min_in_group_fraction: 0.25, min_fold_change: 0.25, max_out_group_fraction: 0.5}
++        params: ["groupby", "n_genes", "n_top"]
++        advanced_params: ["min_fold_change", "min_in_group_fraction", "max_out_group_fraction"]
++        defaults: {n_genes: all, n_top: 10, min_fold_change: 0.25, min_in_group_fraction: 0.25, max_out_group_fraction: 0.5}
+         requires: ["normalized_expression", "group_labels_in_obs"]
+         tips:
+           - "--method t-test: parametric alternative when users want a simple mean-shift test."
+       logreg:
+         priority: "groupby -> n_genes -> n_top"
+-        params: ["groupby", "n_genes", "n_top", "min_in_group_fraction", "min_fold_change", "max_out_group_fraction"]
+-        defaults: {n_genes: all, n_top: 10, min_in_group_fraction: 0.25, min_fold_change: 0.25, max_out_group_fraction: 0.5}
++        params: ["groupby", "n_genes", "n_top"]
++        advanced_params: ["min_fold_change", "min_in_group_fraction", "max_out_group_fraction"]
++        defaults: {n_genes: all, n_top: 10, min_fold_change: 0.25, min_in_group_fraction: 0.25, max_out_group_fraction: 0.5}
+         requires: ["normalized_expression", "group_labels_in_obs"]
+         tips:
+           - "--method logreg: classification-style ranking for discriminative genes."
+diff --git a/skills/singlecell/scrna/sc-preprocessing/SKILL.md b/skills/singlecell/scrna/sc-preprocessing/SKILL.md
+index 649b7722..2dc3fe4e 100644
+--- a/skills/singlecell/scrna/sc-preprocessing/SKILL.md
++++ b/skills/singlecell/scrna/sc-preprocessing/SKILL.md
+@@ -30,7 +30,8 @@ metadata:
+     param_hints:
+       scanpy:
+         priority: "min_genes/max_mt_pct -> n_top_hvg -> n_pcs"
+-        params: ["min_genes", "min_cells", "max_mt_pct", "n_top_hvg", "n_pcs", "normalization_target_sum", "scanpy_hvg_flavor"]
++        params: ["min_genes", "max_mt_pct", "n_top_hvg", "n_pcs"]
++        advanced_params: ["min_cells", "normalization_target_sum", "scanpy_hvg_flavor"]
+         defaults: {min_genes: 200, min_cells: 3, max_mt_pct: 20.0, n_top_hvg: 2000, n_pcs: 50, normalization_target_sum: 10000.0, scanpy_hvg_flavor: seurat}
+         requires: ["raw_counts", "scanpy"]
+         tips:
+@@ -38,21 +39,24 @@ metadata:
+           - "Use `sc-clustering` after this if batch integration is not needed."
+       seurat:
+         priority: "min_genes/max_mt_pct -> n_top_hvg -> n_pcs"
+-        params: ["min_genes", "min_cells", "max_mt_pct", "n_top_hvg", "n_pcs", "seurat_normalize_method", "seurat_scale_factor", "seurat_hvg_method"]
++        params: ["min_genes", "max_mt_pct", "n_top_hvg", "n_pcs"]
++        advanced_params: ["min_cells", "seurat_normalize_method", "seurat_scale_factor", "seurat_hvg_method"]
+         defaults: {min_genes: 200, min_cells: 3, max_mt_pct: 20.0, n_top_hvg: 2000, n_pcs: 50, seurat_normalize_method: LogNormalize, seurat_scale_factor: 10000.0, seurat_hvg_method: vst}
+         requires: ["raw_counts", "Rscript", "Seurat", "SingleCellExperiment", "zellkonverter"]
+         tips:
+           - "--method seurat: R-backed LogNormalize workflow up to PCA export."
+       sctransform:
+         priority: "max_mt_pct -> n_top_hvg -> n_pcs"
+-        params: ["min_genes", "min_cells", "max_mt_pct", "n_top_hvg", "n_pcs", "sctransform_regress_mt"]
++        params: ["min_genes", "max_mt_pct", "n_top_hvg", "n_pcs"]
++        advanced_params: ["min_cells", "sctransform_regress_mt"]
+         defaults: {min_genes: 200, min_cells: 3, max_mt_pct: 20.0, n_top_hvg: 3000, n_pcs: 50, sctransform_regress_mt: true}
+         requires: ["raw_counts", "Rscript", "Seurat", "SingleCellExperiment", "zellkonverter", "sctransform"]
+         tips:
+           - "--method sctransform: R-backed SCTransform workflow up to PCA export."
+       pearson_residuals:
+         priority: "min_genes/max_mt_pct -> n_top_hvg -> n_pcs"
+-        params: ["min_genes", "min_cells", "max_mt_pct", "n_top_hvg", "n_pcs", "pearson_hvg_flavor", "pearson_theta"]
++        params: ["min_genes", "max_mt_pct", "n_top_hvg", "n_pcs"]
++        advanced_params: ["min_cells", "pearson_hvg_flavor", "pearson_theta"]
+         defaults: {min_genes: 200, min_cells: 3, max_mt_pct: 20.0, n_top_hvg: 2000, n_pcs: 50, pearson_hvg_flavor: seurat_v3, pearson_theta: 100.0}
+         requires: ["raw_counts", "scanpy"]
+         tips:
+diff --git a/skills/singlecell/scrna/sc-pseudotime/SKILL.md b/skills/singlecell/scrna/sc-pseudotime/SKILL.md
+index da8d4cdb..ac7dff13 100644
+--- a/skills/singlecell/scrna/sc-pseudotime/SKILL.md
++++ b/skills/singlecell/scrna/sc-pseudotime/SKILL.md
+@@ -36,33 +36,39 @@ metadata:
+       - "--r-enhanced"
+     param_hints:
+       dpt:
+-        priority: "cluster_key -> use_rep -> root_cluster/root_cell -> n_neighbors -> n_pcs -> n_dcs -> corr_method"
+-        params: ["cluster_key", "use_rep", "root_cluster", "root_cell", "n_neighbors", "n_pcs", "n_dcs", "n_genes", "corr_method"]
++        priority: "cluster_key -> use_rep -> root_cluster/root_cell"
++        params: ["cluster_key", "use_rep", "root_cluster", "root_cell"]
++        advanced_params: ["n_neighbors", "n_pcs", "n_dcs", "n_genes", "corr_method"]
+         defaults: {cluster_key: "leiden", n_neighbors: 15, n_pcs: 50, n_dcs: 10, n_genes: 50, corr_method: "pearson"}
+         requires: ["normalized_expression", "cluster_labels_in_obs", "trajectory_representation"]
+       palantir:
+-        priority: "cluster_key -> use_rep -> root_cluster/root_cell -> palantir_knn -> palantir_n_components -> palantir_num_waypoints -> palantir_max_iterations -> corr_method"
+-        params: ["cluster_key", "use_rep", "root_cluster", "root_cell", "palantir_knn", "palantir_n_components", "palantir_num_waypoints", "palantir_max_iterations", "palantir_seed", "n_genes", "corr_method"]
++        priority: "cluster_key -> use_rep -> root_cluster/root_cell"
++        params: ["cluster_key", "use_rep", "root_cluster", "root_cell"]
++        advanced_params: ["palantir_knn", "palantir_n_components", "palantir_num_waypoints", "palantir_max_iterations", "palantir_seed", "n_genes", "corr_method"]
+         defaults: {cluster_key: "leiden", palantir_knn: 30, palantir_n_components: 10, palantir_num_waypoints: 1200, palantir_max_iterations: 25, palantir_seed: 20, n_genes: 50, corr_method: "pearson"}
+         requires: ["normalized_expression", "palantir", "explicit_root_choice"]
+       via:
+-        priority: "cluster_key -> use_rep -> root_cluster/root_cell -> via_knn -> corr_method"
+-        params: ["cluster_key", "use_rep", "root_cluster", "root_cell", "via_knn", "via_seed", "n_genes", "corr_method"]
++        priority: "cluster_key -> use_rep -> root_cluster/root_cell"
++        params: ["cluster_key", "use_rep", "root_cluster", "root_cell"]
++        advanced_params: ["via_knn", "via_seed", "n_genes", "corr_method"]
+         defaults: {cluster_key: "leiden", via_knn: 30, via_seed: 20, n_genes: 50, corr_method: "pearson"}
+         requires: ["normalized_expression", "pyVIA", "explicit_root_choice"]
+       cellrank:
+-        priority: "cluster_key -> use_rep -> root_cluster/root_cell -> cellrank_n_states -> cellrank_schur_components -> cellrank_frac_to_keep -> corr_method"
+-        params: ["cluster_key", "use_rep", "root_cluster", "root_cell", "cellrank_n_states", "cellrank_schur_components", "cellrank_frac_to_keep", "cellrank_use_velocity", "n_genes", "corr_method"]
++        priority: "cluster_key -> use_rep -> root_cluster/root_cell -> cellrank_n_states"
++        params: ["cluster_key", "use_rep", "root_cluster", "root_cell", "cellrank_n_states"]
++        advanced_params: ["cellrank_schur_components", "cellrank_frac_to_keep", "cellrank_use_velocity", "n_genes", "corr_method"]
+         defaults: {cluster_key: "leiden", cellrank_n_states: 3, cellrank_schur_components: 20, cellrank_frac_to_keep: 0.3, cellrank_use_velocity: false, n_genes: 50, corr_method: "pearson"}
+         requires: ["normalized_expression", "cellrank", "explicit_root_choice"]
+       slingshot_r:
+-        priority: "cluster_key -> use_rep -> root_cluster -> end_clusters -> corr_method"
+-        params: ["cluster_key", "use_rep", "root_cluster", "end_clusters", "n_genes", "corr_method"]
++        priority: "cluster_key -> use_rep -> root_cluster -> end_clusters"
++        params: ["cluster_key", "use_rep", "root_cluster", "end_clusters"]
++        advanced_params: ["n_genes", "corr_method"]
+         defaults: {cluster_key: "leiden", end_clusters: null, n_genes: 50, corr_method: "pearson"}
+         requires: ["normalized_expression", "slingshot", "SingleCellExperiment", "zellkonverter", "explicit_root_choice"]
+       monocle3_r:
+-        priority: "cluster_key -> use_rep -> root_cluster -> corr_method"
+-        params: ["cluster_key", "use_rep", "root_cluster", "n_genes", "corr_method"]
++        priority: "cluster_key -> use_rep -> root_cluster"
++        params: ["cluster_key", "use_rep", "root_cluster"]
++        advanced_params: ["n_genes", "corr_method"]
+         defaults: {cluster_key: "leiden", root_cluster: null, n_genes: 50, corr_method: "pearson"}
+         requires: ["normalized_expression", "monocle3", "SingleCellExperiment", "zellkonverter"]
+     saves_h5ad: true

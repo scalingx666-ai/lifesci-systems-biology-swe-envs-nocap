@@ -1,0 +1,829 @@
+diff --git a/opt/scopeserver/dataserver/modules/gserver/GServer.py b/opt/scopeserver/dataserver/modules/gserver/GServer.py
+index b3994e743..e26f5d628 100644
+--- a/opt/scopeserver/dataserver/modules/gserver/GServer.py
++++ b/opt/scopeserver/dataserver/modules/gserver/GServer.py
+@@ -33,9 +33,10 @@
+ from scopeserver.dataserver.utils import constant
+ from scopeserver.dataserver.utils import data
+ from scopeserver.dataserver.utils import search_space as ss
++from scopeserver.dataserver.utils import proto
+ from scopeserver.dataserver.utils.search import get_search_results
+ from scopeserver.dataserver.utils.loom import Loom
+-from scopeserver.dataserver.utils.labels import label_annotation
++from scopeserver.dataserver.utils.labels import label_annotation, label_all_clusters
+ from scopeserver.dataserver.utils.annotation import Annotation
+ 
+ from pyscenic.genesig import GeneSignature
+@@ -141,7 +142,7 @@ def get_features(self, loom: Loom, query: str):
+         logger.debug("Searching for {0}".format(query))
+         start_time = time.time()
+ 
+-        features = get_search_results(query, loom, self.config["dataHashSecret"])
++        features = get_search_results(query, loom)
+         return features
+ 
+     def getVmax(self, request, context):
+@@ -208,9 +209,7 @@ def getCellColorByFeatures(self, request, context):
+             elif request.featureType[n] == "metric":
+                 cell_color_by_features.setMetricFeature(request=request, feature=feature, n=n)
+             elif request.featureType[n].startswith("Clustering: "):
+-                cell_color_by_features.setClusteringFeature(
+-                    request=request, feature=feature, n=n, secret=self.config["dataHashSecret"]
+-                )
++                cell_color_by_features.setClusteringFeature(request=request, feature=feature, n=n)
+                 if cell_color_by_features.hasReply():
+                     return cell_color_by_features.getReply()
+             else:
+@@ -232,13 +231,15 @@ def getFeatureLabels(self, request, context):
+         except ValueError:
+             return
+ 
++        label_extract = label_all_clusters if request.feature.startswith("Clustering:") else label_annotation
++
+         labels = [
+             s_pb2.FeatureLabelReply.FeatureLabel(
+                 label=label.label,
+                 colour=label.colour,
+                 coordinate=s_pb2.Coordinate(x=label.coordinate.x, y=label.coordinate.y),
+             )
+-            for label in label_annotation(loom, request.embedding, request.feature)
++            for label in label_extract(loom, request.embedding, request.feature)
+         ]
+ 
+         return s_pb2.FeatureLabelReply(labels=labels)
+@@ -250,9 +251,7 @@ def getCellAUCValuesByFeatures(self, request, context):
+ 
+     def getNextCluster(self, request, context):
+         loom = self.lfh.get_loom(loom_file_path=Path(request.loomFilePath))
+-        clustering_meta = loom.get_meta_data_clustering_by_id(
+-            request.clusteringID, secret=self.config["dataHashSecret"]
+-        )
++        clustering_meta = loom.get_meta_data_clustering_by_id(request.clusteringID)
+         max_cluster = max([int(x["id"]) for x in clustering_meta["clusters"]])
+         min_cluster = min([int(x["id"]) for x in clustering_meta["clusters"]])
+ 
+@@ -268,11 +267,11 @@ def getNextCluster(self, request, context):
+ 
+         try:
+             cluster_metadata = loom.get_meta_data_cluster_by_clustering_id_and_cluster_id(
+-                request.clusteringID, next_clusterID, secret=self.config["dataHashSecret"]
++                request.clusteringID, next_clusterID
+             )
+         except ValueError:
+             cluster_metadata = loom.get_meta_data_cluster_by_clustering_id_and_cluster_id(
+-                request.clusteringID, request.clusterID, secret=self.config["dataHashSecret"]
++                request.clusteringID, request.clusterID
+             )
+ 
+         f = self.get_features(loom=loom, query=cluster_metadata["description"])
+@@ -470,27 +469,17 @@ def getMarkerGenes(self, request, context):
+             return s_pb2.MarkerGenesReply(genes=[], metrics=[])
+ 
+         # Filter the MD clusterings by ID
+-        md_clustering = loom.get_meta_data_clustering_by_id(
+-            id=request.clusteringID, secret=self.config["dataHashSecret"]
+-        )
++        md_clustering = loom.get_meta_data_clustering_by_id(id=request.clusteringID)
+         cluster_marker_metrics = None
+ 
+         if "clusterMarkerMetrics" in md_clustering.keys():
+             md_cmm = md_clustering["clusterMarkerMetrics"]
+ 
+-            def protoize_cluster_marker_metric(metric):
+-                return s_pb2.MarkerGenesMetric(
+-                    accessor=metric["accessor"],
+-                    name=metric["name"],
+-                    description=metric["description"],
+-                    values=cluster_marker_metrics[metric["accessor"]],
+-                )
+-
+             cluster_marker_metrics = loom.get_cluster_marker_table(
+-                clustering_id=request.clusteringID, cluster_id=request.clusterID, secret=self.config["dataHashSecret"]
++                clustering_id=request.clusteringID, cluster_id=request.clusterID
+             )
+ 
+-        metrics = [protoize_cluster_marker_metric(x) for x in md_cmm]
++        metrics = [proto.protoize_cluster_marker_metric(x, cluster_marker_metrics) for x in md_cmm]
+         return s_pb2.MarkerGenesReply(genes=cluster_marker_metrics.index, metrics=metrics)
+ 
+     def getMyGeneSets(self, request, context):
+@@ -561,8 +550,8 @@ def getMyLooms(self, request, context):
+                             cellMetaData=s_pb2.CellMetaData(
+                                 annotations=loom.get_meta_data_by_key(key="annotations"),
+                                 embeddings=loom.get_meta_data_by_key(key="embeddings"),
+-                                clusterings=loom.get_meta_data_by_key(
+-                                    key="clusterings", secret=self.config["dataHashSecret"]
++                                clusterings=proto.protoize_cell_type_annotation(
++                                    loom.get_meta_data_by_key(key="clusterings"), secret=self.config["dataHashSecret"]
+                                 ),
+                             ),
+                             fileMetaData=file_meta,
+diff --git a/opt/scopeserver/dataserver/utils/cell_color_by_features.py b/opt/scopeserver/dataserver/utils/cell_color_by_features.py
+index 8ee80c6e2..d97a3e060 100644
+--- a/opt/scopeserver/dataserver/utils/cell_color_by_features.py
++++ b/opt/scopeserver/dataserver/utils/cell_color_by_features.py
+@@ -184,7 +184,7 @@ def setMetricFeature(self, request, feature, n):
+         else:
+             self.features.append(np.zeros(self.n_cells))
+ 
+-    def setClusteringFeature(self, request, feature, n, secret=None):
++    def setClusteringFeature(self, request, feature, n):
+         clusteringID = None
+         clusterID = None
+         logger.debug("Getting clustering: {0}".format(request.feature[n]))
+@@ -194,15 +194,14 @@ def setClusteringFeature(self, request, feature, n, secret=None):
+                 if request.feature[n] == "All Clusters":
+                     numClusters = max(self.loom.get_clustering_by_id(clusteringID))
+                     legend = set()
+-                    clustering_meta = self.loom.get_meta_data_clustering_by_id(int(clusteringID), secret=secret)
+-                    cluster_dict = {int(x["id"]): x["description"] for x in clustering_meta["clusters"]}
++                    cluster_names_dict = self.loom.get_cluster_names(int(clusteringID))
+                     for i in self.loom.get_clustering_by_id(clusteringID):
+                         if i == -1:
+                             self.hex_vec.append("XX" * 3)
+                             continue
+                         colour = constant.BIG_COLOR_LIST[i % len(constant.BIG_COLOR_LIST)]
+                         self.hex_vec.append(colour)
+-                        legend.add((cluster_dict[i], colour))
++                        legend.add((cluster_names_dict[i], colour))
+                     values, colors = zip(*legend)
+                     self.legend = s_pb2.ColorLegend(values=values, colors=colors)
+ 
+diff --git a/opt/scopeserver/dataserver/utils/labels.py b/opt/scopeserver/dataserver/utils/labels.py
+index b254c8c3b..b660ca6b5 100644
+--- a/opt/scopeserver/dataserver/utils/labels.py
++++ b/opt/scopeserver/dataserver/utils/labels.py
+@@ -2,12 +2,13 @@
+ Generate labels for feature queries.
+ """
+ 
+-from typing import List, NamedTuple, Iterator, Tuple, Generator, Iterable
++from typing import List, NamedTuple, Generator
+ import logging
+-from itertools import groupby
+ 
++import re
+ import numpy as np
+ 
++
+ from scopeserver.dataserver.utils import constant
+ from scopeserver.dataserver.utils.loom import Loom
+ from scopeserver.dataserver.utils.annotation import Annotation
+@@ -55,3 +56,38 @@ def labels() -> Generator[FeatureLabel, None, None]:
+             )
+ 
+     return [label for label in labels()]
++
++
++def label_all_clusters(loom: Loom, embedding: int, feature: str) -> List[FeatureLabel]:
++    """
++    Extract and group cells based on clustering. Place labels for each cluster
++    at the barycentre of the cluster.
++    """
++    meta_data = loom.get_meta_data()
++    for clustering in meta_data["clusterings"]:
++        if clustering["name"] == re.sub("^Clustering: ", "", feature):
++            clustering_id = str(clustering["id"])
++            cluster_names_dict = loom.get_cluster_names(int(clustering_id))
++
++    label_set = set()
++    for i in uniq(loom.get_clustering_by_id(int(clustering_id))):
++        if i == -1:
++            label_set.add((i, "Unclustered", "XX" * 3))
++            continue
++        label_set.add((i, cluster_names_dict[i], constant.BIG_COLOR_LIST[i % len(constant.BIG_COLOR_LIST)]))
++
++    cluster_ids, clusters, colours = zip(*label_set)
++
++    def labels() -> Generator[FeatureLabel, None, None]:
++        for i, cluster in enumerate(clusters):
++            coords = loom.get_coordinates(
++                coordinatesID=embedding, cluster_info=(int(clustering_id), int(cluster_ids[i]))
++            )
++
++            yield FeatureLabel(
++                label=cluster,
++                colour=colours[i],
++                coordinate=Coordinate(x=np.mean(coords["x"]), y=np.mean(coords["y"])),
++            )
++
++    return [label for label in labels()]
+diff --git a/opt/scopeserver/dataserver/utils/loom.py b/opt/scopeserver/dataserver/utils/loom.py
+index 125bd28b8..5826a92a1 100644
+--- a/opt/scopeserver/dataserver/utils/loom.py
++++ b/opt/scopeserver/dataserver/utils/loom.py
+@@ -211,7 +211,7 @@ def add_collab_annotation(self, request, secret: str) -> Tuple[bool, str]:
+             ]
+ 
+         self.update_metadata(metaJson)
+-
++        self.get_meta_data_clustering_by_id.cache_clear()
+         self.ss = ss.update(self, update="cluster_annotations")
+ 
+         if (
+@@ -298,6 +298,7 @@ def annotation_vote(self, request, secret: str) -> Tuple[bool, str]:
+ 
+         try:
+             self.update_metadata(metaJson)
++            self.get_meta_data_clustering_by_id.cache_clear()
+         except OSError as e:
+             logger.error(e)
+             return (False, "Couldn't write metadata!")
+@@ -424,14 +425,13 @@ def get_cluster_overlaps(self, cell_idxs: List[int]) -> List[Dict[str, Union[int
+             clustering_name = clustering_meta["name"]
+             clustering_id = clustering_meta["id"]
+             clustering = self.get_clustering_by_id(clustering_id)
++            cluster_names_dict = self.get_cluster_names(int(clustering_id))
+             counts: Counter = Counter(clustering[cell_idxs])
+             all_counts: Counter = Counter(clustering)
+             for cluster_id in counts:
+                 if cluster_id == -1:
+                     continue
+-                cluster_name = self.get_meta_data_cluster_by_clustering_id_and_cluster_id(
+-                    clustering_id, cluster_id, ""
+-                )["description"]
++                cluster_name = cluster_names_dict[int(cluster_id)]
+                 cluster_overlap_data.append(
+                     {
+                         "clustering_name": clustering_name,
+@@ -443,6 +443,40 @@ def get_cluster_overlaps(self, cell_idxs: List[int]) -> List[Dict[str, Union[int
+                 )
+         return cluster_overlap_data
+ 
++    def get_cluster_names(self, clustering_id: int) -> Dict[int, str]:
++        clustering_meta = self.get_meta_data_clustering_by_id(clustering_id)
++        cluster_names_dict = {}
++        for cluster_meta in clustering_meta["clusters"]:
++            if "cell_type_annotation" in cluster_meta:
++                top_voted = []
++                top_votes = 0
++                for cta in cluster_meta["cell_type_annotation"]:
++                    total_votes = int(len(cta["votes"]["votes_for"]["voters"])) - int(
++                        len(cta["votes"]["votes_against"]["voters"])
++                    )
++                    if total_votes <= 0:
++                        continue
++                    elif total_votes > top_votes:
++                        top_voted = [cta]
++                        top_votes = total_votes
++                    elif total_votes == top_votes:
++                        top_voted.append(cta)
++                if len(top_voted) > 0:
++                    for n, cta in enumerate(top_voted):
++                        if n == 0:
++                            cluster_names_dict[
++                                int(cluster_meta["id"])
++                            ] = f'{top_voted[n]["data"]["annotation_label"]}\n({top_voted[n]["data"]["obo_id"]})'
++                        else:
++                            cluster_names_dict[
++                                int(cluster_meta["id"])
++                            ] += f'\nOR\n{top_voted[n]["data"]["annotation_label"]}\n({top_voted[n]["data"]["obo_id"]})'
++                else:
++                    cluster_names_dict[int(cluster_meta["id"])] = cluster_meta["description"]
++            else:
++                cluster_names_dict[int(cluster_meta["id"])] = cluster_meta["description"]
++        return cluster_names_dict
++
+     def set_hierarchy(self, L1: str, L2: str, L3: str) -> bool:
+         logger.info("Changing hierarchy name for {0}".format(self.get_abs_file_path()))
+ 
+@@ -588,10 +622,8 @@ def get_meta_data_annotation_by_name(self, name):
+             raise ValueError("Multiple annotations matches the given name: {0}".format(name))
+         return md_annotation[0]
+ 
+-    def get_meta_data_cluster_by_clustering_id_and_cluster_id(
+-        self, clustering_id: int, cluster_id: int, secret: str = None
+-    ):
+-        md_clustering = self.get_meta_data_clustering_by_id(clustering_id, secret=secret)
++    def get_meta_data_cluster_by_clustering_id_and_cluster_id(self, clustering_id: int, cluster_id: int):
++        md_clustering = self.get_meta_data_clustering_by_id(clustering_id)
+         md_cluster = list(filter(lambda x: x["id"] == cluster_id, md_clustering["clusters"]))
+         if len(md_cluster) == 0:
+             raise ValueError("The cluster with the given id {0} does not exist.".format(cluster_id))
+@@ -600,56 +632,23 @@ def get_meta_data_cluster_by_clustering_id_and_cluster_id(
+         return md_cluster[0]
+ 
+     @lru_cache(maxsize=1024)
+-    def get_meta_data_clustering_by_id(self, id: int, secret: str = None):
+-        md_clusterings = self.get_meta_data_by_key(key="clusterings", secret=secret)
++    def get_meta_data_clustering_by_id(
++        self,
++        id: int,
++    ):
++        md_clusterings = self.get_meta_data_by_key(key="clusterings")
+         md_clustering = list(filter(lambda x: x["id"] == id, md_clusterings))
+         if len(md_clustering) > 1:
+             raise ValueError("Multiple clusterings matches the given id: {0}".format(id))
+         return md_clustering[0]
+ 
+-    @staticmethod
+-    def protoize_cell_type_annotation(md, secret: str):
+-        ctas = md["cell_type_annotation"]
+-        md["cell_type_annotation"] = []
+-        for cta in ctas:
+-            hash_data = json.dumps(cta["data"]) + secret
+-            data_hash = hashlib.sha256(hash_data.encode()).hexdigest()
+-
+-            votes: Dict[str, Any] = {
+-                "votes_for": {"total": 0, "voters": []},
+-                "votes_against": {"total": 0, "voters": []},
+-            }
+-
+-            for i in votes.keys():
+-                for v in cta["votes"][i]["voters"]:
+-                    hash_data = json.dumps(cta["data"]) + v["voter_id"] + secret
+-                    user_hash = hashlib.sha256(hash_data.encode()).hexdigest()
+-                    v["voter_hash"] = True if user_hash == v["voter_hash"] else False
+-                    votes[i]["voters"].append(s_pb2.CollabAnnoVoter(**v))
+-                    votes[i]["total"] += 1
+-                votes[i] = s_pb2.CollabAnnoVotes(**votes[i])
+-
+-            cta_proto = s_pb2.CellTypeAnnotation(
+-                data=s_pb2.CollabAnnoData(**cta["data"]),
+-                validate_hash=True if data_hash == cta["validate_hash"] else False,
+-                votes_for=votes["votes_for"],
+-                votes_against=votes["votes_against"],
+-            )
+-            md["cell_type_annotation"].append(cta_proto)
+-        return md
+-
+-    def get_meta_data_by_key(self, key, secret=None):
++    def get_meta_data_by_key(self, key):
+         meta_data = self.get_meta_data()
+         if key in meta_data.keys():
+             md = meta_data[key]
+             if key == "embeddings":
+                 for e in md:  # Fix for malformed embeddings json (R problem)
+                     e["id"] = int(e["id"])
+-            if key == "clusterings":
+-                for n, clustering in enumerate(md.copy()):
+-                    for m, cluster in enumerate(clustering["clusters"]):
+-                        if "cell_type_annotation" in cluster.keys():
+-                            md[n]["clusters"][m] = self.protoize_cell_type_annotation(cluster, secret=secret)
+             return md
+         return []
+ 
+@@ -903,7 +902,11 @@ def get_regulon_target_gene_metric(self, regulon: str, metric_accessor: str):
+     ##############
+ 
+     def get_coordinates(
+-        self, coordinatesID: int = -1, annotation: Optional[List[Annotation]] = None, logic: str = "OR"
++        self,
++        coordinatesID: int = -1,
++        annotation: Optional[List[Annotation]] = None,
++        cluster_info: Optional[Tuple[int, int]] = None,
++        logic: str = "OR",
+     ):
+         loom = self.loom_connection
+         if coordinatesID == -1:
+@@ -933,6 +936,14 @@ def get_coordinates(
+             cellIndices = self.get_anno_cells(annotations=annotation, logic=logic)
+             x = x[cellIndices]
+             y = y[cellIndices]
++        if cluster_info is not None:
++            clustering_id, cluster_id = cluster_info
++            cellIndices = set()
++            for c in np.where(loom.ca.Clusterings[str(clustering_id)].astype(str) == str(cluster_id))[0]:
++                cellIndices.add(c)
++            cellIndices = list(cellIndices)
++            x = x[cellIndices]
++            y = y[cellIndices]
+         else:
+             cellIndices = list(range(self.get_nb_cells()))
+         return {"x": x, "y": -y, "cellIndices": cellIndices}
+@@ -1017,13 +1028,13 @@ def get_cluster_marker_metrics(self, clustering_id: int, cluster_id: int, metric
+         )
+         return cluster_marker_metric_df
+ 
+-    def get_cluster_marker_table(self, clustering_id: int, cluster_id: int, secret: str) -> pd.DataFrame:
++    def get_cluster_marker_table(self, clustering_id: int, cluster_id: int) -> pd.DataFrame:
+         def create_cluster_marker_metric(metric):
+             return self.get_cluster_marker_metrics(
+                 clustering_id=clustering_id, cluster_id=cluster_id, metric_accessor=metric["accessor"]
+             )
+ 
+-        md_clustering = self.get_meta_data_clustering_by_id(id=clustering_id, secret=secret)
++        md_clustering = self.get_meta_data_clustering_by_id(id=clustering_id)
+         md_cmm = md_clustering["clusterMarkerMetrics"]
+         cluster_marker_table = functools.reduce(
+             lambda left, right: pd.merge(left, right, left_index=True, right_index=True, how="outer"),
+diff --git a/opt/scopeserver/dataserver/utils/proto.py b/opt/scopeserver/dataserver/utils/proto.py
+new file mode 100644
+index 000000000..b8caa2c72
+--- /dev/null
++++ b/opt/scopeserver/dataserver/utils/proto.py
+@@ -0,0 +1,62 @@
++"""
++Functions for converting various objects to proto formatted objects
++"""
++
++import json
++import hashlib
++
++from typing import Dict, Any
++from pandas import DataFrame
++
++from scopeserver.dataserver.modules.gserver import s_pb2
++
++
++def protoize_cell_type_annotation(clusterings_metadata, secret: str):
++    """
++    Confirm hashes of, and convert cell type annotations in the provided clusterings metadata
++    dictionary into protobuf objects.
++    """
++    for n, clustering in enumerate(clusterings_metadata.copy()):
++        for m, cluster in enumerate(clustering["clusters"]):
++            if "cell_type_annotation" in cluster:
++                proto_cell_type_annotations = []
++                ctas = cluster["cell_type_annotation"]
++                for cta in ctas:
++                    hash_data = json.dumps(cta["data"]) + secret
++                    data_hash = hashlib.sha256(hash_data.encode()).hexdigest()
++
++                    votes: Dict[str, Any] = {
++                        "votes_for": {"total": 0, "voters": []},
++                        "votes_against": {"total": 0, "voters": []},
++                    }
++
++                    for i in votes:
++                        for v in cta["votes"][i]["voters"]:
++                            hash_data = json.dumps(cta["data"]) + v["voter_id"] + secret
++                            user_hash = hashlib.sha256(hash_data.encode()).hexdigest()
++                            v["voter_hash"] = user_hash == v["voter_hash"]
++                            votes[i]["voters"].append(s_pb2.CollabAnnoVoter(**v))
++                            votes[i]["total"] += 1
++                        votes[i] = s_pb2.CollabAnnoVotes(**votes[i])
++
++                    cta_proto = s_pb2.CellTypeAnnotation(
++                        data=s_pb2.CollabAnnoData(**cta["data"]),
++                        validate_hash=data_hash == cta["validate_hash"],
++                        votes_for=votes["votes_for"],
++                        votes_against=votes["votes_against"],
++                    )
++                    proto_cell_type_annotations.append(cta_proto)
++                clusterings_metadata[n]["clusters"][m]["cell_type_annotation"] = proto_cell_type_annotations
++    return clusterings_metadata
++
++
++def protoize_cluster_marker_metric(metric: Dict, cluster_marker_metrics: DataFrame):
++    """
++    Convert provided cluster marker metric into protobuf objects.
++    """
++    return s_pb2.MarkerGenesMetric(
++        accessor=metric["accessor"],
++        name=metric["name"],
++        description=metric["description"],
++        values=cluster_marker_metrics[metric["accessor"]],
++    )
+diff --git a/opt/scopeserver/dataserver/utils/search.py b/opt/scopeserver/dataserver/utils/search.py
+index ad94629c4..bcb289ab0 100644
+--- a/opt/scopeserver/dataserver/utils/search.py
++++ b/opt/scopeserver/dataserver/utils/search.py
+@@ -199,7 +199,7 @@ def create_feature_description(
+ 
+ 
+ def get_final_feature_and_type(
+-    loom: Loom, aggregated_matches: Dict[ResultTypePair, List[str]], data_hash_secret: str
++    loom: Loom, aggregated_matches: Dict[ResultTypePair, List[str]]
+ ) -> Tuple[Dict[ResultTypePair, str], Dict[ResultTypePair, str]]:
+     """
+     Determine final features and types.
+@@ -209,7 +209,6 @@ def get_final_feature_and_type(
+     Args:
+         loom (Loom): Loom object
+         aggregated_matches (Dict[ResultTypePair, List[str]]): Aggregated matches from aggregate_matches
+-        data_hash_secret (str): Secret used to hash annotations on clusters
+ 
+     Returns:
+         Tuple[Dict[ResultTypePair, str], Dict[ResultTypePair, str]]: Features and Feature types
+@@ -227,10 +226,8 @@ def get_final_feature_and_type(
+         if category == "cluster_category":
+             clustering_id = int(k[0].split("_")[0])
+             cluster_id = int(k[0].split("_")[1])
+-            clustering_name = loom.get_meta_data_clustering_by_id(clustering_id, secret=data_hash_secret)["name"]
+-            cluster = loom.get_meta_data_cluster_by_clustering_id_and_cluster_id(
+-                clustering_id, cluster_id, secret=data_hash_secret
+-            )
++            clustering_name = loom.get_meta_data_clustering_by_id(clustering_id)["name"]
++            cluster = loom.get_meta_data_cluster_by_clustering_id_and_cluster_id(clustering_id, cluster_id)
+             features[k] = cluster["description"]
+             feature_types[k] = f"Clustering: {clustering_name}"
+         else:
+@@ -240,13 +237,12 @@ def get_final_feature_and_type(
+     return features, feature_types
+ 
+ 
+-def get_search_results(search_term: str, loom: Loom, data_hash_secret: str) -> Dict[str, List[str]]:
++def get_search_results(search_term: str, loom: Loom) -> Dict[str, List[str]]:
+     """Take a user search term and a loom file and extract the results to display to the user
+ 
+     Args:
+         search_term (str): Search term from the user
+         loom (Loom): Loom file to be searched
+-        data_hash_secret (str): Secret used to hash annotations
+         data_file_handler (DataFileHandler): The data file handler object from the Gserver
+ 
+     Returns:
+@@ -255,7 +251,7 @@ def get_search_results(search_term: str, loom: Loom, data_hash_secret: str) -> D
+ 
+     matches = find_matches(search_term, loom.ss.search_space_dict)
+     aggregated_matches = aggregate_matches(matches)
+-    features, feature_types = get_final_feature_and_type(loom, aggregated_matches, data_hash_secret)
++    features, feature_types = get_final_feature_and_type(loom, aggregated_matches)
+     descriptions, features, feature_types = create_feature_description(aggregated_matches, features, feature_types)
+ 
+     final_res = {
+diff --git a/opt/scopeserver/gen_test_loom.py b/opt/scopeserver/gen_test_loom.py
+index 16f831c56..eaec71b13 100644
+--- a/opt/scopeserver/gen_test_loom.py
++++ b/opt/scopeserver/gen_test_loom.py
+@@ -1,13 +1,8 @@
+-import loompy as lp
+ import numpy as np
+ import pandas as pd
+ from numpy.random import Generator, PCG64
+ 
+-import zlib
+ import json
+-import base64
+-import datetime
+-from pathlib import Path
+ 
+ 
+ def df_to_named_matrix(df):
+@@ -20,19 +15,19 @@ def df_to_named_matrix(df):
+ rg = Generator(PCG64(55850))
+ 
+ 
+-num_genes = 100
+-num_regulons = 4
++NUM_GENES = 100
++NUM_REGULONS = 4
+ # Must be divisible by 4
+-num_cells = 100
++NUM_CELLS = 100
+ 
+-cell_ids = [f"Cell_{n}" for n in range(1, num_cells + 1)]
+-gene_ids = [f"Gene_{n}" for n in range(1, num_genes + 1)]
++cell_ids = [f"Cell_{n}" for n in range(1, NUM_CELLS + 1)]
++gene_ids = [f"Gene_{n}" for n in range(1, NUM_GENES + 1)]
+ 
+ 
+ def generate_matrix():
+-    genes = rg.poisson(lam=1, size=num_genes)
++    genes = rg.poisson(lam=1, size=NUM_GENES)
+     genes = [x + 1 for x in genes]
+-    matrix = rg.poisson(lam=genes, size=(num_cells, num_genes))
++    matrix = rg.poisson(lam=genes, size=(NUM_CELLS, NUM_GENES))
+     return matrix
+ 
+ 
+@@ -42,12 +37,12 @@ def generate_regulons(legacy=False):
+     metadata = {}
+ 
+     if legacy:
+-        regulons_ids = [f"Regulon_{n}" for n in range(1, num_regulons + 1)]
+-        regulons_auc_binary = (rg.integers(10, size=(num_cells, num_regulons)) > 2).astype(int)
+-        regulons_auc_data = regulons_auc_binary * rg.random(size=(num_genes, num_regulons))
++        regulons_ids = [f"Regulon_{n}" for n in range(1, NUM_REGULONS + 1)]
++        regulons_auc_binary = (rg.integers(10, size=(NUM_CELLS, NUM_REGULONS)) > 2).astype(int)
++        regulons_auc_data = regulons_auc_binary * rg.random(size=(NUM_GENES, NUM_REGULONS))
+         regulons_auc = pd.DataFrame(data=regulons_auc_data, index=cell_ids, columns=regulons_ids)
+ 
+-        regulons_binary = (rg.integers(5, size=(num_genes, num_regulons)) > 3).astype(int)
++        regulons_binary = (rg.integers(5, size=(NUM_GENES, NUM_REGULONS)) > 3).astype(int)
+         regulons = pd.DataFrame(data=regulons_binary, index=gene_ids, columns=regulons_ids)
+ 
+         col_attrs["RegulonsAUC"] = df_to_named_matrix(regulons_auc)
+@@ -68,31 +63,31 @@ def generate_regulons(legacy=False):
+         ]
+ 
+     else:
+-        motif_regulons_ids = [f"MotifRegulon_{n}" for n in range(1, num_regulons + 1)]
+-        track_regulons_ids = [f"TrackRegulon_{n}" for n in range(1, num_regulons + 1)]
+-        motif_regulons_auc_binary = (rg.integers(10, size=(num_cells, num_regulons)) > 2).astype(int)
+-        motif_regulons_auc_data = motif_regulons_auc_binary * rg.random(size=(num_genes, num_regulons))
++        motif_regulons_ids = [f"MotifRegulon_{n}" for n in range(1, NUM_REGULONS + 1)]
++        track_regulons_ids = [f"TrackRegulon_{n}" for n in range(1, NUM_REGULONS + 1)]
++        motif_regulons_auc_binary = (rg.integers(10, size=(NUM_CELLS, NUM_REGULONS)) > 2).astype(int)
++        motif_regulons_auc_data = motif_regulons_auc_binary * rg.random(size=(NUM_GENES, NUM_REGULONS))
+         motif_regulons_auc = pd.DataFrame(data=motif_regulons_auc_data, index=cell_ids, columns=motif_regulons_ids)
+ 
+-        motif_regulons_binary = (rg.integers(5, size=(num_genes, num_regulons)) > 3).astype(int)
++        motif_regulons_binary = (rg.integers(5, size=(NUM_GENES, NUM_REGULONS)) > 3).astype(int)
+         motif_regulons = pd.DataFrame(data=motif_regulons_binary, index=gene_ids, columns=motif_regulons_ids)
+ 
+         motif_regulons_gene_occurences_data = motif_regulons_auc_binary * rg.integers(
+-            100, size=(num_genes, num_regulons)
++            100, size=(NUM_GENES, NUM_REGULONS)
+         )
+         motif_regulons_gene_occurences = pd.DataFrame(
+             data=motif_regulons_gene_occurences_data, index=gene_ids, columns=motif_regulons_ids
+         )
+ 
+-        track_regulons_auc_binary = (rg.integers(10, size=(num_cells, num_regulons)) > 2).astype(int)
+-        track_regulons_auc_data = track_regulons_auc_binary * rg.random(size=(num_genes, num_regulons))
++        track_regulons_auc_binary = (rg.integers(10, size=(NUM_CELLS, NUM_REGULONS)) > 2).astype(int)
++        track_regulons_auc_data = track_regulons_auc_binary * rg.random(size=(NUM_GENES, NUM_REGULONS))
+         track_regulons_auc = pd.DataFrame(data=track_regulons_auc_data, index=cell_ids, columns=track_regulons_ids)
+ 
+-        track_regulons_binary = (rg.integers(5, size=(num_genes, num_regulons)) > 3).astype(int)
++        track_regulons_binary = (rg.integers(5, size=(NUM_GENES, NUM_REGULONS)) > 3).astype(int)
+         track_regulons = pd.DataFrame(data=track_regulons_binary, index=gene_ids, columns=track_regulons_ids)
+ 
+         track_regulons_gene_occurences_data = track_regulons_auc_binary * rg.integers(
+-            100, size=(num_genes, num_regulons)
++            100, size=(NUM_GENES, NUM_REGULONS)
+         )
+         track_regulons_gene_occurences = pd.DataFrame(
+             data=track_regulons_gene_occurences_data, index=gene_ids, columns=track_regulons_ids
+@@ -139,10 +134,10 @@ def generate_regulons(legacy=False):
+ 
+ 
+ def generate_embeddings():
+-    _X = np.concatenate([rg.normal(n, 0.1, int(num_cells / 4)) for n in range(-2, 2)])
+-    _Y = rg.normal(0, 0.1, num_cells)
+-    _X2 = rg.normal(0, 0.1, num_cells)
+-    _Y2 = np.array([rg.normal(cn % 4, 0.1) for cn in range(num_cells)])
++    _X = np.concatenate([rg.normal(n, 0.1, int(NUM_CELLS / 4)) for n in range(-2, 2)])
++    _Y = rg.normal(0, 0.1, NUM_CELLS)
++    _X2 = rg.normal(0, 0.1, NUM_CELLS)
++    _Y2 = np.array([rg.normal(cn % 4, 0.1) for cn in range(NUM_CELLS)])
+ 
+     main_embedding = pd.DataFrame(columns=["_X", "_Y"])
+     main_embedding["_X"] = _X
+@@ -154,7 +149,7 @@ def generate_embeddings():
+     embeddings_X["1"] = _X2
+     embeddings_Y["1"] = _Y2
+ 
+-    metadata = {"Embeddings": [{"id": -1, "name": f"Vertical Clusters"}, {"id": 1, "name": f"Horizontal Clusters"}]}
++    metadata = {"Embeddings": [{"id": -1, "name": "Vertical Clusters"}, {"id": 1, "name": "Horizontal Clusters"}]}
+ 
+     col_attrs = {
+         "Embedding": df_to_named_matrix(main_embedding),
+@@ -173,8 +168,8 @@ def generate_clusterings():
+     row_attrs = {}
+ 
+     clusterings = pd.DataFrame()
+-    clusterings["0"] = [int(n / (num_cells / 4)) for n in range(num_cells)]
+-    clusterings["1"] = [n % 4 for n in range(num_cells)]
++    clusterings["0"] = [int(n / (NUM_CELLS / 4)) for n in range(NUM_CELLS)]
++    clusterings["1"] = [n % 4 for n in range(NUM_CELLS)]
+     col_attrs["ClusterID"] = clusterings["0"].values
+ 
+     for n, clustering in enumerate(clusterings.columns):
+@@ -188,10 +183,10 @@ def generate_clusterings():
+             ],
+         }
+         cluster_markers = pd.DataFrame(
+-            index=gene_ids, columns=[str(x) for x in range(max(set([int(x) for x in clusterings[clustering]])) + 1)]
++            index=gene_ids, columns=[str(x) for x in range(max({int(x) for x in clusterings[clustering]}) + 1)]
+         )
+         cluster_markers_test_metric = pd.DataFrame(
+-            index=gene_ids, columns=[str(x) for x in range(max(set([int(x) for x in clusterings[clustering]])) + 1)]
++            index=gene_ids, columns=[str(x) for x in range(max({int(x) for x in clusterings[clustering]}) + 1)]
+         )
+         cluster_markers.fillna(0, inplace=True)
+         cluster_markers_test_metric.fillna(0, inplace=True)
+@@ -199,10 +194,10 @@ def generate_clusterings():
+             cluster_markers.iloc[cluster * 4 : (cluster + 1) * 4, cluster] = 1
+             cluster_markers_test_metric.iloc[cluster * 4 : (cluster + 1) * 4, cluster] = cluster * 1 * n
+ 
+-            clustDict = {}
+-            clustDict["id"] = cluster
+-            clustDict["description"] = f"Unannotated Cluster {str(cluster+1)}"
+-            cluster_meta["clusters"].append(clustDict)
++            clust_dict = {}
++            clust_dict["id"] = cluster
++            clust_dict["description"] = f"Unannotated Cluster {str(cluster+1)}"
++            cluster_meta["clusters"].append(clust_dict)
+ 
+         row_attrs[f"ClusterMarkers_{n}"] = df_to_named_matrix(cluster_markers)
+         row_attrs[f"ClusterMarkers_{n}_Test_Metric"] = df_to_named_matrix(cluster_markers_test_metric)
+@@ -222,7 +217,7 @@ def generate_test_loom_data():
+         "CellID": np.array(cell_ids),
+         "nUMI": np.array(matrix.sum(axis=0)),
+         "nGene": np.array((matrix > 0).sum(axis=0)),
+-        "Half cells": ["First half" if n % 2 == 0 else "Second half" for n in range(num_cells)],
++        "Half cells": ["First half" if n % 2 == 0 else "Second half" for n in range(NUM_CELLS)],
+         **embeddings_cols,
+         **clusterings_cols,
+         **regulons_cols,
+@@ -237,8 +232,7 @@ def generate_test_loom_data():
+ 
+     meta_json = {
+         "metrics": [{"name": "nUMI"}, {"name": "nGene"}],
+-        "name": "Half cells",
+-        "values": list(set(col_attrs["Half cells"])),
++        "annotations": [{"name": "Half cells", "values": list(set(col_attrs["Half cells"]))}],
+         **embeddings_meta,
+         **clusterings_meta,
+         **regulons_meta,
+diff --git a/opt/test/test_labels.py b/opt/test/test_labels.py
+new file mode 100644
+index 000000000..a96bc9c8b
+--- /dev/null
++++ b/opt/test/test_labels.py
+@@ -0,0 +1,73 @@
++import loompy as lp
++import numpy as np
++import pandas as pd
++import json
++import pytest
++import os
++
++from pathlib import Path
++from numpy.random import Generator, PCG64
++
++from scopeserver.dataserver.utils.loom import Loom
++from scopeserver.dataserver.utils.loom_file_handler import LoomFileHandler
++from scopeserver.gen_test_loom import generate_test_loom_data
++from scopeserver.dataserver.utils.labels import label_all_clusters, label_annotation, FeatureLabel, Coordinate
++from scopeserver.dataserver.utils.annotation import Annotation
++from scopeserver.dataserver.utils import constant
++from scopeserver.dataserver.utils.data import uniq
++
++
++LOOM_FILE_HANDLER = LoomFileHandler()
++
++rg = Generator(PCG64(55850))
++
++LOOM_PATH = Path("test/data/SCope_Test.loom")
++
++
++@pytest.fixture
++def loom_file():
++    if os.path.isfile("test/data/SCope_Test.loom"):
++        os.remove("test/data/SCope_Test.loom")
++    if os.path.isfile("test/data/SCope_Test.ss_pkl"):
++        os.remove("test/data/SCope_Test.ss_pkl")
++    return generate_test_loom_data()
++
++
++def test_label_annotation(loom_file):
++    matrix, row_attrs, col_attrs, attrs = loom_file
++
++    annotation = [f"Annotation {x % 5}" for x in range(100)]
++    col_attrs["Test_Anno"] = annotation
++    meta = json.loads(attrs["MetaData"])
++    anno_vals = sorted(list(set(col_attrs["Test_Anno"])))
++    meta["annotations"].append({"name": "Test_Anno", "values": anno_vals})
++    attrs["MetaData"] = json.dumps(meta)
++
++    lp.create(filename=str(LOOM_PATH), layers=matrix, row_attrs=row_attrs, col_attrs=col_attrs, file_attrs=attrs)
++    with lp.connect(LOOM_PATH, mode="r", validate=False) as ds:
++        test_loom = Loom(LOOM_PATH, LOOM_PATH, ds, LOOM_FILE_HANDLER)
++        coords = test_loom.get_coordinates(-1, annotation=[Annotation(name="Test_Anno", values=[anno_vals[0]])])
++        anno_coords = Coordinate(np.mean(coords["x"]), y=np.mean(coords["y"]))
++        colour = constant.BIG_COLOR_LIST[0]
++        assert label_annotation(test_loom, -1, "Test_Anno")[0] == FeatureLabel(
++            label=anno_vals[0], colour=colour, coordinate=anno_coords
++        )
++
++
++def test_label_all_clusters(loom_file):
++    matrix, row_attrs, col_attrs, attrs = loom_file
++    lp.create(filename=str(LOOM_PATH), layers=matrix, row_attrs=row_attrs, col_attrs=col_attrs, file_attrs=attrs)
++    with lp.connect(LOOM_PATH, mode="r", validate=False) as ds:
++        test_loom = Loom(LOOM_PATH, LOOM_PATH, ds, LOOM_FILE_HANDLER)
++        clustering_meta = test_loom.get_meta_data_clustering_by_id(0)
++        cluster_names = test_loom.get_cluster_names(0)
++        labels = []
++        for cluster_id, cluster in cluster_names.items():
++            print(cluster, cluster_id)
++            coords = test_loom.get_coordinates(-1, cluster_info=(0, cluster_id))
++            cluster_coords = Coordinate(np.mean(coords["x"]), y=np.mean(coords["y"]))
++            colour = constant.BIG_COLOR_LIST[cluster_id]
++            labels.append(FeatureLabel(label=cluster, colour=colour, coordinate=cluster_coords))
++
++        print(labels)
++        assert sorted(label_all_clusters(test_loom, -1, clustering_meta["name"])) == sorted(labels)
+diff --git a/src/components/common/Viewer.jsx b/src/components/common/Viewer.jsx
+index 8e9eaf42d..76fc5b656 100644
+--- a/src/components/common/Viewer.jsx
++++ b/src/components/common/Viewer.jsx
+@@ -1227,7 +1227,11 @@ export default class Viewer extends Component {
+                 };
+             })
+             .filter((f) => f.name.length > 0)
+-            .filter((f) => f.type === 'annotation');
++            .filter(
++                (f) =>
++                    f.type === 'annotation' ||
++                    ('clustering' && f.name == 'All Clusters')
++            );
+ 
+         if (feature.length === 0) {
+             return;
+@@ -1236,7 +1240,10 @@ export default class Viewer extends Component {
+         const query = {
+             loomFilePath: loomFile,
+             embedding: embedding,
+-            feature: feature[0].name,
++            feature:
++                feature[0].name == 'All Clusters'
++                    ? feature[0].type
++                    : feature[0].name,
+         };
+ 
+         BackendAPI.getConnection().then(

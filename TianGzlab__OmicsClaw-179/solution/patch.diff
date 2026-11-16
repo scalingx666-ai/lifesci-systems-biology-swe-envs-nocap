@@ -1,0 +1,67 @@
+diff --git a/bot/tool_executors.py b/bot/tool_executors.py
+index a0f79b16..9ea2f095 100644
+--- a/bot/tool_executors.py
++++ b/bot/tool_executors.py
+@@ -633,8 +633,7 @@ async def execute_replot_skill(args: dict, session_id: str = None, chat_id: int
+         # Check for common R-side warnings/errors that _classify_env_error missed
+         r_hints: list[str] = []
+         if "there is no package called" in combined_output:
+-            import re as _re
+-            pkgs = _re.findall(r"there is no package called '([^']+)'", combined_output)
++            pkgs = re.findall(r"there is no package called '([^']+)'", combined_output)
+             if pkgs:
+                 install_cmd = ", ".join(f'"{p}"' for p in pkgs)
+                 r_hints.append(
+diff --git a/omicsclaw.py b/omicsclaw.py
+index 47fe2c2d..46ba818d 100644
+--- a/omicsclaw.py
++++ b/omicsclaw.py
+@@ -39,7 +39,8 @@
+ 
+ def _configure_stdio_error_handling(*streams: Any) -> None:
+     """Avoid hard failures when a terminal cannot encode Unicode output."""
+-    for stream in streams or (sys.stdout, sys.stderr):
++    targets = streams if streams else (sys.stdout, sys.stderr)
++    for stream in targets:
+         reconfigure = getattr(stream, "reconfigure", None)
+         if not callable(reconfigure):
+             continue
+@@ -48,9 +49,6 @@ def _configure_stdio_error_handling(*streams: Any) -> None:
+         except (OSError, ValueError):
+             continue
+ 
+-
+-_configure_stdio_error_handling()
+-
+ # ---------------------------------------------------------------------------
+ # Paths
+ # ---------------------------------------------------------------------------
+@@ -528,6 +526,7 @@ def print_help(self, file=None):
+ 
+ 
+ def main():
++    _configure_stdio_error_handling()
+     # Ensure .env is loaded for all subcommands (memory-server, etc.)
+     from omicsclaw.common.runtime_env import load_project_dotenv
+ 
+diff --git a/tests/test_scrna_console_encoding.py b/tests/test_scrna_console_encoding.py
+index 741d438a..60afa597 100644
+--- a/tests/test_scrna_console_encoding.py
++++ b/tests/test_scrna_console_encoding.py
+@@ -3,6 +3,7 @@
+ import ast
+ import importlib.util
+ import io
++from collections.abc import Iterator
+ from pathlib import Path
+ 
+ 
+@@ -21,7 +22,7 @@ def _load_omicsclaw_script():
+     return module
+ 
+ 
+-def _iter_string_fragments(node: ast.AST):
++def _iter_string_fragments(node: ast.AST) -> Iterator[str]:
+     if isinstance(node, ast.Constant) and isinstance(node.value, str):
+         yield node.value
+         return

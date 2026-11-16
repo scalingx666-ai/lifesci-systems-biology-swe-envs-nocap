@@ -1,0 +1,70 @@
+version = "1.0"
+
+[task]
+name = "default/federicomarini__GeneTonic-43"
+description = "Better colors"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "GeneTonic",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "federicomarini/GeneTonic"
+ref = "f9096e0780909d5bce34eceefc275899029f9534"
+reference = "https://github.com/federicomarini/GeneTonic/pull/43"
+source_access = "auto"
+built_at = "2026-11-15T19:34:12.814408+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:8c0aa01de3685625c8ed313c9ecd94647dc460556a0fd56463c6d3c27a28c442"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2022-10-07T14:54:01Z"
+diff_format = "unified"
+context_files = [
+    "DESCRIPTION",
+    "NEWS.md",
+    "R/GeneTonic-extras.R",
+    "R/enrichment_map.R",
+    "R/ggs_graph.R",
+    "R/gs_dendro.R",
+    "man/map2color.Rd",
+    "tests/testthat/test-enrichment_map.R",
+    "vignettes/GeneTonic_manual.Rmd",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 137
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

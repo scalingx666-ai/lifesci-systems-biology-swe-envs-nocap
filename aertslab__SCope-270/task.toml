@@ -1,0 +1,68 @@
+version = "1.0"
+
+[task]
+name = "default/aertslab__SCope-270"
+description = "Hotfix/268 269"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "SCope",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aertslab/SCope"
+ref = "0f08c843d415746155748d643a632d2d205545c2"
+reference = "https://github.com/aertslab/SCope/pull/270"
+source_access = "auto"
+built_at = "2026-11-15T19:39:13.897183+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:f13f56ba91fe434f4634049df7d79e12f79283f4060956daa1d0e1e06e4ee874"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2020-03-04T12:03:27Z"
+diff_format = "unified"
+context_files = [
+    "CHANGELOG.md",
+    "README.md",
+    "VERSION",
+    "opt/pyproject.toml",
+    "opt/scopeserver/dataserver/utils/cell_color_by_features.py",
+    "opt/setup.py",
+    "src/components/common/ViewerSidebar.jsx",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 203
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

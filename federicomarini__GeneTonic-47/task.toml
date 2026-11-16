@@ -1,0 +1,70 @@
+version = "1.0"
+
+[task]
+name = "default/federicomarini__GeneTonic-47"
+description = "Ridge genesets"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "GeneTonic",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "federicomarini/GeneTonic"
+ref = "c32b540efc7cab222fcfc37efd109ea2c6f22988"
+reference = "https://github.com/federicomarini/GeneTonic/pull/47"
+source_access = "auto"
+built_at = "2026-11-15T19:34:11.154775+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:65a97685e0f8b939090476961c2cad9620717fd3e2f9ea2e421c518d6e922815"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2023-03-10T15:06:32Z"
+diff_format = "unified"
+context_files = [
+    "DESCRIPTION",
+    "NAMESPACE",
+    "R/GeneTonic-pkg.R",
+    "R/enhance_table.R",
+    "R/gs_fuzzy.R",
+    "R/gs_summaries.R",
+    "man/enhance_table.Rd",
+    "tests/testthat/test-enhance_tables.R",
+    "tests/testthat/test-gs_dendro.R",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 202
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

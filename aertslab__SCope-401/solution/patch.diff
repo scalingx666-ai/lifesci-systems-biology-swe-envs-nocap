@@ -1,0 +1,13 @@
+diff --git a/opt/scopeserver/dataserver/utils/search_space.py b/opt/scopeserver/dataserver/utils/search_space.py
+index bab2ccb8..3be1af81 100644
+--- a/opt/scopeserver/dataserver/utils/search_space.py
++++ b/opt/scopeserver/dataserver/utils/search_space.py
+@@ -203,7 +203,7 @@ def load_ss(loom) -> SearchSpace:
+                     f"Cached search space version {ss.search_space_version} is not {CURRENT_SS_VERISON}. Rebuilding search space..."
+                 )
+                 ss = build(loom)
+-    except (EOFError, FileNotFoundError):
++    except (EOFError, FileNotFoundError, TypeError):
+         ss = build(loom)
+     return ss
+ 

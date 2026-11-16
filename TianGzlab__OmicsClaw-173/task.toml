@@ -1,0 +1,64 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-173"
+description = "refactor(memory): route /api/maintenance through ReviewLog (Phase 2a)"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "53ac75205e6f6761912f12a98ecc8f4a8632420e"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/173"
+source_access = "auto"
+built_at = "2026-11-15T18:17:17.338403+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:a2b247e7edd9eb410d00751beedab52b0fdc67503c60f0a7600b9d3d93b9ef6f"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-05-11T11:12:35Z"
+diff_format = "unified"
+context_files = [
+    "omicsclaw/memory/api/maintenance.py",
+    "omicsclaw/memory/review_log.py",
+    "tests/memory/test_review_log_orphan_chain.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 721
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

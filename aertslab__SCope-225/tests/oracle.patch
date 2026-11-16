@@ -1,0 +1,96 @@
+diff --git a/README.md b/README.md
+index 3279cdf3..404f7eaa 100644
+--- a/README.md
++++ b/README.md
+@@ -1,4 +1,4 @@
+-# SCope v1.7.2: Visualization of large-scale and high dimensional single cell data
++# SCope v1.7.3: Visualization of large-scale and high dimensional single cell data
+ <img src="images/SCope_Logo.png" width="640">
+ 
+ SCope is a fast visualization tool for large-scale and high dimensional scRNA-seq datasets.
+@@ -6,6 +6,10 @@ Currently the data format supported by SCope is `.loom`. This file format for ve
+ 
+ ## Version History
+ 
++January 24, 2020
++* Version 1.7.3
++	* Fix a bug in storing current session
++
+ November 12, 2019
+ * Version 1.7.2
+ 	* Fix bug Regulon tab not showing for loom files not containing otif-based and track-based regulons.
+diff --git a/VERSION b/VERSION
+index 0a182f2e..bbf649f6 100644
+--- a/VERSION
++++ b/VERSION
+@@ -1 +1 @@
+-1.7.2
+\ No newline at end of file
++1.7.3
+\ No newline at end of file
+diff --git a/opt/scopeserver/dataserver/utils/loom.py b/opt/scopeserver/dataserver/utils/loom.py
+index 14652b0f..f3c90393 100644
+--- a/opt/scopeserver/dataserver/utils/loom.py
++++ b/opt/scopeserver/dataserver/utils/loom.py
+@@ -495,10 +495,14 @@ def get_regulon_target_gene_metric(self, regulon, metric_accessor):
+             regulon_type = "motif"
+         elif "track" in regulon.lower():
+             regulon_type = "track"
+-
+-        regulon_target_gene_metric = self.loom_connection.row_attrs[f"{regulon_type.capitalize()}Regulon{metric_accessor}"][str(regulon).replace('_', '')]
++        loom_attribute = self.loom_connection.row_attrs[f"{regulon_type.capitalize()}Regulon{metric_accessor}"]
++        if str(regulon) in loom_attribute.dtype.names:
++            regulon = str(regulon)
++        else:
++            regulon = str(regulon).replace('_', '')
++        regulon_target_gene_metric = loom_attribute[regulon]
+         # Return only the target genes for the given regulon
+-        return regulon_target_gene_metric[self.loom_connection.row_attrs[f"{regulon_type.capitalize()}Regulons"][str(regulon)] == 1]
++        return regulon_target_gene_metric[self.loom_connection.row_attrs[f"{regulon_type.capitalize()}Regulons"][regulon] == 1]
+ 
+     ##############
+     # Embeddings #
+diff --git a/opt/setup.py b/opt/setup.py
+index f3c28748..0d13a2a2 100644
+--- a/opt/setup.py
++++ b/opt/setup.py
+@@ -18,7 +18,7 @@ def get_bindserver_files():
+                                                          'scopeserver/dataserver/data/gene_mappings/hsap_to_dmel_mappings.pickle',
+                                                          'scopeserver/dataserver/data/gene_mappings/mmus_to_dmel_mappings.pickle'])
+       ] + get_bindserver_files(),
+-      version='1.7.2',
++      version='1.7.3',
+       description='SCope Data Server: a server to load and serve the data to the SCope Client',
+       url='',
+       author='Maxime De Waegeneer',
+diff --git a/package.json b/package.json
+index 394f4136..e6567781 100644
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "SCope",
+-  "version": "1.7.2",
++  "version": "1.7.3",
+   "description": "Visualization tool for large-scale and high dimensional single-cell data",
+   "main": "index.js",
+   "scripts": {
+diff --git a/src/components/App.jsx b/src/components/App.jsx
+index bef145ab..6588bd76 100644
+--- a/src/components/App.jsx
++++ b/src/components/App.jsx
+@@ -210,11 +210,12 @@ class App extends Component {
+ 			} else if (match.params.uuid.startsWith('permalink')) {
+ 				this.restoreSession(ip, match.params.uuid.substring(11), match.params.loom);
+ 			} else {
+-				if (DEBUG) console.log('Params UUID detected');
++				if (DEBUG) console.log('Params UUID detected:', match.params.uuid);
+ 				this.checkUUID(ip, match.params.uuid);
++				cookies.set(cookieName, match.params.uuid, { path: '/'});
+ 			}
+ 		} else if (cookies.get(cookieName)) {
+-			if (DEBUG) console.log('Cookie UUID detected');
++			if (DEBUG) console.log('Cookie UUID detected:', cookies.get(cookieName) );
+ 			this.checkUUID(ip, cookies.get(cookieName));
+ 		} else {
+ 			if (DEBUG) console.log('No UUID detected');

@@ -1,0 +1,375 @@
+diff --git a/client/src/components/GProfiler/GProfilerModal.tsx b/client/src/components/GProfiler/GProfilerModal.tsx
+index a2dae67d..af742dab 100644
+--- a/client/src/components/GProfiler/GProfilerModal.tsx
++++ b/client/src/components/GProfiler/GProfilerModal.tsx
+@@ -29,11 +29,9 @@ import {
+ 
+ import { checkCreateGProfilerLink } from './link';
+ 
+-import {
+-    GProfilerOrganism,
+-    FeatureMetadata,
+-    FeatureMetricTable,
+-} from './model';
++import { FeatureMetadata } from '../../model';
++
++import { GProfilerOrganism, FeatureMetricTable } from './model';
+ 
+ interface GProfilerPopupProps {
+     featureMetadata: FeatureMetadata;
+diff --git a/client/src/components/GProfiler/model.ts b/client/src/components/GProfiler/model.ts
+index 42ea1e7d..491d03a4 100644
+--- a/client/src/components/GProfiler/model.ts
++++ b/client/src/components/GProfiler/model.ts
+@@ -1,3 +1,5 @@
++import { FeatureMetadata, FeatureMetadataMetric } from '../../model';
++
+ export type State = {
+     error: string;
+     display: boolean;
+@@ -14,23 +16,6 @@ export type State = {
+     gProfilerToken: string;
+ };
+ 
+-type FeatureMetadataMetric = {
+-    accessor: string;
+-    description: string;
+-    name: string;
+-    values: number[];
+-};
+-
+-export type FeatureMetadata = {
+-    cellTypeAnno?: unknown[];
+-    clusterID?: number;
+-    clusteringGroup: string;
+-    clusteringID?: number;
+-    genes: string[];
+-    metrics?: FeatureMetadataMetric[];
+-    description: string;
+-};
+-
+ export type FeatureMetric = {
+     gene: string;
+     avg_logFC?: number;
+diff --git a/client/src/components/common/Histogram.jsx b/client/src/components/Histogram/index.tsx
+similarity index 83%
+rename from client/src/components/common/Histogram.jsx
+rename to client/src/components/Histogram/index.tsx
+index 157cab58..9889446a 100644
+--- a/client/src/components/common/Histogram.jsx
++++ b/client/src/components/Histogram/index.tsx
+@@ -5,12 +5,37 @@ import 'rc-slider/assets/index.css';
+ import 'rc-tooltip/assets/bootstrap.css';
+ import Slider from 'rc-slider';
+ 
+-import { BackendAPI } from './API';
++import { FEATURE_COLOURS } from '../constants';
++import { BackendAPI } from './../common/API';
++
++declare const DEBUG: boolean;
+ 
+ const Handle = Slider.Handle;
+ 
+-export default class Histogram extends Component {
+-    constructor(props) {
++type HistogramProps = {
++    field: number;
++    color: typeof FEATURE_COLOURS[number];
++    feature: any;
++    loomFile: string;
++    onThresholdChange: (_idx: number, _threshold: number) => void;
++};
++
++type HistogramState = {
++    min: number;
++    max: number;
++    selected: number;
++    matched: number;
++    total: number;
++    points: number[];
++    width: number;
++    height: number;
++};
++
++export default class Histogram extends Component<
++    HistogramProps,
++    HistogramState
++> {
++    constructor(props: HistogramProps) {
+         super(props);
+         this.state = {
+             min: 0,
+@@ -19,16 +44,16 @@ export default class Histogram extends Component {
+             matched: 0,
+             total: 0,
+             points: [],
++            width: 0,
++            height: 0,
+         };
+-        this.w = 0;
+-        this.h = 0;
+     }
+ 
+     render() {
+         const { field, feature } = this.props;
+         const { min, max, selected, matched, total } = this.state;
+-        let enabled = feature && feature.feature.length;
+-        let handle = (props) => {
++        const enabled = feature && feature.feature.length;
++        const handle = (props) => {
+             // TODO: memory leak!?
+             const { value, ...restProps } = props;
+             return (
+@@ -82,17 +107,17 @@ export default class Histogram extends Component {
+         if (DEBUG) {
+             console.log('handleThresholdChange', value);
+         }
+-        let x = d3
++        const x = d3
+             .scaleLinear()
+             .domain([0, this.state.max])
+             .rangeRound([0, this.state.width]);
+-        let svg = d3.select('#thresholdSVG' + this.props.field);
++        const svg = d3.select('#thresholdSVG' + this.props.field);
+         svg.select('.threshold').attr('transform', function () {
+-            let cx = x(value);
+-            let cy = 0;
++            const cx = x(value);
++            const cy = 0;
+             return 'translate(' + cx + ',' + cy + ')';
+         });
+-        let pts = this.state.points,
++        const pts = this.state.points,
+             n = this.state.total;
+         let matched = 0;
+         for (let i = 0; i < n; i++) {
+@@ -107,7 +132,7 @@ export default class Histogram extends Component {
+         if (!feature || feature.feature.length === 0) {
+             return this.renderAUCGraph('', []);
+         }
+-        let query = {
++        const query = {
+             loomFilePath: loomFile,
+             featureType: feature.featureType,
+             feature: feature.feature,
+@@ -143,10 +168,10 @@ export default class Histogram extends Component {
+     renderAUCGraph(feature, points) {
+         console.log('renderAUCGraph', feature, points);
+ 
+-        let svg = d3.select('#thresholdSVG' + this.props.field);
+-        let bbox = svg.node().getBoundingClientRect();
++        const svg = d3.select('#thresholdSVG' + this.props.field);
++        const bbox = svg.node().getBoundingClientRect();
+         svg.selectAll('*').remove();
+-        let margin = { top: 10, right: 10, bottom: 30, left: 40 },
++        const margin = { top: 10, right: 10, bottom: 30, left: 40 },
+             width = bbox.width - margin.left - margin.right,
+             height = bbox.height - margin.top - margin.bottom,
+             max = d3.max(points),
+@@ -185,13 +210,13 @@ export default class Histogram extends Component {
+             return;
+         }
+ 
+-        let x = d3.scaleLinear().domain([0, max]).rangeRound([0, width]);
++        const x = d3.scaleLinear().domain([0, max]).rangeRound([0, width]);
+ 
+-        let bins = d3.histogram().domain(x.domain()).thresholds(x.ticks(100))(
++        const bins = d3.histogram().domain(x.domain()).thresholds(x.ticks(100))(
+             points
+         );
+ 
+-        let y = d3
++        const y = d3
+             .scaleLinear()
+             .domain([
+                 0,
+@@ -201,7 +226,7 @@ export default class Histogram extends Component {
+             ])
+             .range([height, 0]);
+ 
+-        let bar = g
++        const bar = g
+             .selectAll('.bar')
+             .data(bins)
+             .enter()
+@@ -241,11 +266,11 @@ export default class Histogram extends Component {
+             .attr('transform', 'translate(0, 0)')
+             .call(d3.axisLeft(y));
+ 
+-        let component = this;
++        const component = this;
+         if (feature.metadata && feature.metadata.autoThresholds) {
+-            let gt = g.append('g').attr('class', 'autoThresholds');
++            const gt = g.append('g').attr('class', 'autoThresholds');
+             feature.metadata.autoThresholds.map((t) => {
+-                let tx = x(t.threshold);
++                const tx = x(t.threshold);
+                 gt.append('text')
+                     .style('cursor', 'pointer')
+                     .attr('text-anchor', 'middle')
+diff --git a/client/src/components/Search/FeatureSearch.tsx b/client/src/components/Search/FeatureSearch.tsx
+index 36bd27a3..b9f78c22 100644
+--- a/client/src/components/Search/FeatureSearch.tsx
++++ b/client/src/components/Search/FeatureSearch.tsx
+@@ -3,7 +3,7 @@ import { Grid } from 'semantic-ui-react';
+ 
+ import { FEATURE_COLOURS } from '../constants';
+ 
+-import { FeatureFilter } from './model';
++import { FeatureCategory } from '../../model';
+ import { FeatureSearchBox } from './FeatureSearchBox';
+ 
+ interface FeatureSearchProps {
+@@ -11,7 +11,7 @@ interface FeatureSearchProps {
+     identifier: string;
+ 
+     /** Use this to initialise the feature types dropdown. */
+-    filter: FeatureFilter;
++    filter: FeatureCategory;
+ 
+     /** Use this to restrict selectable feature types (to only `feature`). */
+     singleFeature: boolean;
+diff --git a/client/src/components/Search/FeatureSearchBox.test.tsx b/client/src/components/Search/FeatureSearchBox.test.tsx
+index 7b2da329..21489905 100644
+--- a/client/src/components/Search/FeatureSearchBox.test.tsx
++++ b/client/src/components/Search/FeatureSearchBox.test.tsx
+@@ -8,12 +8,12 @@ import { render, fireEvent, screen } from '../../test/test-utils';
+ 
+ import { FeatureSearchBox } from './FeatureSearchBox';
+ 
+-import { FeatureFilter } from './model';
++import { FeatureCategory } from '../../model';
+ 
+ describe('FeatureSearchBox component', () => {
+     const mockProps = {
+         field: 'test',
+-        filter: 'all' as FeatureFilter,
++        filter: 'all' as FeatureCategory,
+         colour: 'red',
+     };
+ 
+diff --git a/client/src/components/Search/FeatureSearchBox.tsx b/client/src/components/Search/FeatureSearchBox.tsx
+index a726fc20..32ecdb26 100644
+--- a/client/src/components/Search/FeatureSearchBox.tsx
++++ b/client/src/components/Search/FeatureSearchBox.tsx
+@@ -6,8 +6,9 @@ import * as R from 'ramda';
+ import { RootState } from '../../redux/reducers';
+ import { Features, LegacyAPI } from '../../api';
+ 
++import { FeatureCategory } from '../../model';
++
+ import {
+-    FeatureFilter,
+     FeatureSearchSelection,
+     featuresToResults,
+     findResult,
+@@ -26,7 +27,7 @@ type FeatureSearchBoxProps = {
+     field: string;
+ 
+     /** The feature type to search for. May be "all". */
+-    filter: FeatureFilter;
++    filter: FeatureCategory;
+ 
+     /** Background colour */
+     colour: string;
+diff --git a/client/src/components/Search/actions.ts b/client/src/components/Search/actions.ts
+index 97c08682..ce144ce1 100644
+--- a/client/src/components/Search/actions.ts
++++ b/client/src/components/Search/actions.ts
+@@ -1,7 +1,8 @@
+ import * as Action from './actionTypes';
+ 
+ import { FeatureQuery, Features } from '../../api';
+-import { FeatureFilter, FeatureSearchSelection } from './model';
++import { FeatureCategory } from '../../model';
++import { FeatureSearchSelection } from './model';
+ 
+ export interface SearchQuery {
+     type: typeof Action.QUERY;
+@@ -14,7 +15,7 @@ export interface SearchQuery {
+ export const search = (
+     field: string,
+     dataset: string,
+-    category: FeatureFilter,
++    category: FeatureCategory,
+     query: string
+ ): SearchQuery => {
+     return {
+diff --git a/client/src/components/Search/model.ts b/client/src/components/Search/model.ts
+index 8951cbac..5dd8dc08 100644
+--- a/client/src/components/Search/model.ts
++++ b/client/src/components/Search/model.ts
+@@ -3,14 +3,6 @@ import { StrictSearchCategoryProps, SearchResult } from 'semantic-ui-react';
+ 
+ import { Features } from '../../api';
+ 
+-export type FeatureFilter =
+-    | 'all'
+-    | 'gene'
+-    | 'regulon'
+-    | 'annotation'
+-    | 'metric'
+-    | 'cluster';
+-
+ export type FeatureSearchSelection = {
+     readonly title: string;
+     readonly category: string;
+diff --git a/client/src/components/pages/Regulon.jsx b/client/src/components/pages/Regulon.jsx
+index 519778a2..729a5d8f 100644
+--- a/client/src/components/pages/Regulon.jsx
++++ b/client/src/components/pages/Regulon.jsx
+@@ -10,7 +10,7 @@ import { BackendAPI } from '../common/API';
+ import Viewer from '../common/Viewer';
+ import RightSidebar from '../RightSidebar';
+ import ViewerToolbar from '../common/ViewerToolbar';
+-import Histogram from '../common/Histogram';
++import Histogram from '../Histogram';
+ 
+ export default class Regulon extends Component {
+     constructor() {
+@@ -30,6 +30,7 @@ export default class Regulon extends Component {
+ 
+     render() {
+         const { activeLoom, activeCoordinates, activeFeatures } = this.state;
++
+         let featureThreshold = [0, 1, 2].map((i) => (
+             <Grid.Column key={i} className='flexDisplay' stretched>
+                 <Histogram
+diff --git a/client/src/model.ts b/client/src/model.ts
+new file mode 100644
+index 00000000..683f3f7b
+--- /dev/null
++++ b/client/src/model.ts
+@@ -0,0 +1,32 @@
++export type FeatureMetadataMetric = {
++    accessor: string;
++    description: string;
++    name: string;
++    values: number[];
++};
++
++export type FeatureMetadata = {
++    cellTypeAnno?: unknown[];
++    clusterID?: number;
++    clusteringGroup: string;
++    clusteringID?: number;
++    genes: string[];
++    metrics?: FeatureMetadataMetric[];
++    description: string;
++};
++
++export type FeatureCategory =
++    | 'all'
++    | 'gene'
++    | 'regulon'
++    | 'annotation'
++    | 'metric'
++    | 'cluster';
++
++export type Feature = {
++    feature: string;
++    featureType: string;
++    metadata: FeatureMetadata;
++    threshold?: number;
++    type: FeatureCategory;
++};

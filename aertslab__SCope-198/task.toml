@@ -1,0 +1,64 @@
+version = "1.0"
+
+[task]
+name = "default/aertslab__SCope-198"
+description = "Fix and update package versions"
+
+[metadata]
+difficulty = "small"
+category = "bugfix"
+keywords = [
+    "SCope",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aertslab/SCope"
+ref = "e40907e942c067ffa12617128875f007501aef7d"
+reference = "https://github.com/aertslab/SCope/pull/198"
+source_access = "auto"
+built_at = "2026-11-15T19:39:46.024274+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:2eecc6e17fa6fee160a9d726882605ec4c0314ff21fbad0883741267bf7bbb3c"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2019-03-06T10:27:17Z"
+diff_format = "unified"
+context_files = [
+    "opt/setup.py",
+    "package.json",
+    "webpack.config.js",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 15
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

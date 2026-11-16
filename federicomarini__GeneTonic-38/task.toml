@@ -1,0 +1,64 @@
+version = "1.0"
+
+[task]
+name = "default/federicomarini__GeneTonic-38"
+description = "fixed the row names on the heatmap, now taking the gene_id column fro…"
+
+[metadata]
+difficulty = "small"
+category = "bugfix"
+keywords = [
+    "GeneTonic",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "federicomarini/GeneTonic"
+ref = "11c851b952c98a87dcdd433c046c0d35e1dd66f3"
+reference = "https://github.com/federicomarini/GeneTonic/pull/38"
+source_access = "auto"
+built_at = "2026-11-15T19:34:19.637885+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:3bf3567157e6fcf81e16c70e49e83aad4c5b75566f359fc383e8144d6f25e4a0"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2022-08-03T08:38:09Z"
+diff_format = "unified"
+context_files = [
+    "DESCRIPTION",
+    "NEWS.md",
+    "R/gs_heatmap.R",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 9
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

@@ -1,0 +1,14 @@
+diff --git a/src/app/translations/languages/en-US/all-messages.json b/src/app/translations/languages/en-US/all-messages.json
+index c32c3881..641077ec 100644
+--- a/src/app/translations/languages/en-US/all-messages.json
++++ b/src/app/translations/languages/en-US/all-messages.json
+@@ -1,7 +1,7 @@
+ {
+-  "language.changed": "Language successfully switched",
++  "language.changed": "Language successfully updated",
+   "language.en": "English",
+-  "language.de": "Deutsch",
++  "language.de": "German",
+   "route.dashboard": "Dashboard",
+   "route.settings": "Settings",
+   "route.workspace": "Workspace",

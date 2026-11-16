@@ -1,0 +1,188 @@
+diff --git a/README.md b/README.md
+index 2bc6c91d..4f883923 100644
+--- a/README.md
++++ b/README.md
+@@ -160,6 +160,8 @@ python scripts/generate_catalog.py
+ 
+ Use a brief plan, targeted tests, and verification evidence for non-trivial repository changes. New skills should follow [CONTRIBUTING.md](CONTRIBUTING.md) and [templates/SKILL-TEMPLATE.md](templates/SKILL-TEMPLATE.md).
+ 
++TUI helpers under `omicsclaw/interactive/_tui_support.py` stay dependency-light so support tests can run without optional memory or Textual installs. When adding Textual containers, mount the parent widget into the live tree before mounting child widgets.
++
+ </details>
+ 
+ ## ⚠️ Safety
+diff --git a/omicsclaw/app/server.py b/omicsclaw/app/server.py
+index b3ab62e4..a29daa5b 100644
+--- a/omicsclaw/app/server.py
++++ b/omicsclaw/app/server.py
+@@ -240,6 +240,7 @@ def _oauth_port_conflict_message(ccproxy_port: int, app_port: int) -> str:
+ # gateway providers (openrouter, nvidia, volcengine, …) whose capability
+ # depends on which upstream model is selected rather than the gateway itself.
+ _THINKING_CAPABLE_MODEL_PATTERNS: tuple[str, ...] = (
++    "deepseek-v4",
+     "deepseek-r1",
+     "deepseek-reasoner",
+     "deepseek-chat",
+diff --git a/omicsclaw/interactive/__init__.py b/omicsclaw/interactive/__init__.py
+index 995a6ce3..6de6c919 100644
+--- a/omicsclaw/interactive/__init__.py
++++ b/omicsclaw/interactive/__init__.py
+@@ -6,7 +6,14 @@
+     omicsclaw --ui tui      — Same, via flag
+ """
+ 
+-from .interactive import run_interactive  # noqa: F401
++from __future__ import annotations
++
++
++def run_interactive(*args, **kwargs):
++    """Start interactive mode without importing optional deps at package import."""
++    from .interactive import run_interactive as _run_interactive
++
++    return _run_interactive(*args, **kwargs)
+ 
+ 
+ def main() -> None:
+diff --git a/omicsclaw/interactive/_tui_support.py b/omicsclaw/interactive/_tui_support.py
+index afe295d3..14b676c3 100644
+--- a/omicsclaw/interactive/_tui_support.py
++++ b/omicsclaw/interactive/_tui_support.py
+@@ -2,6 +2,10 @@
+ 
+ from __future__ import annotations
+ 
++from typing import Any, TypeVar
++
++T = TypeVar("T")
++
+ 
+ def build_tui_header_label(
+     *,
+@@ -12,3 +16,18 @@ def build_tui_header_label(
+     effective_model = model or "AI"
+     mode_prefix = f"[{mode}] · " if mode else ""
+     return f"{effective_model} · {mode_prefix}session {session_id}"
++
++
++def attach_reasoning_container(
++    chat: Any,
++    *,
++    collapsible_cls: type[Any],
++    vertical_cls: type[T],
++    title: str = "Agent Reasoning & Tool Execution",
++) -> T:
++    """Attach a reasoning panel without mounting children before the parent."""
++    collapsible = collapsible_cls(title=title)
++    container = vertical_cls()
++    chat.mount(collapsible)
++    collapsible.mount(container)
++    return container
+diff --git a/omicsclaw/interactive/tui.py b/omicsclaw/interactive/tui.py
+index fb1b6f21..48b04cdc 100644
+--- a/omicsclaw/interactive/tui.py
++++ b/omicsclaw/interactive/tui.py
+@@ -130,7 +130,7 @@
+     resolve_active_pipeline_workspace,
+ )
+ from ._style_support import build_style_command_view
+-from ._tui_support import build_tui_header_label
++from ._tui_support import attach_reasoning_container, build_tui_header_label
+ 
+ 
+ # ---------------------------------------------------------------------------
+@@ -1018,11 +1018,12 @@ async def tui_on_tool_call(tool_name: str, args: dict):
+                     chat = self.query_one("#chat-area", ScrollableContainer)
+                     
+                     if not getattr(self, "_current_reasoning", None):
+-                        c = Collapsible(title="🧠 Agent Reasoning & Tool Execution")
+-                        v = Vertical()
+-                        c.mount(v)
+-                        chat.mount(c)
+-                        self._current_reasoning = v
++                        self._current_reasoning = attach_reasoning_container(
++                            chat,
++                            collapsible_cls=Collapsible,
++                            vertical_cls=Vertical,
++                            title="🧠 Agent Reasoning & Tool Execution",
++                        )
+                     
+                     from rich.text import Text
+                     msg = Text.from_markup(f"[dim]↳ 🛠️  Calling [cyan]{tool_name}[/cyan]({args_preview})[/dim]")
+diff --git a/tests/test_app_server.py b/tests/test_app_server.py
+index a4155f75..aa47fcbd 100644
+--- a/tests/test_app_server.py
++++ b/tests/test_app_server.py
+@@ -1751,6 +1751,11 @@ def test_build_thinking_extra_body_adaptive_per_provider():
+     )
+     assert result == {"type": "enabled", "budget_tokens": 10000}
+ 
++    result = server._build_thinking_extra_body(
++        adaptive, provider="openrouter", model="deepseek/deepseek-v4-pro",
++    )
++    assert result == {"type": "enabled", "budget_tokens": 10000}
++
+     result = server._build_thinking_extra_body(
+         adaptive, provider="nvidia", model="deepseek-ai/deepseek-r1",
+     )
+diff --git a/tests/test_interactive_tui_support.py b/tests/test_interactive_tui_support.py
+index 2f10a897..cd26cf07 100644
+--- a/tests/test_interactive_tui_support.py
++++ b/tests/test_interactive_tui_support.py
+@@ -1,4 +1,7 @@
+-from omicsclaw.interactive._tui_support import build_tui_header_label
++from omicsclaw.interactive._tui_support import (
++    attach_reasoning_container,
++    build_tui_header_label,
++)
+ 
+ 
+ def test_build_tui_header_label_uses_default_model_without_mode():
+@@ -14,3 +17,48 @@ def test_build_tui_header_label_includes_mode_prefix():
+         )
+         == "gpt-test · [run] · session abc12345"
+     )
++
++
++class _FakeWidget:
++    def __init__(self):
++        self.children = []
++        self.mounted = False
++
++    def mount(self, child):
++        if not self.mounted:
++            raise RuntimeError(
++                f"Can't mount widget(s) before {self.__class__.__name__} is mounted"
++            )
++        child.mounted = True
++        self.children.append(child)
++
++
++class _FakeChat(_FakeWidget):
++    def __init__(self):
++        super().__init__()
++        self.mounted = True
++
++
++class _FakeCollapsible(_FakeWidget):
++    def __init__(self, *, title):
++        super().__init__()
++        self.title = title
++
++
++class _FakeVertical(_FakeWidget):
++    pass
++
++
++def test_attach_reasoning_container_mounts_parent_before_child():
++    chat = _FakeChat()
++
++    container = attach_reasoning_container(
++        chat,
++        collapsible_cls=_FakeCollapsible,
++        vertical_cls=_FakeVertical,
++    )
++
++    assert isinstance(container, _FakeVertical)
++    assert len(chat.children) == 1
++    assert isinstance(chat.children[0], _FakeCollapsible)
++    assert chat.children[0].children == [container]

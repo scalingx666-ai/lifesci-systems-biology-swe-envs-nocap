@@ -1,0 +1,176 @@
+diff --git a/bot/session.py b/bot/session.py
+index 577a6dd1..a285bd6f 100644
+--- a/bot/session.py
++++ b/bot/session.py
+@@ -302,9 +302,8 @@ def _oauth_failed(reason: str) -> None:
+             from omicsclaw.memory.database import DatabaseManager as _DatabaseManager
+             from omicsclaw.memory.search import SearchIndexer as _SearchIndexer
+             from omicsclaw.memory.glossary import GlossaryService as _GlossaryService
+-            from omicsclaw.memory.graph import GraphService as _GraphService
+ 
+-            del _DatabaseManager, _SearchIndexer, _GlossaryService, _GraphService
++            del _DatabaseManager, _SearchIndexer, _GlossaryService
+ 
+             db_url = os.getenv("OMICSCLAW_MEMORY_DB_URL")
+ 
+diff --git a/bot/tool_executors.py b/bot/tool_executors.py
+index 5a59cf87..aa7a2a57 100644
+--- a/bot/tool_executors.py
++++ b/bot/tool_executors.py
+@@ -129,6 +129,21 @@
+ 
+ logger = logging.getLogger("omicsclaw.bot.tool_executors")
+ 
++# Returned by execute_remember / execute_recall / execute_forget when
++# bot.core.memory_store is None. Default is OMICSCLAW_MEMORY_ENABLED=true,
++# so reaching this branch usually means init failed silently at startup
++# (e.g. stale import, missing dep, unreachable DB) — the bot logs carry
++# the actual reason. Naming the real env vars saves users a doc dive
++# through .env.example.
++_MEMORY_DISABLED_HINT = (
++    "Memory system is not initialized. It defaults to enabled, so this "
++    "usually means initialization failed silently at startup — check the "
++    'bot logs for "Memory init failed" or "Memory dependencies not '
++    'installed". Verify OMICSCLAW_MEMORY_ENABLED is not set to "false" '
++    "and that OMICSCLAW_MEMORY_DB_URL points at a reachable database "
++    '(see .env.example § "Graph Memory System").'
++)
++
+ 
+ # Runtime-internal flags injected by the preflight chain (not part of
+ # the LLM-facing tool schema). Validator accepts them so auto-prep
+@@ -1467,7 +1482,7 @@ async def execute_get_file_size(args: dict) -> str:
+ async def execute_remember(args: dict, session_id: str = None) -> str:
+     """Save information to persistent memory (preferences, insights, project context)."""
+     if not _core.memory_store:
+-        return "Memory system not enabled. Set OMICSCLAW_MEMORY_BACKEND=sqlite in .env"
++        return _MEMORY_DISABLED_HINT
+     if not session_id:
+         return "Memory save requires an active session (user_id + platform)."
+ 
+@@ -1554,7 +1569,7 @@ async def execute_remember(args: dict, session_id: str = None) -> str:
+ async def execute_recall(args: dict, session_id: str = None) -> str:
+     """Retrieve memories from persistent storage."""
+     if not _core.memory_store:
+-        return "Memory system not enabled."
++        return _MEMORY_DISABLED_HINT
+ 
+     try:
+         mem_type = args.get("memory_type", "")
+@@ -1615,7 +1630,7 @@ async def execute_recall(args: dict, session_id: str = None) -> str:
+ async def execute_forget(args: dict, session_id: str = None) -> str:
+     """Delete a specific memory by searching for it."""
+     if not _core.memory_store:
+-        return "Memory system not enabled."
++        return _MEMORY_DISABLED_HINT
+ 
+     memory_id = args.get("memory_id", "")
+     query = args.get("query", "")
+diff --git a/tests/bot/test_tool_executors.py b/tests/bot/test_tool_executors.py
+index 9363d082..19f62e1e 100644
+--- a/tests/bot/test_tool_executors.py
++++ b/tests/bot/test_tool_executors.py
+@@ -257,6 +257,51 @@ async def test_execute_remember_preference_update_versions_existing_value(
+     assert "Chinese" in deprecated[0].content
+ 
+ 
++# ---------------------------------------------------------------------------
++# Disabled-memory-store user message: actionable + names real env vars
++# (regression for "Set OMICSCLAW_MEMORY_BACKEND=sqlite in .env" — that env
++# var never existed; the real switches are OMICSCLAW_MEMORY_ENABLED and
++# OMICSCLAW_MEMORY_DB_URL, documented under §"Graph Memory System" in
++# .env.example.)
++# ---------------------------------------------------------------------------
++
++
++@pytest.mark.asyncio
++@pytest.mark.parametrize(
++    "executor_name, kwargs",
++    [
++        ("execute_remember", {"args": {"memory_type": "preference"}, "session_id": "s1"}),
++        ("execute_recall", {"args": {}, "session_id": "s1"}),
++        ("execute_forget", {"args": {"query": "x"}, "session_id": "s1"}),
++    ],
++)
++async def test_memory_tools_disabled_message_names_real_env_vars(
++    executor_name, kwargs, monkeypatch
++):
++    import bot.core
++    import bot.tool_executors
++
++    monkeypatch.setattr(bot.core, "memory_store", None)
++    executor = getattr(bot.tool_executors, executor_name)
++
++    result = await executor(**kwargs)
++
++    assert isinstance(result, str)
++    assert "OMICSCLAW_MEMORY_BACKEND" not in result, (
++        f"{executor_name} still names the bogus env var "
++        f"OMICSCLAW_MEMORY_BACKEND. Real switches are "
++        f"OMICSCLAW_MEMORY_ENABLED + OMICSCLAW_MEMORY_DB_URL."
++    )
++    assert "OMICSCLAW_MEMORY_ENABLED" in result, (
++        f"{executor_name} disabled-message should name the real switch "
++        f"OMICSCLAW_MEMORY_ENABLED so users know what to inspect."
++    )
++    assert "OMICSCLAW_MEMORY_DB_URL" in result, (
++        f"{executor_name} disabled-message should name the DB URL var so "
++        f"users can verify it points at a reachable database."
++    )
++
++
+ def test_tool_executors_dispatch_table_lists_all_24_executors():
+     """``_available_tool_executors()`` returns the full dispatch map.
+     The lazy ``bot.core.TOOL_EXECUTORS`` attribute also adds the
+diff --git a/tests/test_bot_core_timeout.py b/tests/test_bot_core_timeout.py
+index 16f7617f..ae7e3140 100644
+--- a/tests/test_bot_core_timeout.py
++++ b/tests/test_bot_core_timeout.py
+@@ -103,6 +103,47 @@ def __init__(self, **kwargs):
+     assert captured["base_url"] == "https://custom.example.com/v1"
+ 
+ 
++def test_init_populates_memory_store_when_dependencies_available(monkeypatch):
++    """Regression: stale ``from omicsclaw.memory.graph import GraphService``
++    in ``bot/session.py`` raised ``ModuleNotFoundError`` (graph module was
++    retired in c5987a5); the ``except ImportError`` arm silently set
++    ``memory_store = None``, so the interactive CLI's ``remember`` tool
++    bottomed out on "Memory system not enabled" even though deps were
++    installed and ``OMICSCLAW_MEMORY_ENABLED`` defaulted to ``true``.
++    """
++    captured: dict[str, object] = {}
++
++    class _FakeAsyncOpenAI:
++        def __init__(self, **kwargs):
++            captured.update(kwargs)
++
++    _clear_llm_env(monkeypatch)
++    monkeypatch.setattr(core, "AsyncOpenAI", _FakeAsyncOpenAI)
++    monkeypatch.setattr(core, "memory_store", None)
++    monkeypatch.setattr(core, "session_manager", None)
++    monkeypatch.setenv("OMICSCLAW_MEMORY_ENABLED", "true")
++    monkeypatch.setenv(
++        "OMICSCLAW_MEMORY_DB_URL", "sqlite+aiosqlite:///:memory:"
++    )
++
++    core.init(
++        api_key="test-key",
++        base_url="https://example.com/v1",
++        model="test-model",
++        provider="custom",
++    )
++
++    from omicsclaw.memory.compat import CompatMemoryStore
++
++    assert captured["api_key"] == "test-key"
++    assert core.memory_store is not None, (
++        "memory init silently failed — check bot/session.py memory-init "
++        "block for stale imports against omicsclaw.memory.*"
++    )
++    assert isinstance(core.memory_store, CompatMemoryStore)
++    assert core.session_manager is not None
++
++
+ def test_init_disables_memory_when_graph_dependencies_missing(monkeypatch):
+     captured: dict[str, object] = {}
+     original_import = builtins.__import__

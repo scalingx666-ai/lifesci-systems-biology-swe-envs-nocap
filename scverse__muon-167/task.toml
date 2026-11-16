@@ -1,0 +1,64 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__muon-167"
+description = "plotting fixes"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "muon",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/muon"
+ref = "dacf89910878d7d711a4d78ce014c2dd9e71cb41"
+reference = "https://github.com/scverse/muon/pull/167"
+source_access = "auto"
+built_at = "2026-11-15T16:59:48.908414+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:a934b132ee7322efbb422f31ebfef450a317f522b5b5783a299ab6260d7d753b"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-08-24T14:55:03Z"
+diff_format = "unified"
+context_files = [
+    "CHANGELOG.md",
+    "src/muon/pl.py",
+    "src/muon/utils.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 307
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

@@ -1,0 +1,364 @@
+diff --git a/bot/core.py b/bot/core.py
+index da72c1b5..8108cc7d 100644
+--- a/bot/core.py
++++ b/bot/core.py
+@@ -570,7 +570,13 @@ def __getattr__(name: str):
+     if name == "TOOL_RUNTIME":
+         return get_tool_runtime()
+     if name == "TOOLS":
+-        return get_tools()
++        # ``get_tools`` lives in bot.agent_loop, which is reached lazily
++        # via _AGENT_LOOP_REEXPORTS below. Resolve through that path —
++        # a direct ``get_tools()`` call here raises NameError because
++        # the name was never imported at module scope.
++        import bot.agent_loop
++        value = bot.agent_loop.get_tools()
++        return value
+     if name == "TOOL_EXECUTORS":
+         return get_tool_executors()
+     if name in _AGENT_LOOP_REEXPORTS:
+diff --git a/bot/path_validation.py b/bot/path_validation.py
+index 381d6750..7d65d6aa 100644
+--- a/bot/path_validation.py
++++ b/bot/path_validation.py
+@@ -82,9 +82,13 @@ def _build_trusted_dirs() -> list[Path]:
+ 
+ 
+ def _ensure_trusted_dirs():
+-    global TRUSTED_DATA_DIRS
++    # Mutate in place — bot.core / bot.tool_executors / omicsclaw.app.server
++    # all import ``TRUSTED_DATA_DIRS`` by reference at module load time.
++    # A rebind here would leave those importers stuck on the original empty
++    # list, defeating the trusted-dir check (and silently breaking server.py's
++    # workspace.append() handshake).
+     if not TRUSTED_DATA_DIRS:
+-        TRUSTED_DATA_DIRS = _build_trusted_dirs()
++        TRUSTED_DATA_DIRS[:] = _build_trusted_dirs()
+         logger.info(f"Trusted data dirs: {[str(d) for d in TRUSTED_DATA_DIRS]}")
+ 
+ 
+diff --git a/bot/tool_executors.py b/bot/tool_executors.py
+index 816bbfa4..7c098b3c 100644
+--- a/bot/tool_executors.py
++++ b/bot/tool_executors.py
+@@ -55,9 +55,12 @@
+ # is pulled in via re-export.
+ from bot.core import (
+     DATA_DIR,
++    DEEP_LEARNING_METHODS,
+     EXAMPLES_DIR,
+     OMICSCLAW_DIR,
++    OMICSCLAW_PY,
+     OUTPUT_DIR,
++    _path_names,
+     audit,
+     get_skill_runner_python,
+     pending_media,
+@@ -66,6 +69,21 @@
+     received_files,
+ )
+ 
++# Path-validation helpers carved out to bot.path_validation per ADR 0001.
++# Import directly (not via bot.core) since bot.core only re-exports them
++# *after* this module finishes loading — by the time these executors run,
++# the bot.core re-export has resolved but lookups inside execute_* bodies
++# resolve against this module's globals, not bot.core's.
++from bot.path_validation import (
++    TRUSTED_DATA_DIRS,
++    _ensure_trusted_dirs,
++    discover_file,
++    resolve_dest,
++    sanitize_filename,
++    validate_input_path,
++    validate_path,
++)
++
+ from omicsclaw.common.report import build_output_dir_name
+ from omicsclaw.common.user_guidance import (
+     extract_user_guidance_lines,
+@@ -91,11 +109,13 @@
+     _format_auto_disambiguation,
+     _format_auto_route_banner,
+     _format_next_steps,
++    _infer_skill_for_method,
+     _lookup_skill_info,
+     _normalize_extra_args,
+     _read_result_json,
+     _resolve_last_output_dir,
+     _run_omics_skill_step,
++    _run_skill_via_shared_runner,
+     _update_preprocessing_state,
+     OutputMediaPaths,
+ )
+@@ -103,6 +123,7 @@
+     _auto_prepare_sc_batch_integration,
+     _maybe_require_batch_integration_workflow,
+     _maybe_require_batch_key_selection,
++    _resolve_requested_batch_key,
+ )
+ 
+ logger = logging.getLogger("omicsclaw.bot.tool_executors")
+@@ -1282,7 +1303,6 @@ async def execute_make_directory(args: dict) -> str:
+     ):
+         dirs_str = ", ".join(str(d) for d in TRUSTED_DATA_DIRS)
+         return f"Access denied: {target_path} is not in trusted directories ({dirs_str})"
+-        target_path = DATA_DIR / target_path
+ 
+     try:
+         target_path.mkdir(parents=True, exist_ok=True)
+diff --git a/omicsclaw/knowledge/registry.py b/omicsclaw/knowledge/registry.py
+index a0b9cb4e..2a8c0b6f 100644
+--- a/omicsclaw/knowledge/registry.py
++++ b/omicsclaw/knowledge/registry.py
+@@ -12,7 +12,7 @@
+ import logging
+ import re
+ from pathlib import Path
+-from typing import Any
++from typing import Any, Optional
+ 
+ logger = logging.getLogger(__name__)
+ 
+diff --git a/tests/bot/test_tool_executors.py b/tests/bot/test_tool_executors.py
+index deae44e4..9363d082 100644
+--- a/tests/bot/test_tool_executors.py
++++ b/tests/bot/test_tool_executors.py
+@@ -272,3 +272,168 @@ def test_tool_executors_dispatch_table_lists_all_24_executors():
+     # Spot-check a few canonical entries
+     for name in ("omicsclaw", "save_file", "inspect_data", "remember", "consult_knowledge"):
+         assert name in table, f"Tool name '{name}' missing from dispatch table"
++
++
++# ---------------------------------------------------------------------------
++# Regression: path_validation helpers must be importable from bot.tool_executors
++# ---------------------------------------------------------------------------
++
++
++PATH_VALIDATION_SYMBOLS = (
++    "_ensure_trusted_dirs",
++    "TRUSTED_DATA_DIRS",
++    "validate_input_path",
++    "discover_file",
++    # Also missed by the carve-out — used by execute_save_file /
++    # execute_write_file / execute_generate_audio (lines ~758, 787, 814).
++    "resolve_dest",
++    "sanitize_filename",
++    "validate_path",
++)
++
++
++# Symbols from bot.core / bot.skill_orchestration / preflight.sc_batch that
++# the carve-out left as bare references inside ``execute_*`` bodies. Each
++# one is an unexercised NameError waiting for the right tool call. Pinning
++# them at module level catches the whole class of bug, not just the
++# _ensure_trusted_dirs incident.
++CARVED_OUT_SIBLING_SYMBOLS = (
++    # bot.core
++    "DEEP_LEARNING_METHODS",
++    "OMICSCLAW_PY",
++    "_path_names",
++    # bot.skill_orchestration
++    "_infer_skill_for_method",
++    "_run_skill_via_shared_runner",
++    # omicsclaw.runtime.preflight.sc_batch
++    "_resolve_requested_batch_key",
++)
++
++
++def test_tool_executors_imports_path_validation_helpers():
++    """bot.tool_executors uses ``_ensure_trusted_dirs`` / ``TRUSTED_DATA_DIRS``
++    / ``validate_input_path`` / ``discover_file`` in several executors (lines
++    ~140, 224, 1012, 1057, 1088, 1277, 1307, 1334, 1361, 1666, 1786, 1788 at
++    the time of writing). When the module was carved out of bot.core per
++    ADR 0001, the import of these names was left behind in bot.core. Every
++    call into ``execute_omicsclaw`` with ``mode='file'`` (no staged input)
++    fires ``_ensure_trusted_dirs()`` and raises ``NameError`` instead of
++    returning the friendly 'place your file in a data directory' message.
++
++    Pin the contract: the four names must resolve as module-level
++    attributes on bot.tool_executors."""
++    import bot.core  # noqa: F401 — load bot.core first (production order)
++    import bot.tool_executors
++
++    missing = [
++        name for name in PATH_VALIDATION_SYMBOLS
++        if not hasattr(bot.tool_executors, name)
++    ]
++    assert not missing, (
++        f"bot.tool_executors is missing path_validation symbols: {missing}. "
++        f"Add them to the `from bot.path_validation import ...` block."
++    )
++
++
++def test_tool_executors_imports_carved_out_sibling_helpers():
++    """Same bug class as ``test_tool_executors_imports_path_validation_helpers``,
++    but covers the carve-out leftovers from bot.core / bot.skill_orchestration
++    / preflight.sc_batch. Each is referenced bare inside an ``execute_*``
++    body and would raise NameError on the first call that exercises it
++    (pyflakes audit on 2026-05-13)."""
++    import bot.core  # noqa: F401 — load bot.core first (production order)
++    import bot.tool_executors
++
++    missing = [
++        name for name in CARVED_OUT_SIBLING_SYMBOLS
++        if not hasattr(bot.tool_executors, name)
++    ]
++    assert not missing, (
++        f"bot.tool_executors is missing carve-out sibling symbols: {missing}. "
++        f"Each one is an unexercised NameError waiting for the right tool "
++        f"call. Add them to the existing per-module import blocks at the "
++        f"top of bot/tool_executors.py."
++    )
++
++
++def test_trusted_data_dirs_mutation_visible_to_tool_executors():
++    """``_ensure_trusted_dirs()`` populates ``bot.path_validation.TRUSTED_DATA_DIRS``,
++    but if it *rebinds* the global instead of mutating in place, modules
++    that imported the name (bot.tool_executors, bot.core,
++    omicsclaw.app.server) stay stuck on the original empty list.
++
++    Symptom observed via the executor probe on 2026-05-13:
++        Trusted data dirs: ['/.../data', '/.../examples', ...]   (path_validation)
++        Access denied: /.../data is not in trusted directories ()  (tool_executors)
++
++    omicsclaw/app/server.py:686-691 also relies on appending to
++    ``bot.core.TRUSTED_DATA_DIRS`` being visible to ``validate_input_path``
++    — same root cause.
++
++    Contract: after the helper runs, every module's view is non-empty and
++    is the *same list object* as ``bot.path_validation.TRUSTED_DATA_DIRS``."""
++    import bot.core
++    import bot.path_validation
++    import bot.tool_executors
++
++    bot.path_validation._ensure_trusted_dirs()
++
++    pv = bot.path_validation.TRUSTED_DATA_DIRS
++    assert pv, "Sanity: path_validation.TRUSTED_DATA_DIRS unexpectedly empty after _ensure"
++
++    assert bot.tool_executors.TRUSTED_DATA_DIRS, (
++        "bot.tool_executors.TRUSTED_DATA_DIRS is empty after _ensure_trusted_dirs() "
++        "ran in bot.path_validation. The helper rebinds the global instead of "
++        "mutating in place — fix it with `TRUSTED_DATA_DIRS[:] = _build_trusted_dirs()`."
++    )
++    assert bot.tool_executors.TRUSTED_DATA_DIRS is pv, (
++        "bot.tool_executors.TRUSTED_DATA_DIRS diverged from "
++        "bot.path_validation.TRUSTED_DATA_DIRS — they must be the same list "
++        "object so server.py's runtime append() is visible to validate_input_path."
++    )
++    assert bot.core.TRUSTED_DATA_DIRS is pv, (
++        "bot.core.TRUSTED_DATA_DIRS diverged from path_validation. server.py "
++        "appends workspace dirs to bot.core.TRUSTED_DATA_DIRS — that mutation "
++        "must propagate to validate_input_path."
++    )
++
++
++@pytest.mark.asyncio
++async def test_execute_list_directory_allows_data_dir_after_ensure():
++    """Behavioral consequence of the rebind bug: ``execute_list_directory``
++    rejects the legit DATA_DIR with 'Access denied ... is not in trusted
++    directories ()' because its module-local TRUSTED_DATA_DIRS view is still
++    the empty list. Once the helper mutates in place, DATA_DIR is trusted
++    and the listing proceeds."""
++    import bot.core
++    from bot.tool_executors import execute_list_directory
++
++    result = await execute_list_directory({"path": str(bot.core.DATA_DIR)})
++    assert "Access denied" not in result, (
++        f"execute_list_directory denied access to DATA_DIR — the trusted-dirs "
++        f"check is reading a stale empty list. Got: {result!r}"
++    )
++
++
++@pytest.mark.asyncio
++async def test_execute_omicsclaw_file_mode_without_input_returns_friendly_error():
++    """End-to-end regression for the 2026-05-13 incident: user invoked
++    ``omicsclaw({"mode": "file", "skill": "sc-standardize-input", ...})``
++    and got ``NameError: name '_ensure_trusted_dirs' is not defined``
++    instead of the documented 'no input file' guidance.
++
++    Contract: when ``mode='file'`` and nothing is staged for the session,
++    the executor returns a human-readable error string starting with
++    'No input file available' — never raises NameError."""
++    import bot.core  # noqa: F401 — load bot.core first (production order)
++    from bot.tool_executors import execute_omicsclaw
++
++    result = await execute_omicsclaw(
++        args={"mode": "file", "skill": "sc-standardize-input"},
++        session_id="missing-session-for-regression-test",
++    )
++    assert isinstance(result, str), f"expected str, got {type(result).__name__}"
++    assert "No input file available" in result, (
++        f"execute_omicsclaw did not return the friendly no-input-file guidance; "
++        f"got: {result!r}"
++    )
+diff --git a/tests/test_bot_core_import_behavior.py b/tests/test_bot_core_import_behavior.py
+index 0ecd853c..bb5c4624 100644
+--- a/tests/test_bot_core_import_behavior.py
++++ b/tests/test_bot_core_import_behavior.py
+@@ -48,3 +48,34 @@ def spy(self, *args, **kwargs):
+ 
+     assert tool_registry is not None
+     assert len(calls) >= 1
++
++
++def test_bot_core_lazy_TOOLS_attribute_resolves_without_nameerror():
++    """``bot.core.TOOLS`` is a legacy lazy re-export of the tools-list
++    produced by ``bot.agent_loop.get_tools()``. The ``__getattr__`` branch
++    at bot/core.py:572-573 calls ``get_tools()`` directly, but ``get_tools``
++    is only available through the ``_AGENT_LOOP_REEXPORTS`` lazy-import
++    path further down — it is *not* in module scope at line 573. Result:
++    every access to ``bot.core.TOOLS`` raises NameError.
++
++    Sibling lazy attributes ``TOOL_RUNTIME`` and ``TOOL_EXECUTORS`` work
++    because their backing functions are imported eagerly from
++    ``bot.tool_executors`` at the top of the file.
++
++    Caught by pyflakes audit on 2026-05-13."""
++    core = _fresh_import_bot_core()
++
++    tools = core.TOOLS  # must not raise
++    assert isinstance(tools, list), (
++        f"bot.core.TOOLS should be a list of tool definitions; "
++        f"got {type(tools).__name__}: {tools!r}"
++    )
++    # Sanity: at least the core omicsclaw tool should be registered.
++    assert any(
++        isinstance(t, dict)
++        and t.get("function", {}).get("name") == "omicsclaw"
++        for t in tools
++    ), (
++        f"bot.core.TOOLS missing the 'omicsclaw' tool — get_tools() likely "
++        f"returned an unrelated value. Tools: {tools!r}"
++    )
+diff --git a/tests/test_knowledge_registry.py b/tests/test_knowledge_registry.py
+index b23bfc84..2d736478 100644
+--- a/tests/test_knowledge_registry.py
++++ b/tests/test_knowledge_registry.py
+@@ -1,6 +1,26 @@
++import typing
++
+ from omicsclaw.knowledge.registry import KnowledgeRegistry, validate_frontmatter
+ 
+ 
++def test_knowledge_registry_lookup_annotations_resolve():
++    """``KnowledgeRegistry.lookup`` declares ``skill: Optional[str] = None``
++    et al., but the module never imports ``Optional`` — only
++    ``from typing import Any`` (registry.py:15). Currently masked by
++    ``from __future__ import annotations`` (PEP 563 deferred evaluation),
++    so the bare ``Optional`` reference does not fire at import time.
++
++    The crash surfaces the moment anyone resolves the annotations eagerly
++    via ``typing.get_type_hints`` — e.g. Pydantic, FastAPI, attrs-style
++    helpers, or simply removing the future-import on a Python upgrade.
++
++    Pin the contract: the annotations must resolve cleanly."""
++    hints = typing.get_type_hints(KnowledgeRegistry.lookup)
++    assert "skill" in hints, (
++        f"KnowledgeRegistry.lookup type hints missing 'skill'; got: {hints!r}"
++    )
++
++
+ def test_registry_normalizes_kh_alias_fields_and_phase_alias(tmp_path):
+     doc = tmp_path / "KH-custom-registry.md"
+     doc.write_text(

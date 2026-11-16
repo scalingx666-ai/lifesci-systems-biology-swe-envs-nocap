@@ -1,0 +1,63 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__muon-33"
+description = "Fix / tabs to spaces"
+
+[metadata]
+difficulty = "small"
+category = "bugfix"
+keywords = [
+    "muon",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/muon"
+ref = "912b52ae874b7ddc028b3ea0fc166871fd9e41b1"
+reference = "https://github.com/scverse/muon/pull/33"
+source_access = "auto"
+built_at = "2026-11-15T17:00:27.607667+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:220f9db6a46f77a4d5396729ec223acc91d71c86c74603565c6d508415d0284c"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2021-07-06T13:25:30Z"
+diff_format = "unified"
+context_files = [
+    ".editorconfig",
+    "muon/_atac/preproc.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 16
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

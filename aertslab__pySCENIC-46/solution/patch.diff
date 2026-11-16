@@ -1,0 +1,22 @@
+diff --git a/Dockerfile b/Dockerfile
+index 05b39f8..8f24f14 100644
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -4,5 +4,5 @@ RUN apt-get update && apt-get install -y build-essential
+ RUN conda create -n scenic python=3.6.7
+ RUN echo "source activate scenic" > ~/.bashrc
+ ENV PATH /opt/conda/envs/scenic/bin:$PATH
+-RUN pip install --no-cache-dir --upgrade pyscenic
++RUN pip install --no-cache-dir --upgrade pyscenic dask==1.0.0
+ 
+diff --git a/Singularity b/Singularity
+index 95260ee..2395810 100644
+--- a/Singularity
++++ b/Singularity
+@@ -6,5 +6,5 @@ From: continuumio/miniconda3
+     apt-get update && apt-get install -y build-essential
+     conda install python=3.6
+     conda activate
+-    pip install --no-cache-dir --upgrade pyscenic
++    pip install --no-cache-dir --upgrade pyscenic dask==1.0.0
+ 

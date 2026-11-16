@@ -1,0 +1,101 @@
+diff --git a/.claude/scheduled_tasks.lock b/.claude/scheduled_tasks.lock
+deleted file mode 100644
+index 6b462111..00000000
+--- a/.claude/scheduled_tasks.lock
++++ /dev/null
+@@ -1 +0,0 @@
+-{"sessionId":"a2ab6e26-9e51-4d0f-a543-21d8889f93cb","pid":1609726,"procStart":"85921674","acquiredAt":1778469972917}
+\ No newline at end of file
+diff --git a/.gitignore b/.gitignore
+index 0804553a..e114ba26 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -8,7 +8,6 @@ __pycache__/
+ *.egg-info/
+ dist/
+ build/*
+-!build/routing-baselines/
+ .eggs/
+ .pytest_cache/
+ .mypy_cache/
+@@ -158,6 +157,9 @@ resources/
+ .planning/
+ e2e_test
+ 
++# Claude Code local state (settings, scheduled task locks)
++.claude/
++
+ # Eval suite per-run artifacts (every UTC-timestamped run dir)
+ tests/eval/results/*/
+ !tests/eval/results/.gitkeep
+diff --git a/build/routing-baselines/after_stage3.json b/build/routing-baselines/after_stage3.json
+deleted file mode 100644
+index 8b65e0f1..00000000
+--- a/build/routing-baselines/after_stage3.json
++++ /dev/null
+@@ -1,8 +0,0 @@
+-{
+-  "claude_md_routing_block_chars": 2939,
+-  "claude_md_full_chars": 15027,
+-  "orchestrator_skill_md_chars": 12540,
+-  "bot_tool_description_chars": 3930,
+-  "bot_tool_skill_enum_chars": 1902,
+-  "bot_tool_spec_json_chars": 8385
+-}
+\ No newline at end of file
+diff --git a/build/routing-baselines/after_stage4.json b/build/routing-baselines/after_stage4.json
+deleted file mode 100644
+index 8d946153..00000000
+--- a/build/routing-baselines/after_stage4.json
++++ /dev/null
+@@ -1,10 +0,0 @@
+-{
+-  "claude_md_routing_block_chars": 2939,
+-  "claude_md_full_chars": 15027,
+-  "orchestrator_skill_md_chars": 12540,
+-  "bot_tool_description_chars": 3961,
+-  "bot_tool_skill_enum_chars": 1902,
+-  "bot_tool_spec_json_chars": 8416,
+-  "bot_all_tools_json_chars": 32650,
+-  "bot_tool_count": 39
+-}
+\ No newline at end of file
+diff --git a/build/routing-baselines/before.json b/build/routing-baselines/before.json
+deleted file mode 100644
+index e4f3d241..00000000
+--- a/build/routing-baselines/before.json
++++ /dev/null
+@@ -1,8 +0,0 @@
+-{
+-  "claude_md_routing_block_chars": 17380,
+-  "claude_md_full_chars": 29468,
+-  "orchestrator_skill_md_chars": 12540,
+-  "bot_tool_description_chars": 16640,
+-  "bot_tool_skill_enum_chars": 1902,
+-  "bot_tool_spec_json_chars": 20885
+-}
+\ No newline at end of file
+diff --git a/build/routing-baselines/ceiling.json b/build/routing-baselines/ceiling.json
+deleted file mode 100644
+index 6cb23892..00000000
+--- a/build/routing-baselines/ceiling.json
++++ /dev/null
+@@ -1,18 +0,0 @@
+-{
+-  "_comment": [
+-    "Upper bound for routing-context metrics emitted by",
+-    "scripts/measure_routing_tokens.py. CI fails when a measurement",
+-    "exceeds a ceiling. Raise a ceiling only with an explicit review comment",
+-    "in the PR — the honest cost of routing grows PR by PR.",
+-    "",
+-    "Established after Stage 2-4: see after_stage4.json for the green line.",
+-    "Each ceiling carries ~10% headroom above the after-Stage-4 measurement."
+-  ],
+-  "ceilings": {
+-    "claude_md_routing_block_chars": 4000,
+-    "bot_tool_description_chars": 5000,
+-    "bot_tool_spec_json_chars": 10000,
+-    "bot_all_tools_json_chars": 36000,
+-    "bot_tool_count": 50
+-  }
+-}

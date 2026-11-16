@@ -1,0 +1,689 @@
+diff --git a/README.md b/README.md
+index cefe14e4..12fbe0e4 100644
+--- a/README.md
++++ b/README.md
+@@ -150,7 +150,7 @@ OmicsClaw's memory system transforms it from a stateless tool into a persistent
+ 
+ | Skill | Description | Key Methods |
+ |-------|-------------|-------------|
+-| `spatial-preprocess` | QC, normalization, HVG, PCA, UMAP, clustering | Scanpy |
++| `spatial-preprocessing` | QC, normalization, HVG, PCA, UMAP, clustering | Scanpy |
+ | `spatial-domain-identification` | Tissue region / niche identification | Leiden, Louvain, SpaGCN, STAGATE, GraphST, BANKSY |
+ | `spatial-cell-annotation` | Cell type annotation | Marker-based (Scanpy), Tangram, scANVI, CellAssign |
+ | `spatial-deconvolution` | Cell type proportion estimation | FlashDeconv, Cell2location, RCTD, DestVI, Stereoscope, Tangram, SPOTlight, CARD |
+@@ -163,8 +163,8 @@ OmicsClaw's memory system transforms it from a stateless tool into a persistent
+ | `spatial-trajectory` | Developmental trajectories | CellRank, Palantir, DPT |
+ | `spatial-enrichment` | Pathway enrichment | GSEA, ssGSEA, Enrichr |
+ | `spatial-cnv` | Copy number variation | inferCNVpy, Numbat |
+-| `spatial-integrate` | Multi-sample integration | Harmony, BBKNN, Scanorama |
+-| `spatial-register` | Spatial registration | PASTE |
++| `spatial-integration` | Multi-sample integration | Harmony, BBKNN, Scanorama |
++| `spatial-registration` | Spatial registration | PASTE |
+ 
+ </details>
+ 
+diff --git a/skills/spatial/orchestrator/spatial_orchestrator.py b/skills/spatial/orchestrator/spatial_orchestrator.py
+index 18dcf1bb..9c900d43 100644
+--- a/skills/spatial/orchestrator/spatial_orchestrator.py
++++ b/skills/spatial/orchestrator/spatial_orchestrator.py
+@@ -186,21 +186,21 @@
+ 
+ # Human-readable skill descriptions for listing
+ SKILL_DESCRIPTIONS: dict[str, str] = {
+-    "preprocess": "Spatial data QC, normalization, HVG, PCA/UMAP, Leiden clustering",
+-    "domains": "Tissue region/niche identification (SpaGCN, STAGATE, Leiden)",
+-    "annotate": "Cell type annotation (Tangram, scANVI, CellAssign)",
+-    "deconv": "Deconvolution — cell type proportions (CARD, Cell2Location, RCTD)",
+-    "statistics": "Spatial statistics (Moran's I, Geary's C, Ripley, neighborhood enrichment)",
+-    "genes": "Spatially variable genes (Moran's I, SpatialDE, SPARK-X)",
+-    "de": "Differential expression (Wilcoxon, t-test, cluster markers)",
+-    "condition": "Condition comparison with pseudobulk DESeq2 statistics",
+-    "communication": "Cell-cell communication (LIANA+, CellPhoneDB, built-in L-R)",
+-    "velocity": "RNA velocity and cellular dynamics (scVelo, S/U ratio)",
+-    "trajectory": "Trajectory inference (DPT, CellRank, Palantir)",
+-    "enrichment": "Pathway enrichment (GSEA, ORA, Enrichr)",
+-    "cnv": "Copy number variation inference (inferCNVpy, expression-based)",
+-    "integrate": "Multi-sample integration (Harmony, BBKNN, Scanorama)",
+-    "register": "Spatial registration / slice alignment (Procrustes, PASTE)",
++    "spatial-preprocessing": "Spatial data QC, normalization, HVG, PCA/UMAP, Leiden clustering",
++    "spatial-domain-identification": "Tissue region/niche identification (SpaGCN, STAGATE, Leiden)",
++    "spatial-cell-annotation": "Cell type annotation (Tangram, scANVI, CellAssign)",
++    "spatial-deconvolution": "Deconvolution — cell type proportions (CARD, Cell2Location, RCTD)",
++    "spatial-statistics": "Spatial statistics (Moran's I, Geary's C, Ripley, neighborhood enrichment)",
++    "spatial-svg-detection": "Spatially variable genes (Moran's I, SpatialDE, SPARK-X)",
++    "spatial-de": "Differential expression (Wilcoxon, t-test, cluster markers)",
++    "spatial-condition-comparison": "Condition comparison with pseudobulk DESeq2 statistics",
++    "spatial-cell-communication": "Cell-cell communication (LIANA+, CellPhoneDB, built-in L-R)",
++    "spatial-velocity": "RNA velocity and cellular dynamics (scVelo, S/U ratio)",
++    "spatial-trajectory": "Trajectory inference (DPT, CellRank, Palantir)",
++    "spatial-enrichment": "Pathway enrichment (GSEA, ORA, Enrichr)",
++    "spatial-cnv": "Copy number variation inference (inferCNVpy, expression-based)",
++    "spatial-integration": "Multi-sample integration (Harmony, BBKNN, Scanorama)",
++    "spatial-registration": "Spatial registration / slice alignment (Procrustes, PASTE)",
+ }
+ 
+ 
+@@ -233,11 +233,11 @@ def route_query(query: str) -> dict:
+ 
+     return {
+         "matched": False,
+-        "skill": "preprocess",
++        "skill": "spatial-preprocessing",
+         "confidence": 0.0,
+         "matched_keywords": [],
+         "scores": {},
+-        "fallback_reason": "No keywords matched; defaulting to preprocess",
++        "fallback_reason": "No keywords matched; defaulting to spatial-preprocessing",
+     }
+ 
+ 
+diff --git a/skills/spatial/spatial-annotate/spatial_annotate.py b/skills/spatial/spatial-annotate/spatial_annotate.py
+index 6fe71f74..74ec7864 100644
+--- a/skills/spatial/spatial-annotate/spatial_annotate.py
++++ b/skills/spatial/spatial-annotate/spatial_annotate.py
+@@ -386,6 +386,7 @@ def generate_figures(adata, output_dir: Path, summary: dict) -> list[str]:
+             fig = plt.gcf()
+             p = save_figure(fig, output_dir, "cell_type_spatial.png")
+             figures.append(str(p))
++            plt.close('all')
+     except Exception as e:
+         logger.warning("Could not generate spatial annotation plot: %s", e)
+ 
+@@ -398,6 +399,7 @@ def generate_figures(adata, output_dir: Path, summary: dict) -> list[str]:
+             fig = plt.gcf()
+             p = save_figure(fig, output_dir, "cell_type_umap.png")
+             figures.append(str(p))
++            plt.close('all')
+     except Exception as e:
+         logger.warning("Could not generate UMAP annotation plot: %s", e)
+ 
+@@ -411,6 +413,7 @@ def generate_figures(adata, output_dir: Path, summary: dict) -> list[str]:
+         fig.tight_layout()
+         p = save_figure(fig, output_dir, "cell_type_barplot.png")
+         figures.append(str(p))
++        plt.close('all')
+     except Exception as e:
+         logger.warning("Could not generate barplot: %s", e)
+ 
+diff --git a/skills/spatial/spatial-cnv/spatial_cnv.py b/skills/spatial/spatial-cnv/spatial_cnv.py
+index 0b1e1b29..9c8c866e 100644
+--- a/skills/spatial/spatial-cnv/spatial_cnv.py
++++ b/skills/spatial/spatial-cnv/spatial_cnv.py
+@@ -88,8 +88,8 @@ def _run_infercnvpy(
+     *,
+     reference_key: str | None = None,
+     reference_cat: list[str] | None = None,
+-    window_size: int = 250,
+-    step: int = 50,
++    window_size: int = 100,
++    step: int = 10,
+     dynamic_threshold: float | None = 1.5,
+ ) -> dict:
+     """Infer CNV using inferCNVpy (expression-based, no allele data needed)."""
+@@ -143,7 +143,6 @@ def _run_numbat(
+         In R: install.packages("Numbat")
+         Allelic count data in adata.obsm["allele_counts"] or external TSV.
+     """
+-    validate_r_environment(required_r_packages=["numbat"])
+     robjects, pandas2ri, numpy2ri, importr, localconverter, default_converter, openrlib, anndata2ri = (
+         validate_r_environment(required_r_packages=["numbat"])
+     )
+@@ -189,8 +188,8 @@ def run_cnv(
+     method: str = "infercnvpy",
+     reference_key: str | None = None,
+     reference_cat: list[str] | None = None,
+-    window_size: int = 250,
+-    step: int = 50,
++    window_size: int = 100,
++    step: int = 10,
+ ) -> dict:
+     """Run CNV inference. Returns summary dict.
+ 
+@@ -234,7 +233,9 @@ def run_cnv(
+ 
+ 
+ def generate_figures(adata, output_dir: Path, summary: dict) -> list[str]:
+-    """Generate CNV visualizations using the SpatialClaw viz library."""
++    """Generate CNV visualizations using the OmicsClaw viz library."""
++    import matplotlib.pyplot as plt
++
+     figures: list[str] = []
+ 
+     # 1. CNV chromosome heatmap
+@@ -242,6 +243,7 @@ def generate_figures(adata, output_dir: Path, summary: dict) -> list[str]:
+         fig = plot_cnv(adata, VizParams(), subtype="heatmap")
+         p = save_figure(fig, output_dir, "cnv_heatmap.png")
+         figures.append(str(p))
++        plt.close('all')
+     except Exception as exc:
+         logger.warning("CNV heatmap failed: %s", exc)
+ 
+@@ -251,6 +253,7 @@ def generate_figures(adata, output_dir: Path, summary: dict) -> list[str]:
+             fig = plot_cnv(adata, VizParams(colormap="RdBu_r"), subtype="spatial")
+             p = save_figure(fig, output_dir, "cnv_spatial.png")
+             figures.append(str(p))
++            plt.close('all')
+         except Exception as exc:
+             logger.warning("CNV spatial map failed: %s", exc)
+ 
+@@ -267,6 +270,7 @@ def generate_figures(adata, output_dir: Path, summary: dict) -> list[str]:
+             )
+             p = save_figure(fig, output_dir, "cnv_umap.png")
+             figures.append(str(p))
++            plt.close('all')
+         except Exception as exc:
+             logger.warning("CNV UMAP failed: %s", exc)
+ 
+@@ -402,12 +406,10 @@ def main():
+         "--reference-cat", nargs="+", default=None,
+         help="Category values marking normal reference cells (e.g. 'Normal')",
+     )
+-    parser.add_argument("--window-size", type=int, default=250)
+-    parser.add_argument("--step", type=int, default=50)
++    parser.add_argument("--window-size", type=int, default=100)
++    parser.add_argument("--step", type=int, default=10)
+     args = parser.parse_args()
+ 
+-    require("infercnvpy", feature="CNV inference")
+-
+     output_dir = Path(args.output_dir)
+     output_dir.mkdir(parents=True, exist_ok=True)
+ 
+diff --git a/skills/spatial/spatial-communication/spatial_communication.py b/skills/spatial/spatial-communication/spatial_communication.py
+index 6e1bd6d6..58fef9b6 100644
+--- a/skills/spatial/spatial-communication/spatial_communication.py
++++ b/skills/spatial/spatial-communication/spatial_communication.py
+@@ -396,7 +396,9 @@ def run_communication(
+ 
+ 
+ def generate_figures(adata, output_dir: Path, summary: dict) -> list[str]:
+-    """Generate CCC visualizations using the SpatialClaw viz library."""
++    """Generate CCC visualizations using the OmicsClaw viz library."""
++    import matplotlib.pyplot as plt
++
+     figures: list[str] = []
+ 
+     # 1. LR pair dotplot
+@@ -404,6 +406,7 @@ def generate_figures(adata, output_dir: Path, summary: dict) -> list[str]:
+         fig = plot_communication(adata, VizParams(), subtype="dotplot", top_n=20)
+         p = save_figure(fig, output_dir, "lr_dotplot.png")
+         figures.append(str(p))
++        plt.close('all')
+     except Exception as exc:
+         logger.warning("LR dotplot failed: %s", exc)
+ 
+@@ -412,6 +415,7 @@ def generate_figures(adata, output_dir: Path, summary: dict) -> list[str]:
+         fig = plot_communication(adata, VizParams(), subtype="heatmap", top_n=20)
+         p = save_figure(fig, output_dir, "lr_heatmap.png")
+         figures.append(str(p))
++        plt.close('all')
+     except Exception as exc:
+         logger.warning("LR heatmap failed: %s", exc)
+ 
+@@ -421,6 +425,7 @@ def generate_figures(adata, output_dir: Path, summary: dict) -> list[str]:
+             fig = plot_communication(adata, VizParams(), subtype="spatial", top_n=5)
+             p = save_figure(fig, output_dir, "lr_spatial.png")
+             figures.append(str(p))
++            plt.close('all')
+         except Exception as exc:
+             logger.warning("LR spatial map failed: %s", exc)
+ 
+diff --git a/skills/spatial/spatial-condition/spatial_condition.py b/skills/spatial/spatial-condition/spatial_condition.py
+index b9b57a20..073f143f 100644
+--- a/skills/spatial/spatial-condition/spatial_condition.py
++++ b/skills/spatial/spatial-condition/spatial_condition.py
+@@ -328,6 +328,7 @@ def generate_figures(output_dir: Path, summary: dict) -> list[str]:
+             fig.tight_layout()
+             p = save_figure(fig, output_dir, "pseudobulk_volcano.png")
+             figures.append(str(p))
++            plt.close('all')
+     except Exception as exc:
+         logger.warning("Could not generate volcano: %s", exc)
+ 
+@@ -348,6 +349,7 @@ def generate_figures(output_dir: Path, summary: dict) -> list[str]:
+             fig.tight_layout()
+             p = save_figure(fig, output_dir, "condition_de_barplot.png")
+             figures.append(str(p))
++            plt.close('all')
+     except Exception as exc:
+         logger.warning("Could not generate cluster bar plot: %s", exc)
+ 
+@@ -475,7 +477,7 @@ def write_report(
+ def get_demo_data() -> tuple:
+     """Generate synthetic multi-condition data for demo."""
+     preprocess_script = (
+-        _PROJECT_ROOT / "skills" / "spatial" / "preprocess" / "spatial_preprocess.py"
++        _PROJECT_ROOT / "skills" / "spatial" / "spatial-preprocess" / "spatial_preprocess.py"
+     )
+     if not preprocess_script.exists():
+         raise FileNotFoundError(f"spatial-preprocess not found at {preprocess_script}")
+diff --git a/skills/spatial/spatial-de/spatial_de.py b/skills/spatial/spatial-de/spatial_de.py
+index 32e48984..a2bfedac 100644
+--- a/skills/spatial/spatial-de/spatial_de.py
++++ b/skills/spatial/spatial-de/spatial_de.py
+@@ -370,6 +370,7 @@ def generate_figures(
+         fig = plt.gcf()
+         p = save_figure(fig, output_dir, "marker_dotplot.png")
+         figures.append(str(p))
++        plt.close('all')
+     except Exception as exc:
+         logger.warning("Scanpy dotplot failed (%s), falling back to heatmap", exc)
+         try:
+@@ -390,6 +391,7 @@ def generate_figures(
+                 fig.tight_layout()
+                 p = save_figure(fig, output_dir, "marker_dotplot.png")
+                 figures.append(str(p))
++                plt.close('all')
+         except Exception as inner_exc:
+             logger.warning("Fallback heatmap also failed: %s", inner_exc)
+ 
+@@ -426,6 +428,7 @@ def generate_figures(
+                 fig.tight_layout()
+                 p = save_figure(fig, output_dir, "de_volcano.png")
+                 figures.append(str(p))
++                plt.close('all')
+         except Exception as exc:
+             logger.warning("Could not generate volcano plot: %s", exc)
+ 
+diff --git a/skills/spatial/spatial-enrichment/spatial_enrichment.py b/skills/spatial/spatial-enrichment/spatial_enrichment.py
+index 1fc47074..bb91acb5 100644
+--- a/skills/spatial/spatial-enrichment/spatial_enrichment.py
++++ b/skills/spatial/spatial-enrichment/spatial_enrichment.py
+@@ -90,8 +90,9 @@ def _run_enrichr(
+     sc.tl.rank_genes_groups(adata, groupby=groupby, method="wilcoxon", n_genes=n_top_genes)
+     markers_df = sc.get.rank_genes_groups_df(adata, group=None)
+ 
+-    # Resolve versioned library name
+-    lib_name = _GENESET_LIBRARY_CANDIDATES.get(source, (source,))[0]
++    # Resolve versioned library name through fallback system
++    candidates = _GENESET_LIBRARY_CANDIDATES.get(source, (source,))
++    lib_name = candidates[0]
+ 
+     all_records = []
+     for grp in sorted(markers_df["group"].unique().tolist(), key=str):
+@@ -106,7 +107,7 @@ def _run_enrichr(
+                 outdir=None,
+                 no_plot=True,
+             )
+-            res = enr.results.copy()
++            res = enr.results.copy() if hasattr(enr, 'results') else enr.res2d.copy()
+             res["cluster"] = str(grp)
+             all_records.append(res)
+         except Exception as exc:
+@@ -263,7 +264,7 @@ def run_enrichment(
+         )
+         used_method = "enrichr"
+ 
+-    n_sig = int(np.sum(enrich_df["pvalue_adj"] < 0.05)) if not enrich_df.empty else 0
++    n_sig = int(enrich_df["pvalue_adj"].dropna().lt(0.05).sum()) if not enrich_df.empty else 0
+ 
+     return {
+         "n_cells": n_cells,
+@@ -406,7 +407,7 @@ def write_report(
+     try:
+         from importlib.metadata import version as _ver
+     except ImportError:
+-        pass
++        from importlib_metadata import version as _ver  # type: ignore
+     env_lines: list[str] = []
+     for pkg in ["scanpy", "anndata", "scipy", "numpy", "pandas", "matplotlib"]:
+         try:
+@@ -467,8 +468,8 @@ def main():
+     parser.add_argument("--gene-set", default=None, help="Custom gene set name")
+     parser.add_argument("--species", default="human", choices=["human", "mouse"])
+     parser.add_argument(
+-        "--source", default="GO_Biological_Process_2021",
+-        help="Gene set database for gseapy (default: GO_Biological_Process_2021)",
++        "--source", default="GO_Biological_Process",
++        help="Gene set database key (default: GO_Biological_Process)",
+     )
+     args = parser.parse_args()
+ 
+diff --git a/skills/spatial/spatial-integrate/spatial_integrate.py b/skills/spatial/spatial-integrate/spatial_integrate.py
+index 52110fde..e0f9694e 100644
+--- a/skills/spatial/spatial-integrate/spatial_integrate.py
++++ b/skills/spatial/spatial-integrate/spatial_integrate.py
+@@ -61,14 +61,13 @@ def _integrate_harmony(adata, batch_key: str) -> dict:
+     import harmonypy
+ 
+     ensure_pca(adata)
+-    pca = adata.obsm["X_pca"]
+-    batch_labels = adata.obs[batch_key].values
+ 
+-    ho = harmonypy.run_harmony(pca, adata.obs, batch_key, max_iter_harmony=20)
+-    adata.obsm["X_pca_harmony"] = ho.Z_corr.T if ho.Z_corr.shape[0] != adata.n_obs else ho.Z_corr
++    ho = harmonypy.run_harmony(adata.obsm["X_pca"], adata.obs, batch_key, max_iter_harmony=20)
+ 
+-    corrected = adata.obsm["X_pca_harmony"]
+-    if corrected.shape[0] != adata.n_obs:
++    # harmonypy >= 0.1.0 returns Z_corr as (cells × PCs).
++    # Older versions returned (PCs × cells). Handle both:
++    corrected = ho.Z_corr
++    if corrected.shape[0] != adata.n_obs and corrected.shape[1] == adata.n_obs:
+         corrected = corrected.T
+     adata.obsm["X_pca_harmony"] = corrected
+ 
+@@ -92,22 +91,22 @@ def _integrate_bbknn(adata, batch_key: str) -> dict:
+ 
+ 
+ def _integrate_scanorama(adata, batch_key: str) -> dict:
+-    """Run Scanorama integration."""
++    """Run Scanorama integration via Scanpy's external API."""
+     from omicsclaw.spatial.dependency_manager import require
+     require("scanorama", feature="Scanorama batch integration")
+-    import scanorama
+ 
+-    batches = sorted(adata.obs[batch_key].unique().tolist(), key=str)
+-    adatas = [adata[adata.obs[batch_key] == b].copy() for b in batches]
+-
+-    corrected, _ = scanorama.correct_scanpy(adatas, return_dimred=True)
++    ensure_pca(adata)
+ 
+-    adata_corrected = corrected[0].concatenate(corrected[1:], batch_key=batch_key)
+-    adata.obsm["X_scanorama"] = adata_corrected.obsm.get(
+-        "X_scanorama", adata_corrected.obsm.get("X_pca", adata.obsm["X_pca"])
++    # Use Scanpy's built-in Scanorama wrapper — handles splitting, integration,
++    # and storing the corrected embedding in adata.obsm['X_scanorama'].
++    sc.external.pp.scanorama_integrate(
++        adata,
++        key=batch_key,
++        basis="X_pca",
++        adjusted_basis="X_scanorama",
+     )
+ 
+-    sc.pp.neighbors(adata, use_rep="X_scanorama" if "X_scanorama" in adata.obsm else "X_pca")
++    sc.pp.neighbors(adata, use_rep="X_scanorama")
+     sc.tl.umap(adata)
+ 
+     return {"method": "scanorama", "embedding_key": "X_scanorama"}
+@@ -192,7 +191,7 @@ def run_integration(
+     if "X_pca" not in adata.obsm:
+         raise ValueError(
+             "X_pca not found. Run spatial-preprocess before integration:\n"
+-            "  python omicsclaw.py run preprocess --input data.h5ad --output results/preprocess/"
++            "  python omicsclaw.py run spatial-preprocess --input data.h5ad --output results/"
+         )
+     if "X_umap" not in adata.obsm:
+         ensure_neighbors(adata)
+@@ -299,6 +298,7 @@ def generate_figures(adata, output_dir: Path, summary: dict) -> list[str]:
+         fig.tight_layout()
+         p = save_figure(fig, output_dir, "batch_mixing.png")
+         figures.append(str(p))
++        plt.close('all')
+     except Exception as exc:
+         logger.warning("Could not generate batch mixing plot: %s", exc)
+ 
+@@ -391,18 +391,19 @@ def write_report(
+     cmd_str = " ".join(cmd_parts)
+     (repro_dir / "commands.sh").write_text(f"#!/bin/bash\n{cmd_str}\n")
+ 
+-    import pkg_resources
++    try:
++        from importlib.metadata import version as _get_version
++    except ImportError:
++        from importlib_metadata import version as _get_version  # type: ignore
+     env_lines: list[str] = []
+     for pkg in ["scanpy", "anndata", "numpy", "pandas", "matplotlib"]:
+         try:
+-            ver = pkg_resources.get_distribution(pkg).version
+-            env_lines.append(f"{pkg}=={ver}")
++            env_lines.append(f"{pkg}=={_get_version(pkg)}")
+         except Exception:
+             env_lines.append(f"{pkg}=?")
+     for opt in ["harmonypy", "bbknn", "scanorama"]:
+         if is_available(opt):
+             try:
+-                from importlib.metadata import version as _get_version
+                 env_lines.append(f"{opt}=={_get_version(opt)}")
+             except Exception:
+                 pass
+diff --git a/skills/spatial/spatial-preprocess/spatial_preprocess.py b/skills/spatial/spatial-preprocess/spatial_preprocess.py
+index 59b15289..c4a4bbc9 100644
+--- a/skills/spatial/spatial-preprocess/spatial_preprocess.py
++++ b/skills/spatial/spatial-preprocess/spatial_preprocess.py
+@@ -171,6 +171,7 @@ def generate_figures(adata, output_dir: Path) -> list[str]:
+             fig = plt.gcf()
+             p = save_figure(fig, output_dir, "qc_violin.png")
+             figures.append(str(p))
++            plt.close('all')
+     except Exception as e:
+         logger.warning("Could not generate QC violin: %s", e)
+ 
+@@ -181,6 +182,7 @@ def generate_figures(adata, output_dir: Path) -> list[str]:
+             fig = plt.gcf()
+             p = save_figure(fig, output_dir, "umap_leiden.png")
+             figures.append(str(p))
++            plt.close('all')
+     except Exception as e:
+         logger.warning("Could not generate UMAP figure: %s", e)
+ 
+@@ -198,6 +200,7 @@ def generate_figures(adata, output_dir: Path) -> list[str]:
+             fig = plt.gcf()
+             p = save_figure(fig, output_dir, "spatial_leiden.png")
+             figures.append(str(p))
++            plt.close('all')
+     except Exception as e:
+         logger.warning("Could not generate Spatial figure: %s", e)
+ 
+diff --git a/skills/spatial/spatial-register/spatial_register.py b/skills/spatial/spatial-register/spatial_register.py
+index 55106c9a..30402b1a 100644
+--- a/skills/spatial/spatial-register/spatial_register.py
++++ b/skills/spatial/spatial-register/spatial_register.py
+@@ -77,30 +77,46 @@ def _run_paste(
+     slices_list = sorted(adata.obs[slice_key].unique().tolist(), key=str)
+     ref = reference_slice or slices_list[0]
+     ref_adata = adata[adata.obs[slice_key] == ref].copy()
++    ref_coords = ref_adata.obsm[spatial_key].astype(float)
+ 
+     aligned_coords = adata.obsm[spatial_key].copy().astype(float)
++    disparities: dict[str, float] = {}
+ 
+     for sl in slices_list:
+         if str(sl) == str(ref):
+             continue
+         sl_adata = adata[adata.obs[slice_key] == sl].copy()
+         try:
+-            pi = pst.pairwise_align(ref_adata, sl_adata)
+-            coords_new = pi.T @ ref_adata.obsm[spatial_key]
++            # pairwise_align returns (pi, log_info)
++            # pi shape: (n_spots_query × n_spots_ref)
++            result = pst.pairwise_align(ref_adata, sl_adata)
++            pi = result[0] if isinstance(result, tuple) else result
++
++            # Transform query coords using weighted average of reference coords
++            row_sums = pi.sum(axis=1, keepdims=True)
++            row_sums = np.where(row_sums == 0, 1.0, row_sums)  # avoid division by zero
++            coords_new = (pi @ ref_coords) / row_sums
++
+             src_mask = adata.obs[slice_key] == sl
+             aligned_coords[src_mask] = coords_new
++
++            # Compute alignment disparity (Frobenius norm of transport plan)
++            disparity = float(np.sum(pi * pi))
++            disparities[str(sl)] = disparity
+         except Exception as exc:
+             logger.warning("PASTE failed for slice '%s': %s", sl, exc)
+ 
+     adata.obsm["spatial_aligned"] = aligned_coords
+ 
++    mean_disp = float(np.mean(list(disparities.values()))) if disparities else 0.0
++
+     return {
+         "method": "paste",
+         "reference_slice": str(ref),
+         "n_slices": len(slices_list),
+         "slices": [str(s) for s in slices_list],
+-        "disparities": {},
+-        "mean_disparity": 0.0,
++        "disparities": disparities,
++        "mean_disparity": mean_disp,
+     }
+ 
+ 
+@@ -196,6 +212,7 @@ def generate_figures(adata, output_dir: Path, summary: dict) -> list[str]:
+             fig.tight_layout()
+             p = save_figure(fig, output_dir, "slices_before.png")
+             figures.append(str(p))
++            plt.close('all')
+         except Exception as exc:
+             logger.warning("Could not generate before-registration plot: %s", exc)
+ 
+@@ -220,6 +237,7 @@ def generate_figures(adata, output_dir: Path, summary: dict) -> list[str]:
+             fig.tight_layout()
+             p = save_figure(fig, output_dir, "slices_after.png")
+             figures.append(str(p))
++            plt.close('all')
+         except Exception as exc:
+             logger.warning("Could not generate after-registration plot: %s", exc)
+ 
+@@ -315,12 +333,14 @@ def write_report(
+     cmd_str = " ".join(cmd_parts)
+     (repro_dir / "commands.sh").write_text(f"#!/bin/bash\n{cmd_str}\n")
+ 
+-    import pkg_resources
++    try:
++        from importlib.metadata import version as _get_version
++    except ImportError:
++        from importlib_metadata import version as _get_version  # type: ignore
+     env_lines: list[str] = []
+     for pkg in ["scanpy", "anndata", "scipy", "numpy", "pandas", "matplotlib"]:
+         try:
+-            ver = pkg_resources.get_distribution(pkg).version
+-            env_lines.append(f"{pkg}=={ver}")
++            env_lines.append(f"{pkg}=={_get_version(pkg)}")
+         except Exception:
+             env_lines.append(f"{pkg}=?")
+     (repro_dir / "environment.yml").write_text("\n".join(env_lines) + "\n")
+diff --git a/skills/spatial/spatial-statistics/spatial_statistics.py b/skills/spatial/spatial-statistics/spatial_statistics.py
+index abaf6efc..68c1a2d2 100644
+--- a/skills/spatial/spatial-statistics/spatial_statistics.py
++++ b/skills/spatial/spatial-statistics/spatial_statistics.py
+@@ -870,29 +870,31 @@ def get_demo_data() -> tuple:
+     if not preprocess_script.exists():
+         raise FileNotFoundError(
+             f"spatial-preprocess script not found at {preprocess_script}. "
+-            "Run from the SpatialClaw project root."
++            "Run from the OmicsClaw project root."
+         )
+ 
+-    demo_dir = Path(tempfile.mkdtemp(prefix="spatialstats_demo_"))
+-    logger.info("Running spatial-preprocess --demo -> %s", demo_dir)
++    with tempfile.TemporaryDirectory(prefix="spatialstats_demo_") as demo_dir:
++        demo_dir = Path(demo_dir)
++        logger.info("Running spatial-preprocess --demo -> %s", demo_dir)
+ 
+-    result = subprocess.run(
+-        [sys.executable, str(preprocess_script), "--demo", "--output", str(demo_dir)],
+-        capture_output=True,
+-        text=True,
+-    )
+-    if result.returncode != 0:
+-        logger.error("spatial-preprocess failed:\n%s", result.stderr)
+-        raise RuntimeError(f"spatial-preprocess --demo failed (exit {result.returncode})")
+-
+-    processed_path = demo_dir / "processed.h5ad"
+-    if not processed_path.exists():
+-        raise FileNotFoundError(
+-            f"Expected processed.h5ad at {processed_path} after spatial-preprocess"
++        result = subprocess.run(
++            [sys.executable, str(preprocess_script), "--demo", "--output", str(demo_dir)],
++            capture_output=True,
++            text=True,
++            timeout=180,
+         )
++        if result.returncode != 0:
++            logger.error("spatial-preprocess failed:\n%s", result.stderr)
++            raise RuntimeError(f"spatial-preprocess --demo failed (exit {result.returncode})")
++
++        processed_path = demo_dir / "processed.h5ad"
++        if not processed_path.exists():
++            raise FileNotFoundError(
++                f"Expected processed.h5ad at {processed_path} after spatial-preprocess"
++            )
+ 
+-    adata = sc.read_h5ad(processed_path)
+-    return adata, str(processed_path)
++        adata = sc.read_h5ad(processed_path)
++        return adata, None
+ 
+ 
+ # ---------------------------------------------------------------------------
+diff --git a/skills/spatial/spatial-trajectory/spatial_trajectory.py b/skills/spatial/spatial-trajectory/spatial_trajectory.py
+index a0355030..71404cbb 100644
+--- a/skills/spatial/spatial-trajectory/spatial_trajectory.py
++++ b/skills/spatial/spatial-trajectory/spatial_trajectory.py
+@@ -48,7 +48,7 @@
+ SKILL_NAME = "spatial-trajectory"
+ SKILL_VERSION = "0.1.0"
+ 
+-
++SUPPORTED_METHODS = ("dpt", "cellrank", "palantir")
+ 
+ 
+ # ---------------------------------------------------------------------------
+@@ -122,8 +122,14 @@ def _run_cellrank(adata, *, n_states: int = 3) -> dict:
+     estimator.compute_schur(n_components=20)
+     estimator.compute_macrostates(n_states=n_states)
+ 
+-    macrostates = adata.obs.get("macrostates", None)
+-    n_macro = macrostates.nunique() if macrostates is not None else 0
++    # CellRank 2 stores macrostates in different obs keys depending on version
++    macro_key = None
++    for candidate in ("macrostates_fwd", "macrostates", "term_states_fwd"):
++        if candidate in adata.obs.columns:
++            macro_key = candidate
++            break
++
++    n_macro = adata.obs[macro_key].nunique() if macro_key else 0
+ 
+     return {
+         "method": "cellrank",
+@@ -320,11 +326,11 @@ def write_report(
+     try:
+         from importlib.metadata import version as _ver
+     except ImportError:
+-        pass
++        from importlib_metadata import version as _ver  # type: ignore
+     env_lines: list[str] = []
+     for pkg in ["scanpy", "anndata", "numpy", "pandas", "matplotlib"]:
+         try:
+-            env_lines.append(f"{pkg}=={_get_version(pkg)}")
++            env_lines.append(f"{pkg}=={_ver(pkg)}")
+         except Exception:
+             env_lines.append(f"{pkg}=?")
+     (repro_dir / "environment.yml").write_text("\n".join(env_lines) + "\n")
+@@ -401,7 +407,7 @@ def main():
+     if "X_pca" not in adata.obsm:
+         raise ValueError(
+             "PCA not found. Run spatial-preprocess before trajectory analysis:\n"
+-            "  python omicsclaw.py run preprocess --input data.h5ad --output results/preprocess/"
++            "  python omicsclaw.py run spatial-preprocess --input data.h5ad --output results/"
+         )
+ 
+     params = {
+diff --git a/skills/spatial/spatial-velocity/spatial_velocity.py b/skills/spatial/spatial-velocity/spatial_velocity.py
+index 6e97f5d8..3a051ffe 100644
+--- a/skills/spatial/spatial-velocity/spatial_velocity.py
++++ b/skills/spatial/spatial-velocity/spatial_velocity.py
+@@ -180,17 +180,16 @@ def _run_velovi(adata) -> dict:
+     if "spliced" not in adata.layers or "unspliced" not in adata.layers:
+         raise ValueError("VELOVI requires 'spliced' and 'unspliced' layers.")
+ 
++    # scVelo preprocessing — creates normalized Ms, Mu moment layers
+     scv.pp.filter_and_normalize(adata, min_shared_counts=30, n_top_genes=2000, enforce=True)
+     scv.pp.moments(adata, n_pcs=30, n_neighbors=30)
+ 
+-    adata.layers["Ms"] = adata.layers["spliced"]
+-    adata.layers["Mu"] = adata.layers["unspliced"]
+-
+-    VELOVI.setup_anndata(adata, spliced_layer="Ms", unspliced_layer="Mu")
++    # VELOVI expects raw spliced/unspliced count layers, NOT the moment layers.
++    VELOVI.setup_anndata(adata, spliced_layer="spliced", unspliced_layer="unspliced")
+     model = VELOVI(adata)
+     model.train(max_epochs=500)
+ 
+-    adata.layers["velocity"] = model.get_velocity(velo_statistic="mean", velo_mode="spliced")
++    adata.layers["velocity"] = model.get_velocity()
+ 
+     vel = np.asarray(adata.layers["velocity"], dtype=np.float64)
+     speed = np.sqrt((vel ** 2).sum(axis=1))

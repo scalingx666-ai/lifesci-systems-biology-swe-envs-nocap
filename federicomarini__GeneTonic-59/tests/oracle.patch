@@ -1,0 +1,335 @@
+diff --git a/R/enhance_table.R b/R/enhance_table.R
+index bdcea212..48f5e509 100644
+--- a/R/enhance_table.R
++++ b/R/enhance_table.R
+@@ -160,11 +160,11 @@ enhance_table <- function(res_enrich,
+   
+   if (plot_style == "point") {
+     p <- ggplot(
+-      gs_fulllist, aes_string(
+-        x = "log2FoldChange",
+-        y = "gs_desc",
+-        fill = "gs_id",
+-        text = "gene_name"
++      gs_fulllist, aes(
++        x = .data$log2FoldChange,
++        y = .data$gs_desc,
++        fill = .data$gs_id,
++        text = .data$gene_name
+       )
+     ) +
+       scale_x_continuous(limits = c(-max_lfc, max_lfc)) +
+@@ -188,16 +188,16 @@ enhance_table <- function(res_enrich,
+     if (ridge_color == "gs_score") {
+       gs_fulllist$gs_zscore <- res_enrich$z_score[match(gs_fulllist$gs_id, res_enrich$gs_id)]
+       p <- ggplot(
+-        gs_fulllist, aes_string(
+-          x = "log2FoldChange",
+-          y = "gs_desc",
+-          fill = "gs_zscore"
++        gs_fulllist, aes(
++          x = .data$log2FoldChange,
++          y = .data$gs_desc,
++          fill = .data$gs_zscore
+         )
+       ) +
+         scale_x_continuous(limits = c(-max_lfc, max_lfc)) + 
+         scale_fill_gradient2(low = "#313695", mid = "#FFFFE5", high = "#A50026") + 
+         ggridges::geom_density_ridges(
+-          aes_string(group = "gs_id"),
++          aes(group = .data$gs_id),
+           point_color = "#00000066",
+           jittered_points = TRUE, scale = .95, rel_min_height = .01,
+           point_shape = "|", point_size = 3, linewidth = 0.25,
+@@ -212,15 +212,15 @@ enhance_table <- function(res_enrich,
+     }
+     else if (ridge_color == "gs_id") {
+       p <- ggplot(
+-        gs_fulllist, aes_string(
+-          x = "log2FoldChange",
+-          y = "gs_desc",
+-          fill = "gs_id"
++        gs_fulllist, aes(
++          x = .data$log2FoldChange,
++          y = .data$gs_desc,
++          fill = .data$gs_id
+         )
+       ) +
+         scale_x_continuous(limits = c(-max_lfc, max_lfc)) + 
+         ggridges::geom_density_ridges(
+-          aes_string(group = "gs_id"),
++          aes(group = .data$gs_id),
+           point_color = "#00000066",
+           jittered_points = TRUE, scale = .95, rel_min_height = .01,
+           point_shape = "|", point_size = 3, linewidth = 0.25,
+diff --git a/R/gene_plot.R b/R/gene_plot.R
+index 9c0e83bd..93f7d306 100644
+--- a/R/gene_plot.R
++++ b/R/gene_plot.R
+@@ -127,7 +127,9 @@ gene_plot <- function(dds,
+     return(df)
+   }
+ 
+-  p <- ggplot(df, aes_string(x = "plotby", y = "exp_value", col = "plotby")) +
++  p <- ggplot(df, aes(x = .data$plotby, 
++                      y = .data$exp_value, 
++                      col = .data$plotby)) +
+     scale_x_discrete(name = "") +
+     scale_color_discrete(name = "Experimental\ngroup") +
+     theme_bw()
+@@ -139,18 +141,21 @@ gene_plot <- function(dds,
+   # https://www.embopress.org/doi/full/10.15252/embj.201694659
+   if (plot_type == "jitteronly" || (plot_type == "auto" & min_by_groups <= 3)) {
+     p <- p +
+-      geom_point(aes_string(x = "plotby", y = "exp_value"),
++      geom_point(aes(x = .data$plotby, 
++                     y = .data$exp_value),
+         position = jit_pos
+       )
+     # do nothing - or add a line for the median?
+   } else if (plot_type == "boxplot" || (plot_type == "auto" & (min_by_groups > 3 & min_by_groups < 10))) {
+     p <- p +
+       geom_boxplot(outlier.shape = NA) +
+-      geom_point(aes_string(x = "plotby", y = "exp_value"), position = jit_pos)
++      geom_point(aes(x = .data$plotby, 
++                     y = .data$exp_value), position = jit_pos)
+   } else if (plot_type == "violin" || (plot_type == "auto" & (min_by_groups >= 11 & min_by_groups < 40))) {
+     p <- p +
+       geom_violin() +
+-      geom_point(aes_string(x = "plotby", y = "exp_value"), position = jit_pos) +
++      geom_point(aes(x = .data$plotby, 
++                     y = .data$exp_value), position = jit_pos) +
+       stat_summary(
+         fun = median, fun.min = median, fun.max = median,
+         geom = "crossbar", width = 0.3
+@@ -167,13 +172,13 @@ gene_plot <- function(dds,
+   # handling the labels
+   if (labels_display) {
+     if (labels_repel) {
+-      p <- p + ggrepel::geom_text_repel(aes_string(label = "sample_id"),
++      p <- p + ggrepel::geom_text_repel(aes(label = .data$sample_id),
+         min.segment.length = 0,
+         position = jit_pos
+       )
+     }
+     else {
+-      p <- p + geom_text(aes_string(label = "sample_id"),
++      p <- p + geom_text(aes(label = .data$sample_id),
+         hjust = -0.1, vjust = 0.1,
+         position = jit_pos
+       )
+diff --git a/R/gs_heatmap.R b/R/gs_heatmap.R
+index 0e8f40f7..6e9d5831 100644
+--- a/R/gs_heatmap.R
++++ b/R/gs_heatmap.R
+@@ -524,8 +524,8 @@ gs_scoresheat <- function(mat,
+   score_df <- cbind(score_df, scores)
+   colnames(score_df) <- c("GeneSet", "Sample", "Value")
+ 
+-  p <- ggplot(score_df, aes_string(x = "Sample", y = "GeneSet")) +
+-    geom_tile(aes_string(fill = "Value"), color = "white") +
++  p <- ggplot(score_df, aes(x = .data$Sample, y = .data$GeneSet)) +
++    geom_tile(aes(fill = .data$Value), color = "white") +
+     # from brewer.pal(n = 11, name = 'RdYlBu') and brewer.pal(n = 11, name = 'YlGn') - or Spectal, 11?
+     scale_fill_gradient2(low = "#313695", mid = "#FFFFE5", high = "#A50026") +
+     theme(
+diff --git a/R/gs_mds.R b/R/gs_mds.R
+index 86e672d0..6149cdb8 100644
+--- a/R/gs_mds.R
++++ b/R/gs_mds.R
+@@ -162,14 +162,14 @@ gs_mds <- function(res_enrich,
+ 
+   this_contrast <- (sub(".*p-value: (.*)", "\\1", mcols(res_de, use.names = TRUE)["pvalue", "description"]))
+ 
+-  p <- ggplot(mds_gs_df, aes_string(
+-    x = "dim1",
+-    y = "dim2",
+-    text = "gs_text"
++  p <- ggplot(mds_gs_df, aes(
++    x = .data$dim1,
++    y = .data$dim2,
++    text = .data$gs_text
+   )) +
+-    geom_point(aes_string(
+-      color = "gs_colby",
+-      size = "gs_DEcount"
++    geom_point(aes(
++      color = .data$gs_colby,
++      size = .data$gs_DEcount
+     )) +
+     scale_color_gradient2(
+       limit = limit,
+@@ -203,7 +203,7 @@ gs_mds <- function(res_enrich,
+   df_gs_labels <- mds_gs_df[mds_gs_df$gs_id %in% unique(c(label_these, label_those)), ]
+ 
+   p <- p + geom_label_repel(
+-    aes_string(label = "gs_name"),
++    aes(label = .data$gs_name),
+     data = df_gs_labels,
+     size = 3,
+     min.segment.length = 0
+diff --git a/R/gs_summaries.R b/R/gs_summaries.R
+index e264218a..bfa0e252 100644
+--- a/R/gs_summaries.R
++++ b/R/gs_summaries.R
+@@ -99,7 +99,7 @@ gs_summary_overview <- function(res_enrich,
+     mutate(gs_description = factor(.data$gs_description, .data$gs_description))
+ 
+   if (return_barchart) {
+-    p <- ggplot(re_sorted, (aes_string(x = "gs_description", y = "logp10")))
++    p <- ggplot(re_sorted, (aes(x = .data$gs_description, y = .data$logp10)))
+ 
+     if (is.null(color_by)) {
+       p <- p + geom_col()
+@@ -117,12 +117,12 @@ gs_summary_overview <- function(res_enrich,
+       ) +
+       theme_minimal()
+   } else {
+-    p <- ggplot(re_sorted, (aes_string(x = "gs_description", y = "logp10"))) +
+-      geom_segment(aes_string(
+-        x = "gs_description",
+-        xend = "gs_description",
++    p <- ggplot(re_sorted, (aes(x = .data$gs_description, y = .data$logp10))) +
++      geom_segment(aes(
++        x = .data$gs_description,
++        xend = .data$gs_description,
+         y = 0,
+-        yend = "logp10"
++        yend = .data$logp10
+       ), color = "grey")
+ 
+     if (is.null(color_by)) {
+@@ -265,10 +265,13 @@ gs_summary_overview_pair <- function(res_enrich,
+     arrange(.data$logp10) %>%
+     mutate(gs_description = factor(.data$gs_description, .data$gs_description))
+ 
+-  p <- ggplot(re_both_sorted, aes_string(x = "gs_description", y = "logp10")) +
+-    geom_segment(aes_string(x = "gs_description", xend = "gs_description", y = "logp10_2", yend = "logp10"), color = "grey") +
++  p <- ggplot(re_both_sorted, aes(x = .data$gs_description, y = .data$logp10)) +
++    geom_segment(aes(x = .data$gs_description, 
++                     xend = .data$gs_description, 
++                     y = .data$logp10_2, 
++                     yend = .data$logp10), color = "grey") +
+     geom_point(aes(fill = .data[[color_by]]), size = 4, pch = 21) +
+-    geom_point(aes_string(y = "logp10_2", col = paste0(color_by, "_2")),
++    geom_point(aes(y = .data$logp10_2, col = .data[[paste0(color_by, "_2")]]),
+       size = 4, alpha = alpha_set2
+     ) +
+     scale_color_gradient2(low = "#313695", mid = "#FFFFE5", high = "#A50026", name = paste0(color_by, " set 2")) +
+@@ -518,9 +521,9 @@ gs_horizon <- function(res_enrich,
+     p <- merged_res_enh %>%
+       mutate(gs_description = factor(.data$gs_description, rev(unique(.data$gs_description)))) %>%
+       arrange((.data$logp10)) %>%
+-      ggplot(aes_string(x = "gs_description", y = "logp10")) +
+-      geom_line(aes_string(group = "scenario", col = "scenario"), linewidth = 3, alpha = 0.7) +
+-      geom_point(aes_string(fill = "z_score"), size = 4, pch = 21) +
++      ggplot(aes(x = .data$gs_description, y = .data$logp10)) +
++      geom_line(aes(group = .data$scenario, col = .data$scenario), linewidth = 3, alpha = 0.7) +
++      geom_point(aes(fill = .data$z_score), size = 4, pch = 21) +
+       scale_color_brewer(palette = "Set2") +
+       scale_fill_gradient2(low = "#313695", mid = "#FFFFE5", high = "#A50026") +
+       ylim(c(0, NA)) +
+@@ -541,10 +544,10 @@ gs_horizon <- function(res_enrich,
+       # mutate(gs_description=factor(gs_description, unique(gs_description))) %>%
+       mutate(gs_description = factor(.data$gs_description, rev(unique(nicerorder_terms)))) %>%
+       arrange(desc(.data$logp10)) %>%
+-      ggplot(aes_string(x = "gs_description", y = "logp10")) +
+-      geom_line(aes_string(group = "scenario", col = "scenario"), linewidth = 3, alpha = 0.7) +
++      ggplot(aes(x = .data$gs_description, y = .data$logp10)) +
++      geom_line(aes(group = .data$scenario, col = .data$scenario), linewidth = 3, alpha = 0.7) +
+       scale_color_brewer(palette = "Set2") +
+-      geom_point(aes_string(fill = "z_score"), size = 4, pch = 21) +
++      geom_point(aes(fill = .data$z_score), size = 4, pch = 21) +
+       scale_fill_gradient2(low = "#313695", mid = "#FFFFE5", high = "#A50026") +
+       ylim(c(0, NA)) +
+       coord_flip() +
+@@ -653,9 +656,9 @@ gs_summary_heat <- function(res_enrich,
+ 
+   p <- ggplot(
+     gs_expanded,
+-    aes_string(x = "gs_genes", y = "gs_description")
++    aes(x = .data$gs_genes, y = .data$gs_description)
+   ) +
+-    geom_tile(aes_string(fill = "log2FoldChange"),
++    geom_tile(aes(fill = .data$log2FoldChange),
+       color = "white"
+     ) +
+     scale_fill_gradient2(
+diff --git a/R/gs_upset.R b/R/gs_upset.R
+index a1f1b9ae..54d3b038 100644
+--- a/R/gs_upset.R
++++ b/R/gs_upset.R
+@@ -193,7 +193,7 @@ gs_upset <- function(res_enrich,
+     param_upset_baseanno <- list(
+       "Intersection size" = intersection_size(
+         counts = FALSE,
+-        mapping = aes_string(fill = "logFCsign")
++        mapping = aes(fill = .data$logFCsign)
+       ) +
+         scale_fill_manual(
+           values = c("FALSE" = col_downDE, "TRUE" = col_upDE),
+@@ -217,8 +217,8 @@ gs_upset <- function(res_enrich,
+ 
+     param_upset_anno <- list(
+       "logFC" = (
+-        ggplot(mapping = aes_string(x = "intersection", y = "logFC")) +
+-          geom_jitter(aes_string(color = "logFC"), na.rm = TRUE) +
++        ggplot(mapping = aes(x = .data$intersection, y = .data$logFC)) +
++          geom_jitter(aes(color = .data$logFC), na.rm = TRUE) +
+           # geom_violin(alpha = 0.5, na.rm = TRUE) +
+           theme(legend.position = "none") +
+           scale_colour_gradient2(low = col_downDE, high = col_upDE)
+diff --git a/R/gs_volcano.R b/R/gs_volcano.R
+index cde7b8c1..a4ccb655 100644
+--- a/R/gs_volcano.R
++++ b/R/gs_volcano.R
+@@ -121,9 +121,9 @@ gs_volcano <- function(res_enrich,
+ 
+   p <- ggplot(
+     volcano_df,
+-    aes_string(x = "z_score", y = "logpval", size = "`set members`", text = "gs_name")
++    aes(x = .data$z_score, y = .data$logpval, size = .data$`set members`, text = .data$gs_name)
+   ) +
+-    geom_point(aes_string(col = color_by), shape = 20, alpha = 1) +
++    geom_point(aes(col = .data[[color_by]]), shape = 20, alpha = 1) +
+     labs(
+       x = "geneset Z score",
+       y = "-log10 p-value",
+@@ -141,7 +141,7 @@ gs_volcano <- function(res_enrich,
+     df_gs_labels <- volcano_df[volcano_df$gs_id %in% gs_to_use, ]
+ 
+     p <- p + geom_label_repel(
+-      aes_string(label = "gs_name"),
++      aes(label = .data$gs_name),
+       data = df_gs_labels,
+       size = 4,
+       min.segment.length = 0
+diff --git a/R/signature_volcano.R b/R/signature_volcano.R
+index 294bf83a..7693e9c2 100644
+--- a/R/signature_volcano.R
++++ b/R/signature_volcano.R
+@@ -174,11 +174,11 @@ signature_volcano <- function(res_de,
+   # Plot data
+   p <- ggplot(
+     volcano_df_complete,
+-    aes_string(x = "log2FoldChange", y = "logTransformedpvalue")
++    aes(x = .data$log2FoldChange, y = .data$logTransformedpvalue)
+   ) +
+-    geom_point(aes_string(
+-      color = "significant",
+-      alpha = "belonging"
++    geom_point(aes(
++      color = .data$significant,
++      alpha = .data$belonging
+     )) +
+     labs(
+       x = "log2 Fold Change",
+@@ -205,7 +205,7 @@ signature_volcano <- function(res_de,
+   # adding labels to the significant points of the geneset
+   p <- p + geom_text_repel(
+     data = subset(volcano_df_complete, filter_info_complete),
+-    aes_string(label = "genes_name"),
++    aes(label = .data$genes_name),
+     size = 4,
+     max.overlaps = volcano_labels
+   )

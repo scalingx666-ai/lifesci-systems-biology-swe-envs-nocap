@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/federicomarini__GeneTonic-55"
+description = "force keeping the data frame structure to enable colMeans to keep on …"
+
+[metadata]
+difficulty = "easy"
+category = "bugfix"
+keywords = [
+    "GeneTonic",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "federicomarini/GeneTonic"
+ref = "a874402b40df9e276f6c5637675ea35472448c02"
+reference = "https://github.com/federicomarini/GeneTonic/pull/55"
+source_access = "auto"
+built_at = "2026-11-15T19:34:08.019826+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:de11def01a552e87e5aea9f97170866580bf9f62f0aa2c583531b2dd919061b6"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2023-09-28T14:06:02Z"
+diff_format = "unified"
+context_files = [
+    "R/gs_heatmap.R",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 2
+difficulty = "trivial"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

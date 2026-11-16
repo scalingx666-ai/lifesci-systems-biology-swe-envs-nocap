@@ -1,0 +1,248 @@
+diff --git a/omicsclaw/memory/compat.py b/omicsclaw/memory/compat.py
+index 0334a6db..c77b052c 100644
+--- a/omicsclaw/memory/compat.py
++++ b/omicsclaw/memory/compat.py
+@@ -18,6 +18,7 @@
+   - Session context loading (formatted for LLM injection)
+ """
+ 
++import asyncio
+ import base64
+ import json
+ import logging
+@@ -244,24 +245,43 @@ def __init__(self, database_url: Optional[str] = None):
+         # are stateless so all clients share one engine instance.
+         self._memory_clients: dict[str, MemoryClient] = {}
+         self._initialized = False
++        # Guard concurrent first-time init: bot/session.py constructs
++        # this store from a sync init() and the first awaiting callers
++        # may race (two near-simultaneous Telegram messages each calling
++        # session_manager.get_or_create concurrently). Without the lock
++        # both would pass the `_initialized` check, both would build a
++        # fresh DatabaseManager/MemoryEngine, and the second would
++        # clobber state the first is mid-flight on. Python 3.10+
++        # ``asyncio.Lock()`` no longer binds to a running loop at
++        # construction, so this is safe in __init__.
++        self._init_lock = asyncio.Lock()
+ 
+     async def initialize(self) -> None:
+-        """Initialize storage backend."""
++        """Initialize storage backend (idempotent + concurrent-safe).
++
++        Double-checked locking: the outer fast-path bool check avoids
++        lock contention after the first successful init; the inner
++        check inside the lock prevents the body from running twice when
++        two coroutines both saw ``_initialized=False`` and queued.
++        """
+         if self._initialized:
+             return
++        async with self._init_lock:
++            if self._initialized:
++                return
+ 
+-        from .database import DatabaseManager
+-        from .engine import MemoryEngine
+-        from .search import SearchIndexer
++            from .database import DatabaseManager
++            from .engine import MemoryEngine
++            from .search import SearchIndexer
+ 
+-        self._db = DatabaseManager(self._database_url)
+-        await self._db.init_db()
+-        self._search = SearchIndexer(self._db)
+-        self._engine = MemoryEngine(self._db, self._search)
+-        self._session_client = MemoryClient(
+-            engine=self._engine, namespace=SHARED_NAMESPACE
+-        )
+-        self._initialized = True
++            self._db = DatabaseManager(self._database_url)
++            await self._db.init_db()
++            self._search = SearchIndexer(self._db)
++            self._engine = MemoryEngine(self._db, self._search)
++            self._session_client = MemoryClient(
++                engine=self._engine, namespace=SHARED_NAMESPACE
++            )
++            self._initialized = True
+ 
+     async def close(self) -> None:
+         """Close backend resources."""
+@@ -317,6 +337,7 @@ async def _client_for_session(self, session_id: str) -> MemoryClient:
+ 
+     async def create_session(self, user_id: str, platform: str, chat_id: str = "", session_id: str = None) -> Session:
+         """Create a new session in the graph memory."""
++        await self.initialize()
+         session_id = session_id or uuid.uuid4().hex[:16]
+         session = Session(
+             session_id=session_id,
+@@ -334,6 +355,7 @@ async def create_session(self, user_id: str, platform: str, chat_id: str = "", s
+ 
+     async def get_session(self, session_id: str) -> Optional[Session]:
+         """Retrieve session by ID. Sessions live in __shared__."""
++        await self.initialize()
+         record = await self._client.recall(f"session://{session_id}")
+         if record is None or not record.content:
+             return None
+@@ -376,6 +398,7 @@ async def save_memory(self, session_id: str, memory: BaseMemory) -> str:
+         The memory lands in the session's owner namespace
+         (``f"{platform}/{user_id}"``); session metadata stays shared.
+         """
++        await self.initialize()
+         client = await self._client_for_session(session_id)
+ 
+         domain = _TYPE_TO_DOMAIN.get(memory.memory_type, "core")
+@@ -409,6 +432,7 @@ async def get_memories(
+         calls — listings are strict, so shared keywords don't bleed
+         into a per-user inventory.
+         """
++        await self.initialize()
+         client = await self._client_for_session(session_id)
+ 
+         if memory_type:
+@@ -461,6 +485,7 @@ async def update_memory(self, memory_id: str, updates: dict) -> None:
+         astronomically unlikely, but the per-namespace search keeps the
+         update strictly within whichever namespace the row lives.
+         """
++        await self.initialize()
+         # Touch the session client first so the shared partition is
+         # always considered (covers the legacy "everything in shared"
+         # case before the namespace migration).
+@@ -487,6 +512,7 @@ async def update_memory(self, memory_id: str, updates: dict) -> None:
+ 
+     async def delete_session(self, session_id: str) -> None:
+         """Delete session."""
++        await self.initialize()
+         try:
+             await self._client.forget(f"session://{session_id}")
+         except ValueError:
+@@ -496,6 +522,7 @@ async def search_memories(
+         self, session_id: str, query: str, memory_type: Optional[str] = None
+     ) -> list[BaseMemory]:
+         """Search memories by content within the session's namespace."""
++        await self.initialize()
+         client = await self._client_for_session(session_id)
+ 
+         domain = _TYPE_TO_DOMAIN.get(memory_type) if memory_type else None
+diff --git a/tests/memory/test_compat_namespace.py b/tests/memory/test_compat_namespace.py
+index 64f38dee..46819657 100644
+--- a/tests/memory/test_compat_namespace.py
++++ b/tests/memory/test_compat_namespace.py
+@@ -185,6 +185,119 @@ async def test_search_memories_filters_by_session_namespace(store):
+     assert "beta-secret.h5ad" not in a_files
+ 
+ 
++# ----------------------------------------------------------------------
++# Lazy-init: bot/session.py constructs the store from a SYNC init()
++# and cannot await initialize(), so public async methods must
++# self-initialise on first use. Production bug surfaced from a CLI
++# memory tool call: AssertionError "CompatMemoryStore must be
++# initialised before use" deep inside execute_remember.
++# ----------------------------------------------------------------------
++
++
++@pytest.mark.asyncio
++async def test_compat_store_lazy_init_via_get_session(tmp_path):
++    """Production first-touch is `get_session` (called by
++    `_assemble_chat_context → session_manager.get_or_create`), not
++    `create_session`. Pin the actual prod path: a freshly-constructed
++    store, never explicitly initialised, must answer get_session
++    correctly (returning None for an unknown id) by lazy-init'ing."""
++    from omicsclaw.memory.compat import CompatMemoryStore
++
++    store = CompatMemoryStore(database_url=f"sqlite+aiosqlite:///{tmp_path}/t.db")
++    try:
++        result = await store.get_session("nonexistent")
++        assert result is None
++        assert store._initialized, (
++            "lazy-init didn't fire on get_session — production "
++            "_assemble_chat_context path will still AssertionError"
++        )
++    finally:
++        await store.close()
++
++
++@pytest.mark.asyncio
++async def test_compat_store_concurrent_first_init_runs_body_once(
++    tmp_path, monkeypatch
++):
++    """The asyncio.Lock around initialize()'s body must serialise
++    concurrent first-time init so the body executes exactly once,
++    even under N parallel callers.
++
++    Without the lock, two coroutines both pass the
++    ``if self._initialized: return`` fast-path check, both run the
++    body in parallel, and the second clobbers the first's
++    ``_db`` / ``_engine`` / ``_session_client`` while the first
++    coroutine may still be operating against the original engine.
++    Counting ``DatabaseManager.init_db`` invocations is the cleanest
++    detection: under-the-lock = 1, race = N.
++    """
++    import asyncio as _asyncio
++    from omicsclaw.memory import database as database_mod
++    from omicsclaw.memory.compat import CompatMemoryStore
++
++    init_count = 0
++    real_init_db = database_mod.DatabaseManager.init_db
++
++    async def counting_init_db(self):
++        nonlocal init_count
++        init_count += 1
++        # Widen the race window so a missing lock is reliably detectable.
++        await _asyncio.sleep(0.01)
++        return await real_init_db(self)
++
++    monkeypatch.setattr(database_mod.DatabaseManager, "init_db", counting_init_db)
++
++    store = CompatMemoryStore(database_url=f"sqlite+aiosqlite:///{tmp_path}/t.db")
++    try:
++        # 8 parallel public-method calls on a freshly-constructed store —
++        # none requires a pre-existing session.
++        await _asyncio.gather(
++            *[store.get_session(f"missing-{i}") for i in range(5)],
++            *[store.create_session(f"u{i}", "telegram") for i in range(3)],
++        )
++        assert init_count == 1, (
++            f"initialize() body ran {init_count} times — the lock failed "
++            "to serialise concurrent first-init (race condition active)"
++        )
++        assert store._initialized
++    finally:
++        await store.close()
++
++
++@pytest.mark.asyncio
++async def test_compat_store_lazy_initialises_on_first_public_call(tmp_path):
++    """CompatMemoryStore must auto-initialise when a public async method
++    is called before someone has explicitly awaited initialize().
++
++    bot/session.py:311 constructs the store from a synchronous init()
++    function, then assigns it to bot.core.memory_store. The async
++    initialize() coroutine is never awaited along that path. The first
++    LLM tool call (execute_remember -> memory_store.save_memory) must
++    not blow up with 'CompatMemoryStore must be initialised before use'.
++    """
++    from omicsclaw.memory.compat import CompatMemoryStore, PreferenceMemory
++
++    # Mirror production: construct, do NOT await initialize().
++    store = CompatMemoryStore(database_url=f"sqlite+aiosqlite:///{tmp_path}/t.db")
++
++    try:
++        session = await store.create_session("alice", "telegram")
++        assert session.platform == "telegram"
++        assert session.user_id == "alice"
++
++        pref = PreferenceMemory(
++            domain="global", key="language", value="zh", is_strict=False
++        )
++        mem_id = await store.save_memory(session.session_id, pref)
++        assert mem_id, "save_memory after lazy init returned no memory id"
++
++        # Round-trip via search to prove the engine + indexer are alive.
++        hits = await store.search_memories(session.session_id, "language")
++        assert any(h.key == "language" for h in hits if hasattr(h, "key"))
++    finally:
++        await store.close()
++
++
+ @pytest.mark.asyncio
+ async def test_save_memory_with_unknown_session_raises(store):
+     """If the session can't be resolved, the write must NOT fall back to

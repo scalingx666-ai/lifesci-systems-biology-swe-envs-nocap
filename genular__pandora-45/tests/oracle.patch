@@ -1,0 +1,65 @@
+diff --git a/src/app/translations/files/translated/ar.json b/src/app/translations/files/translated/ar.json
+index 1a99f4eb..6fb89c4a 100644
+--- a/src/app/translations/files/translated/ar.json
++++ b/src/app/translations/files/translated/ar.json
+@@ -277,7 +277,7 @@
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.models_table.operations.delete.dialog.description": "هذا سيتم حذف كل شيء على النظام الذي تم اختياره على نموذج(s). تستمر ؟",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.models_table.messages.failed_model": "نموذج لم تنتهي بنجاح",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.variableImportanceTab.title": "متغير أهمية",
+-  "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.summaryTab.title": "ملخص",
++  "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.summaryTab.title": "التدريب ملخص",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.modelDetailsTab.title": "نموذج ملخص",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.samrAnalysisTab.title": "سام",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.catBoostTab.title": "CatBoost",
+diff --git a/src/app/translations/files/translated/de.json b/src/app/translations/files/translated/de.json
+index 5c5ae852..2cf7b14a 100644
+--- a/src/app/translations/files/translated/de.json
++++ b/src/app/translations/files/translated/de.json
+@@ -277,7 +277,7 @@
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.models_table.operations.delete.dialog.description": "Dies wird dauerhaft löschen Sie alles auf das system bezogen auf ausgewählte Modell(en). Weiter?",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.models_table.messages.failed_model": "Modell nicht erfolgreich abgeschlossen",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.variableImportanceTab.title": "Variable Bedeutung",
+-  "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.summaryTab.title": "Zusammenfassung",
++  "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.summaryTab.title": "Training Zusammenfassung",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.modelDetailsTab.title": "Modell Zusammenfassung",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.samrAnalysisTab.title": "SAM",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.catBoostTab.title": "CatBoost",
+diff --git a/src/app/translations/files/translated/en.json b/src/app/translations/files/translated/en.json
+index 3e012f0a..8ba1c21e 100644
+--- a/src/app/translations/files/translated/en.json
++++ b/src/app/translations/files/translated/en.json
+@@ -277,7 +277,7 @@
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.models_table.operations.delete.dialog.description": "This will permanently delete everything on the system related to selected model(s). Continue?",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.models_table.messages.failed_model": "Model did not finished successfully",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.variableImportanceTab.title": "Variable Importance",
+-  "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.summaryTab.title": "Summary",
++  "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.summaryTab.title": "Training Summary",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.modelDetailsTab.title": "Model Summary",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.samrAnalysisTab.title": "SAM",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.catBoostTab.title": "CatBoost",
+diff --git a/src/app/translations/files/translated/fr.json b/src/app/translations/files/translated/fr.json
+index fbe5fcd8..60750b88 100644
+--- a/src/app/translations/files/translated/fr.json
++++ b/src/app/translations/files/translated/fr.json
+@@ -277,7 +277,7 @@
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.models_table.operations.delete.dialog.description": "Cela permettra de supprimer définitivement tous les éléments sur le système de certains modèle(s). Continuer?",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.models_table.messages.failed_model": "Le modèle n'a pas terminé avec succès",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.variableImportanceTab.title": "Importance Variable",
+-  "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.summaryTab.title": "Résumé",
++  "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.summaryTab.title": "Résumé De La Formation",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.modelDetailsTab.title": "Modèle De Résumé",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.samrAnalysisTab.title": "SAM",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.catBoostTab.title": "CatBoost",
+diff --git a/src/app/translations/files/translated/zh.json b/src/app/translations/files/translated/zh.json
+index 66effe29..b6527400 100644
+--- a/src/app/translations/files/translated/zh.json
++++ b/src/app/translations/files/translated/zh.json
+@@ -277,7 +277,7 @@
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.models_table.operations.delete.dialog.description": "这将永久删除一切对系统的有关选择的模型(s)。 继续吗？",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.models_table.messages.failed_model": "模式并不成功完成",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.variableImportanceTab.title": "可变的重要性",
+-  "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.summaryTab.title": "摘要",
++  "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.summaryTab.title": "培训的摘要",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.modelDetailsTab.title": "模式摘要",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.samrAnalysisTab.title": "SAM",
+   "views.apps.simon.exploration.components.tabs.datasetsTab.index.tabs.catBoostTab.title": "CatBoost",

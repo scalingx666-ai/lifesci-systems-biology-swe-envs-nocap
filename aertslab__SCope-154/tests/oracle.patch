@@ -1,0 +1,56 @@
+diff --git a/VERSION b/VERSION
+index 6d7de6e6..e4c0d46e 100644
+--- a/VERSION
++++ b/VERSION
+@@ -1 +1 @@
+-1.0.2
++1.0.3
+\ No newline at end of file
+diff --git a/opt/scopeserver/utils/Loom.py b/opt/scopeserver/utils/Loom.py
+index f4d1f656..0d0d13b3 100644
+--- a/opt/scopeserver/utils/Loom.py
++++ b/opt/scopeserver/utils/Loom.py
+@@ -121,12 +121,12 @@ def loom_attr_exists(x):
+             idx = attr_names.index(x)
+             margin = attr_margins[idx]
+             ha = False
+-            if margin == 0:
+-                ha = hasattr(loom.attrs, x)
+-            elif margin == 1:
+-                ha = hasattr(loom.ra, x)
+-            elif margin == 2:
+-                ha = hasattr(loom.ca, x)
++            if margin == 0 and x in loom.attrs.keys():
++                ha = True
++            elif margin == 1 and x in loom.ra.keys():
++                ha = True
++            elif margin == 2 and x in loom.ca.keys():
++                ha = True
+             else:
+                 raise ValueError("Invalid margin value: "+ margin)
+             tmp["has"+attr_keys[idx]] = ha
+diff --git a/opt/setup.py b/opt/setup.py
+index 0b86f368..55603c56 100644
+--- a/opt/setup.py
++++ b/opt/setup.py
+@@ -5,7 +5,7 @@
+                         'scope-server = scopeserver.dataserver:dev'
+                         ]
+                     },
+-      version='1.0.2',
++      version='1.0.3',
+       description='SCope Data Server: a server to load and serve the data to the SCope Client',
+       url='',
+       author='Maxime De Waegeneer',
+diff --git a/package.json b/package.json
+index 4da3ddf0..f7212ed9 100644
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "SCope",
+-  "version": "1.0.2",
++  "version": "1.0.3",
+   "description": "Visualization tool for large-scale and high dimensional single-cell data",
+   "main": "index.js",
+   "scripts": {

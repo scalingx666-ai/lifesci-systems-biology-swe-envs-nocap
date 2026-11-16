@@ -1,0 +1,68 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-53"
+description = "Harden scRNA batch integration flow and method coverage"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "115ee9dfe9bfaaa842c483fef51f546fa1f33eef"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/53"
+source_access = "auto"
+built_at = "2026-11-15T18:18:28.324132+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:3d94ce90e7a05771ca0538bf0df822e32a7ff676dcfc706ef4af882ad94a318d"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-04-06T03:18:13Z"
+diff_format = "unified"
+context_files = [
+    "knowledge_base/knowhows/KH-sc-batch-integration-guardrails.md",
+    "knowledge_base/skill-guides/singlecell/sc-batch-integration.md",
+    "omicsclaw/r_scripts/sc_seurat_integrate.R",
+    "skills/singlecell/_lib/preflight.py",
+    "skills/singlecell/scrna/sc-batch-integration/SKILL.md",
+    "skills/singlecell/scrna/sc-batch-integration/sc_integrate.py",
+    "skills/singlecell/scrna/sc-batch-integration/tests/test_sc_integrate.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 232
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

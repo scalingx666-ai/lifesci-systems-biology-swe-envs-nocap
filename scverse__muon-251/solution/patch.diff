@@ -1,0 +1,39 @@
+diff --git a/.github/workflows/build.yaml b/.github/workflows/build.yaml
+index ea1a2f0..de14f5c 100644
+--- a/.github/workflows/build.yaml
++++ b/.github/workflows/build.yaml
+@@ -23,7 +23,7 @@ jobs:
+           fetch-depth: 0
+           persist-credentials: false
+       - name: Install uv
+-        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
++        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+       - name: Build package
+         run: uv build
+       - name: Check package
+diff --git a/.github/workflows/release.yaml b/.github/workflows/release.yaml
+index b824fc2..e8f35b3 100644
+--- a/.github/workflows/release.yaml
++++ b/.github/workflows/release.yaml
+@@ -26,7 +26,7 @@ jobs:
+           fetch-depth: 0
+           persist-credentials: false
+       - name: Install uv
+-        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
++        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+         with:
+           enable-cache: false
+       - name: Build package
+diff --git a/.github/workflows/test.yaml b/.github/workflows/test.yaml
+index 7b38d63..586bdb4 100644
+--- a/.github/workflows/test.yaml
++++ b/.github/workflows/test.yaml
+@@ -33,7 +33,7 @@ jobs:
+           fetch-depth: 0
+           persist-credentials: false
+       - &setup-uv
+-        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
++        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+       - name: Get test environments
+         id: get-envs
+         run: |

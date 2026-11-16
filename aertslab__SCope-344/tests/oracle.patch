@@ -1,0 +1,13 @@
+diff --git a/opt/scopeserver/dataserver/utils/loom.py b/opt/scopeserver/dataserver/utils/loom.py
+index dfae7245..90490acc 100644
+--- a/opt/scopeserver/dataserver/utils/loom.py
++++ b/opt/scopeserver/dataserver/utils/loom.py
+@@ -383,7 +383,7 @@ def add_user_clustering(self, request) -> Tuple[bool, str]:
+ 
+         metaJson["clusterings"].append(new_clustering_meta)
+ 
+-        chosen_cells, new_cluster_ids, missing_cells = self.get_cells_overlap(request.cluserInfo, cluster_mapping)
++        chosen_cells, new_cluster_ids, missing_cells = self.get_cells_overlap(request.clusterInfo, cluster_mapping)
+ 
+         if len(chosen_cells) == 0:
+             return (False, "No cells matched this dataset")

@@ -1,0 +1,540 @@
+diff --git a/opt/scopeserver/dataserver/modules/gserver/GServer.py b/opt/scopeserver/dataserver/modules/gserver/GServer.py
+index ec4c93cf..3dbd3c0e 100644
+--- a/opt/scopeserver/dataserver/modules/gserver/GServer.py
++++ b/opt/scopeserver/dataserver/modules/gserver/GServer.py
+@@ -27,6 +27,7 @@
+ from scopeserver.utils import GeneSetEnrichment as _gse
+ from scopeserver.utils import CellColorByFeatures as ccbf
+ from scopeserver.utils import Constant
++from scopeserver.utils import SearchSpace as ss
+ 
+ from pyscenic.genesig import GeneSignature
+ from pyscenic.aucell import create_rankings, enrichment, enrichment4cells
+@@ -54,94 +55,22 @@ def update_global_data(self):
+         self.dfh.set_global_data()
+         self.lfh.set_global_data()
+ 
+-    @staticmethod
+-    def compress_str_array(str_arr):
+-        print("Compressing... ")
+-        str_array_size = sys.getsizeof(str_arr)
+-        str_array_joint = bytes(''.join(str_arr), 'utf-8')
+-        str_array_joint_compressed = zlib.compress(str_array_joint, 1)
+-        str_array_joint_compressed_size = sys.getsizeof(str_array_joint_compressed)
+-        savings_percent = 1-str_array_joint_compressed_size/str_array_size
+-        print("Saving {:.2%} of space".format(savings_percent))
+-        return str_array_joint_compressed
+-
+-    @lru_cache(maxsize=16)
+-    def build_searchspace(self, loom, cross_species=''):
+-        start_time = time.time()
+-        species, gene_mappings = loom.infer_species()
+-        if loom.has_meta_data():
+-            meta_data = loom.get_meta_data()
+-
+-        def add_element(search_space, elements, element_type):
+-            if type(elements) != str:
+-                for element in elements:
+-                    if element_type == 'gene' and cross_species == '' and len(gene_mappings) > 0:
+-                        if gene_mappings[element] != element:
+-                            search_space[('{0}'.format(str(element)).casefold(), element, element_type)] = gene_mappings[element]
+-                        else:
+-                            search_space[(element.casefold(), element, element_type)] = element
+-                    else:
+-                        search_space[(element.casefold(), element, element_type)] = element
+-            else:
+-                search_space[(elements.casefold(), elements, element_type)] = elements
+-            return search_space
+-
+-        search_space = {}
+-
+-        # Include all features (clusterings, regulons, annotations, ...) into the search space
+-        # if and only if the query is not a cross-species query
+-        if cross_species == 'hsap' and species == 'dmel':
+-            search_space = add_element(search_space=search_space, elements=self.dfh.hsap_to_dmel_mappings.keys(), element_type='gene')
+-        elif cross_species == 'mmus' and species == 'dmel':
+-            search_space = add_element(search_space=search_space, elements=self.dfh.mmus_to_dmel_mappings.keys(), element_type='gene')
+-        else:
+-            if len(gene_mappings) > 0:
+-                genes = set(loom.get_genes())
+-                shrink_mappings = set([x for x in self.dfh.dmel_mappings.keys() if x in genes or self.dfh.dmel_mappings[x] in genes])
+-                # search_space = add_element(search_space, SCope.dmel_mappings.keys(), 'gene')
+-                search_space = add_element(search_space=search_space, elements=shrink_mappings, element_type='gene')
+-            else:
+-                search_space = add_element(search_space=search_space, elements=loom.get_genes(), element_type='gene')
+-
+-            # Add clusterings to the search space if present in .loom
+-            if loom.has_md_clusterings():
+-                for clustering in meta_data['clusterings']:
+-                    allClusters = ['All Clusters']
+-                    for cluster in clustering['clusters']:
+-                        allClusters.append(cluster['description'])
+-                    search_space = add_element(search_space=search_space, elements=allClusters, element_type='Clustering: {0}'.format(clustering['name']))
+-
+-            # Add regulons to the search space if present in .loom
+-            if loom.has_regulons_AUC():
+-                search_space = add_element(search_space=search_space, elements=loom.get_regulons_AUC().dtype.names, element_type='regulon')
+-            else:
+-                print("No regulons found in the .loom file.")
+-
+-            # Add annotations to the search space if present in .loom
+-            if loom.has_md_annotations():
+-                annotations = []
+-                for annotation in meta_data['annotations']:
+-                    annotations.append(annotation['name'])
+-                search_space = add_element(search_space, annotations, 'annotation')
+-
+-        print("Debug: %s seconds elapsed making search space ---" % (time.time() - start_time))
+-        #  Dict, keys = tuple(elementCF, element, elementName), values = element/translastedElement
+-        return search_space
+-
+     @lru_cache(maxsize=256)
+     def get_features(self, loom, query):
+         print(query)
++        start_time = time.time()
+         if query.startswith('hsap\\'):
+-            searchSpace = self.build_searchspace(loom=loom, cross_species='hsap')
+-            crossSpecies = 'hsap'
++            search_space = ss.SearchSpace(loom=loom, cross_species='hsap').build()
++            cross_species = 'hsap'
+             query = query[5:]
+         elif query.startswith('mmus\\'):
+-            searchSpace = self.build_searchspace(loom=loom, cross_species='mmus')
+-            crossSpecies = 'mmus'
++            search_space = ss.SearchSpace(loom=loom, cross_species='mmus').build()
++            cross_species = 'mmus'
+             query = query[5:]
+         else:
+-            searchSpace = self.build_searchspace(loom=loom)
+-            crossSpecies = ''
++            search_space = ss.SearchSpace(loom=loom).build()
++            cross_species = ''
++        print("Debug: %s seconds elapsed making search space ---" % (time.time() - start_time))    
+         print(query)
+ 
+         # Filter the genes by the query
+@@ -151,7 +80,7 @@ def get_features(self, loom, query):
+         res = []
+ 
+         queryCF = query.casefold()
+-        res = [x for x in searchSpace.keys() if queryCF in x[0]]
++        res = [x for x in search_space.keys() if queryCF in x[0]]
+ 
+         for n, r in enumerate(res):
+             if query in r[0]:
+@@ -175,25 +104,25 @@ def get_features(self, loom, query):
+         # dg = (drosElement, %match)
+         # searchSpace[r] = translastedElement
+         collapsedResults = OrderedDict()
+-        if crossSpecies == '':
++        if cross_species == '':
+             for r in res:
+-                if (searchSpace[r], r[2]) not in collapsedResults.keys():
+-                    collapsedResults[(searchSpace[r], r[2])] = [r[1]]
++                if (search_space[r], r[2]) not in collapsedResults.keys():
++                    collapsedResults[(search_space[r], r[2])] = [r[1]]
+                 else:
+-                    collapsedResults[(searchSpace[r], r[2])].append(r[1])
+-        elif crossSpecies == 'hsap':
++                    collapsedResults[(search_space[r], r[2])].append(r[1])
++        elif cross_species == 'hsap':
+             for r in res:
+-                for dg in self.dfh.hsap_to_dmel_mappings[searchSpace[r]]:
++                for dg in self.dfh.hsap_to_dmel_mappings[search_space[r]]:
+                     if (dg[0], r[2]) not in collapsedResults.keys():
+                         collapsedResults[(dg[0], r[2])] = (r[1], dg[1])
+-        elif crossSpecies == 'mmus':
++        elif cross_species == 'mmus':
+             for r in res:
+-                for dg in self.dfh.mmus_to_dmel_mappings[searchSpace[r]]:
++                for dg in self.dfh.mmus_to_dmel_mappings[search_space[r]]:
+                     if (dg[0], r[2]) not in collapsedResults.keys():
+                         collapsedResults[(dg[0], r[2])] = (r[1], dg[1])
+ 
+         descriptions = []
+-        if crossSpecies == '':
++        if cross_species == '':
+             for r in collapsedResults.keys():
+                 synonyms = sorted([x for x in collapsedResults[r]])
+                 try:
+@@ -204,10 +133,10 @@ def get_features(self, loom, query):
+                     descriptions.append('Synonym of: {0}'.format(', '.join(synonyms)))
+                 else:
+                     descriptions.append('')
+-        elif crossSpecies == 'hsap':
++        elif cross_species == 'hsap':
+             for r in collapsedResults.keys():
+                 descriptions.append('Orthologue of {0}, {1:.2f}% identity (Human -> Drosophila)'.format(collapsedResults[r][0], collapsedResults[r][1]))
+-        elif crossSpecies == 'mmus':
++        elif cross_species == 'mmus':
+             for r in collapsedResults.keys():
+                 descriptions.append('Orthologue of {0}, {1:.2f}% identity (Mouse -> Drosophila)'.format(collapsedResults[r][0], collapsedResults[r][1]))
+         # if mapping[result] != result: change title and description to indicate synonym
+@@ -235,33 +164,39 @@ def get_vmax(vals):
+         return vmax, maxVmax
+ 
+     def getVmax(self, request, context):
+-        vmax = np.zeros(3)
+-        maxVmax = np.zeros(3)
++        v_max = np.zeros(3)
++        max_v_max = np.zeros(3)
+ 
+         for n, feature in enumerate(request.feature):
+-            fVmax = 0
+-            fMaxVmax = 0
++            f_v_max = 0
++            f_max_v_max = 0
+             if feature != '':
+                 for loomFilePath in request.loomFilePath:
+-                    lVmax = 0
+-                    lMaxVmax = 0
++                    l_v_max = 0
++                    l_max_v_max = 0
+                     loom = self.lfh.get_loom(loom_file_path=loomFilePath)
+                     if request.featureType[n] == 'gene':
+-                            vals, cellIndices = loom.get_gene_expression(
+-                                gene_symbol=feature,
+-                                log_transform=request.hasLogTransform,
+-                                cpm_normalise=request.hasCpmTransform)
+-                            lVmax, lMaxVmax = SCope.get_vmax(vals)
++                        vals, cell_indices = loom.get_gene_expression(
++                            gene_symbol=feature,
++                            log_transform=request.hasLogTransform,
++                            cpm_normalise=request.hasCpmTransform)
++                        l_v_max, l_max_v_max = SCope.get_vmax(vals)
+                     if request.featureType[n] == 'regulon':
+-                            vals, cellIndices = loom.get_auc_values(regulon=feature)
+-                            lVmax, lMaxVmax = SCope.get_vmax(vals)
+-                    if lVmax > fVmax:
+-                        fVmax = lVmax
+-                if lMaxVmax > fMaxVmax:
+-                    fMaxVmax = lMaxVmax
+-            vmax[n] = fVmax
+-            maxVmax[n] = fMaxVmax
+-        return s_pb2.VmaxReply(vmax=vmax, maxVmax=maxVmax)
++                        vals, cell_indices = loom.get_auc_values(regulon=feature)
++                        l_v_max, l_max_v_max = SCope.get_vmax(vals)
++                    if request.featureType[n] == 'metric':
++                        vals, cell_indices = loom.get_metric(
++                            metric_name=feature,
++                            log_transform=request.hasLogTransform,
++                            cpm_normalise=request.hasCpmTransform)
++                        l_v_max, l_max_v_max = SCope.get_vmax(vals)
++                    if l_v_max > f_v_max:
++                        f_v_max = l_v_max
++                if l_max_v_max > f_max_v_max:
++                    f_max_v_max = l_max_v_max
++            v_max[n] = f_v_max
++            max_v_max[n] = f_max_v_max
++        return s_pb2.VmaxReply(vmax=v_max, maxVmax=max_v_max)
+ 
+     def getCellColorByFeatures(self, request, context):
+         start_time = time.time()
+@@ -280,6 +215,8 @@ def getCellColorByFeatures(self, request, context):
+             elif request.featureType[n] == 'annotation':
+                 cell_color_by_features.setAnnotationFeature(feature=feature)
+                 return cell_color_by_features.getReply()
++            elif request.featureType[n] == 'metric':
++                cell_color_by_features.setMetricFeature(request=request, feature=feature, n=n)
+             elif request.featureType[n].startswith('Clustering: '):
+                 cell_color_by_features.setClusteringFeature(request=request, feature=feature, n=n)
+                 if(cell_color_by_features.hasReply()):
+@@ -287,15 +224,10 @@ def getCellColorByFeatures(self, request, context):
+             else:
+                 cell_color_by_features.addEmptyFeature()
+ 
+-        # Compress
+-        comp_start_time = time.time()
+-        hex_vec_compressed = SCope.compress_str_array(str_arr=cell_color_by_features.get_hex_vec())
+-        print("Debug: %s seconds elapsed (compression) ---" % (time.time() - comp_start_time))
+-
+         print("Debug: %s seconds elapsed ---" % (time.time() - start_time))
+-        return s_pb2.CellColorByFeaturesReply(color=None,
+-                                              compressedColor=hex_vec_compressed,
+-                                              hasAddCompressionLayer=True,
++        return s_pb2.CellColorByFeaturesReply(color=cell_color_by_features.get_hex_vec(),
++                                              compressedColor=None,
++                                              hasAddCompressionLayer=False,
+                                               vmax=cell_color_by_features.get_v_max(),
+                                               maxVmax=cell_color_by_features.get_max_v_max(),
+                                               cellIndices=cell_color_by_features.get_cell_indices())
+diff --git a/opt/scopeserver/utils/CellColorByFeatures.py b/opt/scopeserver/utils/CellColorByFeatures.py
+index 8d078b51..eb20a4db 100644
+--- a/opt/scopeserver/utils/CellColorByFeatures.py
++++ b/opt/scopeserver/utils/CellColorByFeatures.py
+@@ -1,6 +1,9 @@
+ import numpy as np
+ import re
+ import itertools
++import time
++import zlib
++import sys
+ 
+ from scopeserver.dataserver.modules.gserver import s_pb2
+ from scopeserver.utils import Constant
+@@ -27,6 +30,17 @@ def get_vmax(vals):
+         if vmax == 0:
+             vmax = 0.01
+         return vmax, maxVmax
++
++    @staticmethod
++    def compress_str_array(str_arr):
++        print("Compressing... ")
++        str_array_size = sys.getsizeof(str_arr)
++        str_array_joint = bytes(''.join(str_arr), 'utf-8')
++        str_array_joint_compressed = zlib.compress(str_array_joint, 1)
++        str_array_joint_compressed_size = sys.getsizeof(str_array_joint_compressed)
++        savings_percent = 1-str_array_joint_compressed_size/str_array_size
++        print("Saving "+"{:.2%} of space".format(savings_percent))
++        return str_array_joint_compressed
+     
+     def get_features(self):
+         return self.features
+@@ -39,6 +53,12 @@ def get_hex_vec(self):
+                        else "{0:02x}{1:02x}{2:02x}".format(int(r), int(g), int(b))
+                        for r, g, b in zip(self.features[0], self.features[1], self.features[2])]
+         return self.hex_vec
++    
++    def get_compressed_hex_vec(self):
++        comp_start_time = time.time()
++        hex_vec_compressed = CellColorByFeatures.compress_str_array(str_arr=self.hex_vec)
++        print("Debug: %s seconds elapsed (compression) ---" % (time.time() - comp_start_time))
++        return hex_vec_compressed
+ 
+     def get_v_max(self):
+         return self.v_max
+@@ -103,6 +123,25 @@ def setAnnotationFeature(self, feature):
+                                                legend=s_pb2.ColorLegend(values=md_annotation_values, colors=Constant.BIG_COLOR_LIST[:len(md_annotation_values)]))
+         self.setReply(reply=reply)
+     
++    def setMetricFeature(self, request, feature, n):
++        if feature != '':
++            vals, self.cell_indices = self.loom.get_metric(
++                metric_name=feature,
++                log_transform=request.hasLogTransform,
++                cpm_normalise=request.hasCpmTransform,
++                annotation=request.annotation,
++                logic=request.logic)
++            if request.vmax[n] != 0.0:
++                self.v_max[n] = request.vmax[n]
++            else:
++                self.v_max[n], self.max_v_max[n] = CellColorByFeatures.get_vmax(vals)
++            # vals = np.round((vals / vmax[n]) * 225)
++            vals = vals / self.v_max[n]
++            vals = (((Constant._UPPER_LIMIT_RGB - Constant._LOWER_LIMIT_RGB) * (vals - min(vals))) / (1 - min(vals))) + Constant._LOWER_LIMIT_RGB
++            self.features.append([x if x <= Constant._UPPER_LIMIT_RGB else Constant._UPPER_LIMIT_RGB for x in vals])
++        else:
++            self.features.append(np.zeros(self.n_cells))
++    
+     def setClusteringFeature(self, request, feature, n):
+         clusteringID = None
+         clusterID = None
+diff --git a/opt/scopeserver/utils/Loom.py b/opt/scopeserver/utils/Loom.py
+index edae62a5..0bd7432a 100644
+--- a/opt/scopeserver/utils/Loom.py
++++ b/opt/scopeserver/utils/Loom.py
+@@ -156,6 +156,15 @@ def get_meta_data_by_key(self, key):
+             return md
+         return []
+ 
++    @staticmethod
++    def has_md_metrics_(meta_data):
++        return "metrics" in meta_data
++
++    def has_md_metrics(self):
++        if self.has_meta_data():
++            return self.has_md_metrics_(meta_data=self.get_meta_data())
++        return False 
++
+     @staticmethod
+     def has_md_annotations_(meta_data):
+         return "annotations" in meta_data
+@@ -273,11 +282,11 @@ def get_gene_expression(self, gene_symbol, log_transform=True, cpm_normalise=Fal
+             print("Debug: log-transforming gene expression...")
+             gene_expr = np.log2(gene_expr + 1)
+         if len(annotation) > 0:
+-            cellIndices = self.get_anno_cells(annotations=annotation, logic=logic)
+-            gene_expr = gene_expr[cellIndices]
++            cell_indices = self.get_anno_cells(annotations=annotation, logic=logic)
++            gene_expr = gene_expr[cell_indices]
+         else:
+-            cellIndices = list(range(self.get_nb_cells()))
+-        return gene_expr, cellIndices
++            cell_indices = list(range(self.get_nb_cells()))
++        return gene_expr, cell_indices
+ 
+     ############
+     # Regulons #
+@@ -369,6 +378,27 @@ def get_ca_attr_by_name(self, name):
+             return self.loom_connection.ca[name]
+         raise ValueError("The given annotation {0} does not exists in the .loom.".format(name))
+ 
++    ##########
++    # Metric #
++    ##########
++
++    def get_metric(self, metric_name, log_transform=True, cpm_normalise=False, annotation='', logic='OR'):
++        if not self.has_ca_attr(name=metric_name):
++            raise ValueError("The metric {0} does not exist in the current active loom".format(metric_name))
++        print("Debug: getting metric {0}...".format(metric_name))
++        metric_vals = self.get_ca_attr_by_name(name=metric_name)
++        if cpm_normalise:
++            print("Debug: CPM normalising gene expression...")
++            metric_vals = metric_vals / self.get_nUMI()
++        if log_transform:
++            print("Debug: log-transforming gene expression...")
++            metric_vals = np.log2(metric_vals + 1)
++        if len(annotation) > 0:
++            cell_indices = self.get_anno_cells(annotations=annotation, logic=logic)
++            metric_vals = metric_vals[cell_indices]
++        else:
++            cell_indices = list(range(self.get_nb_cells()))
++        return metric_vals, cell_indices
+ 
+     ###############
+     # Clusterings #
+diff --git a/opt/scopeserver/utils/SearchSpace.py b/opt/scopeserver/utils/SearchSpace.py
+new file mode 100644
+index 00000000..6a45d300
+--- /dev/null
++++ b/opt/scopeserver/utils/SearchSpace.py
+@@ -0,0 +1,97 @@
++import functools
++from functools import lru_cache
++
++from scopeserver.utils import DataFileHandler as dfh
++
++class SearchSpace(dict):
++
++    '''
++    SearchSpace class is used to build the search space that contain all the queryable elements:
++    - Homo sapiens to Drosophila melanogaster gene mappings
++    - Mus musculus to Drosophila melanogaster gene mappings
++    - Genes
++    - Clusterings (inferred from e.g.: Seurat, ...)
++    - Regulons (inferred from SCENIC)
++    - Annotations
++    - Metrics
++    '''
++
++    def __init__(self, loom, cross_species=''):
++        dict.__init__(self)
++        self.loom = loom
++        self.cross_species = cross_species
++        self.species, self.gene_mappings = loom.infer_species()
++
++    def add_element(self, element, element_type):
++        if element_type == 'gene' and self.cross_species == '' and len(self.gene_mappings) > 0:
++            if self.gene_mappings[element] != element:
++                self[('{0}'.format(str(element)).casefold(), element, element_type)] = self.gene_mappings[element]
++            else:
++                self[(element.casefold(), element, element_type)] = element
++        else:
++            self[(element.casefold(), element, element_type)] = element
++
++    def add_elements(self, elements, element_type):
++        for element in elements:
++            self.add_element(element=element, element_type=element_type)
++    
++    def build(self):
++        if self.cross_species != '':
++            self.add_cross_species_genes()
++        else:
++            if self.loom.has_meta_data():
++                self.meta_data = self.loom.get_meta_data()
++            # Add genes to the search space
++            self.add_genes()
++            # Add clusterings to the search space if present in .loom
++            if self.loom.has_md_clusterings():
++                self.add_clusterings()
++            # Add regulons to the search space if present in .loom
++            if self.loom.has_regulons_AUC():
++                self.add_regulons()
++            # Add annotations to the search space if present in .loom
++            if self.loom.has_md_annotations():
++                self.add_annotations()
++            # Add metrics to the search space if present in .loom
++            if self.loom.has_md_metrics():
++                self.add_metrics()
++        return self
++
++    def add_cross_species_genes(self):
++        if self.cross_species == 'hsap' and self.species == 'dmel':
++            self.add_elements(elements=dfh.DataFileHandler.hsap_to_dmel_mappings.keys(), element_type='gene')
++        elif self.cross_species == 'mmus' and self.species == 'dmel':
++            self.add_elements(elements=dfh.DataFileHandler.mmus_to_dmel_mappings.keys(), element_type='gene')
++
++    def add_genes(self):
++        # Add genes to search space
++        if len(self.gene_mappings) > 0:
++            genes = set(self.loom.get_genes())
++            shrink_mappings = set([x for x in dfh.DataFileHandler.dmel_mappings.keys() if x in genes or dfh.DataFileHandler.dmel_mappings[x] in genes])
++            self.add_elements(elements=shrink_mappings, element_type='gene')
++        else:
++            self.add_elements(elements=self.loom.get_genes(), element_type='gene')
++    
++    def add_clusterings(self):
++        for clustering in self.meta_data['clusterings']:
++            all_clusters = ['All Clusters']
++            for cluster in clustering['clusters']:
++                all_clusters.append(cluster['description'])
++            self.add_elements(elements=all_clusters, element_type='Clustering: {0}'.format(clustering['name']))
++    
++    def add_regulons(self):
++        self.add_elements(elements=self.loom.get_regulons_AUC().dtype.names, element_type='regulon')
++
++    def add_annotations(self):
++        annotations = []
++        for annotation in self.meta_data['annotations']:
++            annotations.append(annotation['name'])
++        self.add_elements(elements=annotations, element_type='annotation')
++    
++    def add_metrics(self):
++        metrics = []
++        for metric in self.meta_data['metrics']:
++            metrics.append(metric['name'])
++        self.add_elements(elements=metrics, element_type='metric')
++
++    
+\ No newline at end of file
+diff --git a/src/components/common/FeatureSearchBox.jsx b/src/components/common/FeatureSearchBox.jsx
+index 35512f44..b5347574 100644
+--- a/src/components/common/FeatureSearchBox.jsx
++++ b/src/components/common/FeatureSearchBox.jsx
+@@ -122,7 +122,7 @@ export default class FeatureSearch extends React.Component {
+ 			this.call = gbc.services.scope.Main.getFeatures(query, (err, response) => {
+ 				if (DEBUG) console.log("getFeatures", response);
+ 				if (response != null) {
+-					let res = [], genes = [], regulons = [], clusters = {}, annotations = [];
++					let res = [], genes = [], regulons = [], clusters = {}, annotations = [], metrics = [];
+ 					let type = this.state.type;
+ 
+ 					for (var i = 0; i < response.feature.length; i++) {
+@@ -138,6 +138,9 @@ export default class FeatureSearch extends React.Component {
+ 						// Annotations
+ 						} else if (ft == 'annotation') {
+ 							annotations.push({ "title": f, "type": ft, "description": d });
++						// Metric
++						} else if (ft == 'metric') {
++							metrics.push({ "title": f, "type": ft, "description": d });
+ 						// Clustering
+ 						} else if (ft.indexOf('Clustering:') == 0) {
+ 							if (!clusters[ft]) clusters[ft] = [];
+@@ -158,6 +161,7 @@ export default class FeatureSearch extends React.Component {
+ 					genes = {"name": "gene", "results": genes.slice(0, 10)}
+ 					regulons = {"name": "regulon", "results": regulons.slice(0, 10)}
+ 					annotations = {"name": "annotation", "results": annotations.slice(0, 10)}
++					metrics = {"name": "metric", "results": metrics.slice(0, 10)}
+ 
+ 					// Only show results for the selected result type (gene | regulon | cluster | annotation)
+ 					if (genes['results'].length && (type == 'all' || type == 'gene')) {
+@@ -169,6 +173,9 @@ export default class FeatureSearch extends React.Component {
+ 					if (annotations['results'].length && (type == 'all') || type == 'annotation') {
+ 						res.push(annotations)
+ 					}
++					if (metrics['results'].length && (type == 'all') || type == 'metric') {
++						res.push(metrics)
++					}
+ 					if (type == 'all' || type == 'cluster') {
+ 						Object.keys(clusters).map((ft) => {
+ 							res.push({"name": ft, "results": clusters[ft].slice(0, 10)})

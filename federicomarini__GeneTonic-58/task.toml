@@ -1,0 +1,71 @@
+version = "1.0"
+
+[task]
+name = "default/federicomarini__GeneTonic-58"
+description = "New igraph changes - brought in for GeneTonic"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "GeneTonic",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "federicomarini/GeneTonic"
+ref = "2689eb02bd79eb002880d789fff68db16ecf83f7"
+reference = "https://github.com/federicomarini/GeneTonic/pull/58"
+source_access = "auto"
+built_at = "2026-11-15T19:34:06.681223+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:2ad23a8df231267dc38b4ac24d48ccdb17b805d90f2dbb310ffe611c28da0d03"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2024-02-16T22:04:53Z"
+diff_format = "unified"
+context_files = [
+    "DESCRIPTION",
+    "NAMESPACE",
+    "NEWS.md",
+    "R/GeneTonic-extras.R",
+    "R/GeneTonic-pkg.R",
+    "R/GeneTonic.R",
+    "R/enrichment_map.R",
+    "R/ggs_graph.R",
+    "man/GeneTonic-pkg.Rd",
+    "tests/testthat/test-gs_dendro.R",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 62
+difficulty = "medium"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

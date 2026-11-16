@@ -1,0 +1,69 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-75"
+description = "Phase 20: Enhance existing R Enhanced renderers (+5 new)"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "0aa91b6e4bb1e15277028cefc57009c5f1fa8fad"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/75"
+source_access = "auto"
+built_at = "2026-11-15T18:18:14.609355+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:ea23e6e5551e5a1074a97cddbb10e10685be012b5f6b87206dd25a2ad8565390"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-04-12T09:15:11Z"
+diff_format = "unified"
+context_files = [
+    "skills/singlecell/_lib/viz/r/communication.R",
+    "skills/singlecell/_lib/viz/r/de.R",
+    "skills/singlecell/_lib/viz/r/enrichment.R",
+    "skills/singlecell/_lib/viz/r/pseudotime.R",
+    "skills/singlecell/_lib/viz/r/registry.R",
+    "skills/singlecell/scrna/sc-cell-communication/sc_cell_communication.py",
+    "skills/singlecell/scrna/sc-de/sc_de.py",
+    "skills/singlecell/scrna/sc-enrichment/sc_enrichment.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 1180
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

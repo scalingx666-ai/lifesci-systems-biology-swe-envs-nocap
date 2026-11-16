@@ -1,0 +1,69 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-6"
+description = "feat: Add literature parsing and GEO dataset extraction"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "5a511bf6f0ef3160c740a7581bb99f75678fdf4f"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/6"
+source_access = "auto"
+built_at = "2026-11-15T18:18:45.817055+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:29b342d0574c72e05065d38a43220fd32bafd8adf2d0579f82733966c2af6d57"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-03-15T05:04:40Z"
+diff_format = "unified"
+context_files = [
+    "bot/core.py",
+    "skills/literature/SKILL.md",
+    "skills/literature/core/__init__.py",
+    "skills/literature/core/downloader.py",
+    "skills/literature/core/extractor.py",
+    "skills/literature/core/parser.py",
+    "skills/literature/literature_parse.py",
+    "skills/literature/requirements.txt",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 1192
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

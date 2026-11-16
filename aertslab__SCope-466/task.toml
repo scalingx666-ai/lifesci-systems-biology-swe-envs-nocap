@@ -1,0 +1,71 @@
+version = "1.0"
+
+[task]
+name = "default/aertslab__SCope-466"
+description = "Convert Histogram component to TypeScript"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "SCope",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aertslab/SCope"
+ref = "a1a655b9c59e36fef02ab009c05dfac67eb01537"
+reference = "https://github.com/aertslab/SCope/pull/466"
+source_access = "auto"
+built_at = "2026-11-15T19:37:16.183591+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:ab5fbb631fd787f5e8582e629bf8d7471fa6fa6029c7e4a478f8dec07344e6a6"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2021-07-14T09:25:37Z"
+diff_format = "unified"
+context_files = [
+    "client/src/components/GProfiler/GProfilerModal.tsx",
+    "client/src/components/GProfiler/model.ts",
+    "client/src/components/Histogram/index.tsx",
+    "client/src/components/Search/FeatureSearch.tsx",
+    "client/src/components/Search/FeatureSearchBox.test.tsx",
+    "client/src/components/Search/FeatureSearchBox.tsx",
+    "client/src/components/Search/actions.ts",
+    "client/src/components/Search/model.ts",
+    "client/src/components/pages/Regulon.jsx",
+    "client/src/model.ts",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 159
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

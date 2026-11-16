@@ -1,0 +1,82 @@
+diff --git a/omicsclaw/app/server.py b/omicsclaw/app/server.py
+index 863c9d0c..1d7e5958 100644
+--- a/omicsclaw/app/server.py
++++ b/omicsclaw/app/server.py
+@@ -2578,15 +2578,6 @@ def _get_review_log():
+         raise HTTPException(503, detail=f"Memory system unavailable: {exc}")
+ 
+ 
+-def _get_graph_service():
+-    """Return GraphService, raising 503 if the memory module is not available."""
+-    try:
+-        from omicsclaw.memory import get_graph_service
+-        return get_graph_service()
+-    except Exception as exc:
+-        raise HTTPException(503, detail=f"Memory graph service unavailable: {exc}")
+-
+-
+ def _get_glossary_service():
+     """Return GlossaryService, raising 503 if the memory module is not available."""
+     try:
+@@ -2965,16 +2956,12 @@ async def memory_recent(
+         raise HTTPException(503, detail="Memory system not available")
+ 
+     try:
+-        # Desktop UI mode: route through GraphService directly with
+-        # include_shared=True so user-customized core://agent/* rows
+-        # surface alongside per-namespace rows. The strict
+-        # MemoryClient.get_recent is reserved for multi-tenant bot
+-        # surfaces where shared bleed-through would be wrong.
+-        graph = _get_graph_service()
+-        results = await graph.get_recent_memories(
+-            limit=limit,
+-            namespace=_memory_client.namespace,
+-            include_shared=True,
++        # Desktop UI mode: include_shared=True surfaces user-customised
++        # core://agent/* alongside per-namespace rows. Multi-tenant bot
++        # surfaces use the default (strict) so one user's shared writes
++        # don't bleed into another's view.
++        results = await _memory_client.get_recent(
++            limit=limit, include_shared=True
+         )
+         return {"results": results, "count": len(results)}
+     except Exception as exc:
+diff --git a/omicsclaw/memory/memory_client.py b/omicsclaw/memory/memory_client.py
+index 96e1b945..d69b71a9 100644
+--- a/omicsclaw/memory/memory_client.py
++++ b/omicsclaw/memory/memory_client.py
+@@ -544,17 +544,31 @@ async def boot(self) -> str:
+     # deprecate of the affected memories lives in MemoryEngine.delete.
+     # ------------------------------------------------------------------
+ 
+-    async def get_recent(self, limit: int = 10) -> List[Dict[str, Any]]:
++    async def get_recent(
++        self,
++        limit: int = 10,
++        *,
++        include_shared: bool = False,
++    ) -> List[Dict[str, Any]]:
+         """Return recently updated memories scoped to the client's namespace.
+ 
+-        Strict — no shared fallback, by the same rule as
++        Strict by default — no shared fallback, by the same rule as
+         ``MemoryEngine.list_children`` (recent listings should not bleed
+         ``__shared__`` system rows into a per-user view).
++
++        ``include_shared=True`` is the desktop UI mode: returns rows in
++        the client's namespace *or* ``__shared__`` so user-customised
++        ``core://agent/*`` surfaces alongside per-user rows. Reserved
++        for single-tenant surfaces — multi-tenant bot surfaces should
++        keep the default to avoid leaking shared writes from one user
++        into another's view.
+         """
+         await self._ensure_init()
+         assert self._engine is not None
+         return await self._engine.get_recent(
+-            namespace=self._namespace, limit=limit
++            namespace=self._namespace,
++            limit=limit,
++            include_shared=include_shared,
+         )
+ 
+     async def forget(self, uri: str) -> Dict[str, Any]:

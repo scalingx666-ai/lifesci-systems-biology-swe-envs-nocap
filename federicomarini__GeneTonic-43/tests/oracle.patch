@@ -1,0 +1,297 @@
+diff --git a/DESCRIPTION b/DESCRIPTION
+index 8067b1c2..2106bd2c 100644
+--- a/DESCRIPTION
++++ b/DESCRIPTION
+@@ -1,8 +1,8 @@
+ Package: GeneTonic
+ Title: Enjoy Analyzing And Integrating The Results From Differential Expression 
+     Analysis And Functional Enrichment Analysis
+-Version: 2.1.4
+-Date: 2022-10-05
++Version: 2.1.5
++Date: 2022-10-07
+ Authors@R: 
+     c(
+         person(
+diff --git a/NEWS.md b/NEWS.md
+index 707b6668..0f9b29f8 100644
+--- a/NEWS.md
++++ b/NEWS.md
+@@ -3,13 +3,15 @@
+ ## New features
+ 
+ * `gs_heatmap` gains the `winsorize_threshold` parameter, to control the behavior of the geneset heatmap in presence of extreme values, either negative or positive ones. If not specified, the heatmap is not introducing any winsorization.
++* `map2color()` has a behavior that better accounts for asymmetric ranges of values. This propagates to some of the functions that use it for mapping to colors, such as `enrichment_map()`, or `ggs_backbone()`.
+ 
+ ## Other notes
+ 
+ * Fixed the behavior of the reactive elements after uploading the `GeneTonicList` object at runtime. 
+ * Fixed the label namings for the `gs_heatmap` function
+ * The `enhance_table()` function can handle the case where a gene is in the enrichment results table but not present in the annotation (e.g. annotations are updated, so some correspondences might get lost). It also presents an informative message on which genesets/genes are potentially responsible for the behavior. 
+-
++* Some additional checks are in place for controlling the cases where the `z_score` of a geneset is detected as NA (e.g. because there was a mismatch between gene names and identifiers in the annotation).
++ 
+ # GeneTonic 2.0.0
+ 
+ ## New features
+diff --git a/R/GeneTonic-extras.R b/R/GeneTonic-extras.R
+index 054097d2..51e8c41f 100644
+--- a/R/GeneTonic-extras.R
++++ b/R/GeneTonic-extras.R
+@@ -549,6 +549,9 @@ styleColorBar_divergent <- function(data,
+ #' be converted to a vector of colors
+ #' @param pal A vector of characters specifying the definition of colors for the
+ #' palette, e.g. obtained via \code{\link{brewer.pal}}
++#' @param symmetric Logical value, whether to return a palette which is symmetrical
++#' with respect to the minimum and maximum values - "respecting" the zero.
++#' Defaults to `TRUE`.
+ #' @param limits A vector containing the limits of the values to be mapped. If
+ #' not specified, defaults to the range of values in the `x` vector.
+ #'
+@@ -567,16 +570,24 @@ styleColorBar_divergent <- function(data,
+ #'   RColorBrewer::brewer.pal(name = "RdYlBu", 11)
+ #' )(50)
+ #' plot(b, col = map2color(b, pal2), pch = 20, cex = 3)
+-map2color <- function(x, pal, limits = NULL) {
++map2color <- function(x, pal, symmetric = TRUE, limits = NULL) {
+   if (is.null(limits)) {
+     limits <- range(x)
+   }
+-  pal[findInterval(x, seq(limits[1],
++  
++  if (symmetric) {
++    max_val <- max(limits)
++    limits[1] <- -max_val
++    limits[2] <- max_val
++  }
++  
++  pal_ret <- pal[findInterval(x, seq(limits[1],
+     limits[2],
+     length.out = length(pal) + 1
+   ),
+   all.inside = TRUE
+   )]
++  return(pal_ret)
+ }
+ 
+ 
+diff --git a/R/enrichment_map.R b/R/enrichment_map.R
+index daf0adc3..5a6d39fa 100644
+--- a/R/enrichment_map.R
++++ b/R/enrichment_map.R
+@@ -170,9 +170,20 @@ enrichment_map <- function(res_enrich,
+     mypal_select <- (scales::alpha(
+       colorRampPalette(RColorBrewer::brewer.pal(name = "YlOrRd", 9))(50), 1
+     ))
++    
++    V(emg)$color.background <- map2color(col_var, mypal, symmetric = FALSE, 
++                                         limits = range(na.omit(col_var)))
++    V(emg)$color.highlight <- map2color(col_var, mypal_select, symmetric = FALSE, 
++                                        limits = range(na.omit(col_var)))
++    V(emg)$color.hover <- map2color(col_var, mypal_hover, symmetric = FALSE, 
++                                    limits = range(na.omit(col_var)))
++    
++    V(emg)$color.background[is.na(V(emg)$color.background)] <- "lightgrey"
++    V(emg)$color.highlight[is.na(V(emg)$color.highlight)] <- "lightgrey"
++    V(emg)$color.hover[is.na(V(emg)$color.hover)] <- "lightgrey"
+   } else {
+     # e.g. using z_score or aggregated value
+-    if (prod(range(col_var)) >= 0) {
++    if (prod(range(na.omit(col_var))) >= 0) {
+       # gradient palette
+       mypal <- (scales::alpha(
+         colorRampPalette(RColorBrewer::brewer.pal(name = "Oranges", 9))(50), 0.8
+@@ -183,6 +194,17 @@ enrichment_map <- function(res_enrich,
+       mypal_select <- (scales::alpha(
+         colorRampPalette(RColorBrewer::brewer.pal(name = "Oranges", 9))(50), 1
+       ))
++      
++      V(emg)$color.background <- map2color(col_var, mypal, symmetric = FALSE, 
++                                           limits = range(na.omit(col_var)))
++      V(emg)$color.highlight <- map2color(col_var, mypal_select, symmetric = FALSE, 
++                                          limits = range(na.omit(col_var)))
++      V(emg)$color.hover <- map2color(col_var, mypal_hover, symmetric = FALSE, 
++                                      limits = range(na.omit(col_var)))
++      V(emg)$color.background[is.na(V(emg)$color.background)] <- "lightgrey"
++      V(emg)$color.highlight[is.na(V(emg)$color.highlight)] <- "lightgrey"
++      V(emg)$color.hover[is.na(V(emg)$color.hover)] <- "lightgrey"
++      
+     } else {
+       # divergent palette to be used
+       mypal <- rev(scales::alpha(
+@@ -194,14 +216,20 @@ enrichment_map <- function(res_enrich,
+       mypal_select <- rev(scales::alpha(
+         colorRampPalette(RColorBrewer::brewer.pal(name = "RdYlBu", 11))(50), 1
+       ))
++      
++      V(emg)$color.background <- map2color(col_var, mypal, symmetric = TRUE, 
++                                           limits = range(na.omit(col_var)))
++      V(emg)$color.highlight <- map2color(col_var, mypal_select, symmetric = TRUE, 
++                                          limits = range(na.omit(col_var)))
++      V(emg)$color.hover <- map2color(col_var, mypal_hover, symmetric = TRUE, 
++                                      limits = range(na.omit(col_var)))
++      
++      V(emg)$color.background[is.na(V(emg)$color.background)] <- "lightgrey"
++      V(emg)$color.highlight[is.na(V(emg)$color.highlight)] <- "lightgrey"
++      V(emg)$color.hover[is.na(V(emg)$color.hover)] <- "lightgrey"
+     }
+   }
+ 
+-  # V(g)$color <- map2color(colVar,mypal,limits = range(colVar))
+-  V(emg)$color.background <- map2color(col_var, mypal, limits = range(col_var))
+-  V(emg)$color.highlight <- map2color(col_var, mypal_select, limits = range(col_var))
+-  V(emg)$color.hover <- map2color(col_var, mypal_hover, limits = range(col_var))
+-
+   V(emg)$color.border <- "black"
+ 
+   # additional specification of edge colors
+diff --git a/R/ggs_graph.R b/R/ggs_graph.R
+index c41d4c43..92e473bb 100644
+--- a/R/ggs_graph.R
++++ b/R/ggs_graph.R
+@@ -437,9 +437,16 @@ ggs_backbone <- function(res_enrich,
+           colorRampPalette(RColorBrewer::brewer.pal(name = "RdYlBu", 11))(50), 1
+         ))
+ 
+-        V(bbgraph)$color.background <- map2color(col_var, mypal, limits = range(col_var))
+-        V(bbgraph)$color.highlight <- map2color(col_var, mypal_select, limits = range(col_var))
+-        V(bbgraph)$color.hover <- map2color(col_var, mypal_hover, limits = range(col_var))
++        V(bbgraph)$color.background <- map2color(col_var, mypal, symmetric = TRUE,
++                                                 limits = range(na.omit(col_var)))
++        V(bbgraph)$color.highlight <- map2color(col_var, mypal_select, symmetric = TRUE,
++                                                limits = range(na.omit(col_var)))
++        V(bbgraph)$color.hover <- map2color(col_var, mypal_hover, symmetric = TRUE,
++                                            limits = range(na.omit(col_var)))
++        
++        V(bbgraph)$color.background[is.na(V(bbgraph)$color.background)] <- "lightgrey"
++        V(bbgraph)$color.highlight[is.na(V(bbgraph)$color.highlight)] <- "lightgrey"
++        V(bbgraph)$color.hover[is.na(V(bbgraph)$color.hover)] <- "lightgrey"
+ 
+         V(bbgraph)$color.border <- "black"
+ 
+@@ -461,10 +468,17 @@ ggs_backbone <- function(res_enrich,
+           colorRampPalette(RColorBrewer::brewer.pal(name = "RdYlBu", 11))(50), 1
+         ))
+ 
+-        V(bbgraph)$color.background <- map2color(col_var, mypal, limits = range(col_var))
+-        V(bbgraph)$color.highlight <- map2color(col_var, mypal_select, limits = range(col_var))
+-        V(bbgraph)$color.hover <- map2color(col_var, mypal_hover, limits = range(col_var))
+-
++        V(bbgraph)$color.background <- map2color(col_var, mypal, 
++                                                 limits = range(na.omit(col_var)))
++        V(bbgraph)$color.highlight <- map2color(col_var, mypal_select, 
++                                                limits = range(na.omit(col_var)))
++        V(bbgraph)$color.hover <- map2color(col_var, mypal_hover, 
++                                            limits = range(na.omit(col_var)))
++
++        V(bbgraph)$color.background[is.na(V(bbgraph)$color.background)] <- "lightgrey"
++        V(bbgraph)$color.highlight[is.na(V(bbgraph)$color.highlight)] <- "lightgrey"
++        V(bbgraph)$color.hover[is.na(V(bbgraph)$color.hover)] <- "lightgrey"
++        
+         V(bbgraph)$color.border <- "black"
+ 
+         # additional specification of edge colors
+diff --git a/R/gs_dendro.R b/R/gs_dendro.R
+index b712ac82..1cb28939 100644
+--- a/R/gs_dendro.R
++++ b/R/gs_dendro.R
+@@ -141,8 +141,39 @@ gs_dendro <- function(res_enrich,
+     # setup color
+     mypal <- rev(scales::alpha(colorRampPalette(RColorBrewer::brewer.pal(name = "RdYlBu", 11))(50), 1))
+     col_var <- res_enrich[gs_to_use, color_leaves_by]
+-    leaves_col <- map2color(col_var, mypal, limits = range(col_var))[dend_idx]
+-
++    
++    if (all(col_var <= 1) & all(col_var > 0)) { # likely p-values...
++      col_var <- -log10(col_var)
++      mypal <- (scales::alpha(
++        colorRampPalette(RColorBrewer::brewer.pal(name = "YlOrRd", 9))(50), 0.8
++      ))
++      leaves_col <- map2color(col_var, mypal, symmetric = FALSE,
++                              limits = range(na.omit(col_var)))[dend_idx]
++      
++    } else {
++      # e.g. using z_score or aggregated value
++      if (prod(range(na.omit(col_var))) >= 0) {
++        # gradient palette
++        mypal <- (scales::alpha(
++          colorRampPalette(RColorBrewer::brewer.pal(name = "Oranges", 9))(50), 0.8
++        ))
++        leaves_col <- map2color(col_var, mypal, symmetric = FALSE,
++                                limits = range(na.omit(col_var)))[dend_idx]
++        
++      } else {
++        # divergent palette to be used
++        mypal <- rev(scales::alpha(
++          colorRampPalette(RColorBrewer::brewer.pal(name = "RdYlBu", 11))(50), 0.8
++        ))
++        leaves_col <- map2color(col_var, mypal, symmetric = TRUE,
++                                limits = range(na.omit(col_var)))[dend_idx]
++        
++      }
++    }
++    
++    # set NA values to light grey to prevent errors in assigning colors
++    leaves_col[is.na(leaves_col)] <- "lightgrey"
++    
+     my_dend <- set(my_dend, "leaves_col", leaves_col)
+   }
+ 
+diff --git a/man/map2color.Rd b/man/map2color.Rd
+index 35adcbe2..0b9c1298 100644
+--- a/man/map2color.Rd
++++ b/man/map2color.Rd
+@@ -4,7 +4,7 @@
+ \alias{map2color}
+ \title{Maps numeric values to color values}
+ \usage{
+-map2color(x, pal, limits = NULL)
++map2color(x, pal, symmetric = TRUE, limits = NULL)
+ }
+ \arguments{
+ \item{x}{A character vector of numeric values (e.g. log2FoldChange values) to
+@@ -13,6 +13,10 @@ be converted to a vector of colors}
+ \item{pal}{A vector of characters specifying the definition of colors for the
+ palette, e.g. obtained via \code{\link{brewer.pal}}}
+ 
++\item{symmetric}{Logical value, whether to return a palette which is symmetrical
++with respect to the minimum and maximum values - "respecting" the zero.
++Defaults to \code{TRUE}.}
++
+ \item{limits}{A vector containing the limits of the values to be mapped. If
+ not specified, defaults to the range of values in the \code{x} vector.}
+ }
+diff --git a/tests/testthat/test-enrichment_map.R b/tests/testthat/test-enrichment_map.R
+index 79d41d87..bdbfd3e8 100644
+--- a/tests/testthat/test-enrichment_map.R
++++ b/tests/testthat/test-enrichment_map.R
+@@ -34,7 +34,7 @@ test_that("Graph is generated", {
+   )
+   expect_is(g2, "igraph")
+ 
+-  res_pos_z <- res_enrich_withscores[res_enrich_withscores$z_score >= 0, ]
++  res_pos_z <- na.omit(res_enrich_withscores[res_enrich_withscores$z_score >= 0, ])
+   g3 <- enrichment_map(
+     res_enrich = res_pos_z,
+     res_de = res_macrophage_IFNg_vs_naive,
+diff --git a/vignettes/GeneTonic_manual.Rmd b/vignettes/GeneTonic_manual.Rmd
+index c410f0a3..5b1beb62 100644
+--- a/vignettes/GeneTonic_manual.Rmd
++++ b/vignettes/GeneTonic_manual.Rmd
+@@ -54,7 +54,7 @@ stopifnot(requireNamespace("htmltools"))
+ htmltools::tagList(rmarkdown::html_dependency_font_awesome())
+ ```
+ 
+----
++<hr>
+ 
+ # Introduction {#introduction}
+ 
+@@ -499,6 +499,7 @@ Plot an enrichment map of the enrichment results, where you can choose with `n_g
+ em <- enrichment_map(res_enrich_macrophage,
+                      res_macrophage_IFNg_vs_naive,
+                      n_gs = 30,
++                     color_by = "z_score",
+                      anno_df)
+ library("igraph")
+ library("visNetwork")

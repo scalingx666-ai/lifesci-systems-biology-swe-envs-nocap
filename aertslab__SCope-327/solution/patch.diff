@@ -1,0 +1,53 @@
+diff --git a/opt/scopeserver/dataserver/utils/cell_color_by_features.py b/opt/scopeserver/dataserver/utils/cell_color_by_features.py
+index d274fb47..49c47932 100644
+--- a/opt/scopeserver/dataserver/utils/cell_color_by_features.py
++++ b/opt/scopeserver/dataserver/utils/cell_color_by_features.py
+@@ -172,19 +172,15 @@ def setClusteringFeature(self, request, feature, n, secret=None):
+                 clusteringID = str(clustering["id"])
+                 if request.feature[n] == "All Clusters":
+                     numClusters = max(self.loom.get_clustering_by_id(clusteringID))
+-                    if numClusters <= 245:
+-                        self.legend = set()
+-                        clustering_meta = self.loom.get_meta_data_clustering_by_id(int(clusteringID), secret=secret)
+-                        cluster_dict = {int(x["id"]): x["description"] for x in clustering_meta["clusters"]}
+-                        for i in self.loom.get_clustering_by_id(clusteringID):
+-                            self.hex_vec.append(constant.BIG_COLOR_LIST[i])
+-                            self.legend.add((cluster_dict[i], constant.BIG_COLOR_LIST[i]))
+-                        self.legend = s_pb2.ColorLegend(
+-                            values=[x[0] for x in self.legend], colors=[x[1] for x in self.legend]
+-                        )
+-                    else:
+-                        interval = int(RGB_COLORS / numClusters)
+-                        self.hex_vec = [hex(i)[2:].zfill(6) for i in range(0, numClusters, interval)]
++                    legend = set()
++                    clustering_meta = self.loom.get_meta_data_clustering_by_id(int(clusteringID), secret=secret)
++                    cluster_dict = {int(x["id"]): x["description"] for x in clustering_meta["clusters"]}
++                    for i in self.loom.get_clustering_by_id(clusteringID):
++                        colour = constant.BIG_COLOR_LIST[i % len(constant.BIG_COLOR_LIST)]
++                        self.hex_vec.append(colour)
++                        legend.add((cluster_dict[i], colour))
++                    values, colors = zip(*legend)
++                    self.legend = s_pb2.ColorLegend(values=values, colors=colors)
+                     if len(request.annotation) > 0:
+                         cellIndices = self.loom.get_anno_cells(annotations=request.annotation, logic=request.logic)
+                         self.hex_vec = np.array(self.hex_vec)[cellIndices]
+diff --git a/opt/scopeserver/dataserver/utils/loom.py b/opt/scopeserver/dataserver/utils/loom.py
+index 83cb714b..293bb802 100644
+--- a/opt/scopeserver/dataserver/utils/loom.py
++++ b/opt/scopeserver/dataserver/utils/loom.py
+@@ -642,12 +642,14 @@ def get_nUMI(self) -> np.ndarray:
+             return self.nUMI
+         if self.has_ca_attr(name="nUMI"):
+             return self.loom_connection.ca.nUMI
++        if self.has_ca_attr(name="n_counts"):
++            return self.loom_connection.ca.n_counts
+         # Compute nUMI on the fly
+         # TODO: Add case here for large files. Sum across 1mio rows takes a very long time to compute
+         # Possibly faster fix totals = ds.map([np.sum], axis=1)[0]
+ 
+         calc_nUMI_start_time = time.time()
+-        self.nUMI = self.loom_connection[:, :].sum(axis=0)
++        self.nUMI = self.loom_connection.map([np.sum], axis=1)[0]
+         logger.debug("{0:.5f} seconds elapsed (calculating nUMI) ---".format(time.time() - calc_nUMI_start_time))
+         return self.nUMI
+ 

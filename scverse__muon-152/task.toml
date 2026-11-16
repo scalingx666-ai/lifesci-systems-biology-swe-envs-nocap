@@ -1,0 +1,64 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__muon-152"
+description = "tl.mofa: add train_kwargs argument"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "muon",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/muon"
+ref = "907302a3dc47d428012d59a74dfac856699abfee"
+reference = "https://github.com/scverse/muon/pull/152"
+source_access = "auto"
+built_at = "2026-11-15T16:59:56.958976+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:c6110bc72f1028cc0195f2480c00cff7c65be50f9eb7ee0a423116b98035d6ea"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-08-26T08:29:02Z"
+diff_format = "unified"
+context_files = [
+    "CHANGELOG.md",
+    "docs/references.bib",
+    "src/muon/tl.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 155
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

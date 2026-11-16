@@ -1,0 +1,172 @@
+diff --git a/src/pyscenic/export.py b/src/pyscenic/export.py
+index c46c717..d94ad0e 100644
+--- a/src/pyscenic/export.py
++++ b/src/pyscenic/export.py
+@@ -199,7 +199,6 @@ def add_scenic_metadata(adata: 'sc.AnnData',
+                         copy: bool = False) -> 'sc.AnnData':
+     """
+     Add AUCell values and regulon metadata to AnnData object.
+-
+     :param adata: The AnnData object.
+     :param auc_mtx: The dataframe containing the AUCell values (#observations x #regulons).
+     :param bin_rep: Also add binarized version of AUCell values as separate representation. This representation
+@@ -256,9 +255,7 @@ def fetch_logo(context):
+ 
+ def export_regulons(regulons: Sequence[Regulon], fname: str) -> None:
+     """
+-
+     Export regulons as GraphML.
+-
+     :param regulons: The sequence of regulons to export.
+     :param fname: The name of the file to create.
+     """
+@@ -271,4 +268,4 @@ def export_regulons(regulons: Sequence[Regulon], fname: str) -> None:
+         for dst_name, edge_strength in regulon.gene2weight.items():
+             graph.add_node(dst_name, group=node_type, **regulon.context)
+             graph.add_edge(src_name, dst_name, weight=edge_strength, interaction=edge_type, **regulon.context)
+-    nx.readwrite.write_graphml(graph, fname)
++    nx.readwrite.write_graphml(graph, fname)
+\ No newline at end of file
+diff --git a/src/pyscenic/genesig.py b/src/pyscenic/genesig.py
+index 2e0779a..0548176 100644
+--- a/src/pyscenic/genesig.py
++++ b/src/pyscenic/genesig.py
+@@ -330,10 +330,14 @@ def from_yaml(cls, loader, node):
+                          score=data['score'],
+                          context=frozenset(data['context']),
+                          transcription_factor=data['transcription_factor'])
+-
++    gene2occurrence = attr.ib(converter=convert)  # Mapping[str, float]
+     transcription_factor = attr.ib()  # str
+     context = attr.ib(default=frozenset())  # FrozenSet[str]
+     score = attr.ib(default=0.0)  # float
++    nes = attr.ib(default=0.0) # float
++    orthologous_identity = attr.ib(default=0.0) # float
++    similarity_qvalue = attr.ib(default=0.0) # float
++    annotation = attr.ib(default='') # str
+ 
+     @transcription_factor.validator
+     def non_empty(self, attribute, value):
+diff --git a/src/pyscenic/recovery.py b/src/pyscenic/recovery.py
+index dd94cf6..8f2ab27 100644
+--- a/src/pyscenic/recovery.py
++++ b/src/pyscenic/recovery.py
+@@ -106,7 +106,6 @@ def enrichment4cells(rnk_mtx: pd.DataFrame, regulon: Type[GeneSignature], auc_th
+     total_genes = len(rnk_mtx.columns)
+     index = pd.MultiIndex.from_tuples(list(zip(rnk_mtx.index.values, repeat(regulon.name))),
+                                       names=["Cell", "Regulon"])
+-
+     rnk = rnk_mtx.iloc[:,rnk_mtx.columns.isin(regulon.genes)]
+     if rnk.empty or float(len(rnk.columns))/len(regulon) < 0.80:
+         LOGGER.warning("Less than 80% of the genes in {} are present in the expression matrix.".format(regulon.name))
+diff --git a/src/pyscenic/transform.py b/src/pyscenic/transform.py
+index a218e3a..5ea86dd 100644
+--- a/src/pyscenic/transform.py
++++ b/src/pyscenic/transform.py
+@@ -231,7 +231,7 @@ def modules2df(db: Type[RankingDatabase], modules: Sequence[Regulon], motif_anno
+                       for module in modules])
+ 
+ 
+-def _regulon4group(tf_name, context, df_group) -> Optional[Regulon]:
++def _regulon4group(tf_name, context, df_group, save_columns=[]) -> Optional[Regulon]:
+     def score(nes, motif_similarity_qval, orthologuous_identity):
+         # The combined score starts from the NES score which is then corrected for less confidence in the TF annotation
+         # in two steps:
+@@ -261,26 +261,47 @@ def row2regulon(row):
+                                     row[COLUMN_NAME_ORTHOLOGOUS_IDENTITY]),
+                         context=context,
+                         transcription_factor=tf_name,
+-                        gene2weight=row[COLUMN_NAME_TARGET_GENES])
++                        gene2weight=row[COLUMN_NAME_TARGET_GENES],
++                        gene2occurrence=[])
+ 
+-    # Find most enriched annotated motif and add this to the context.
++    # Find most enriched annotated motif and add this to the context
+     df_selected = df_group.sort_values(by=COLUMN_NAME_NES, ascending=False)
+-    motif_logo = '{}.png'.format(df_selected.head(1).reset_index()[COLUMN_NAME_MOTIF_ID].values[0]) if len(df_selected) > 0 else ""
++    first_result_by_nes = df_selected.head(1).reset_index()
++    motif_logo = '{}.png'.format(first_result_by_nes[COLUMN_NAME_MOTIF_ID].values[0]) if len(df_selected) > 0 else ""
++
++    # Add additional columns to the regulon
++    nes = first_result_by_nes[COLUMN_NAME_NES].values[0] if COLUMN_NAME_NES in save_columns else 0.0
++    orthologous_identity = first_result_by_nes[COLUMN_NAME_ORTHOLOGOUS_IDENTITY].values[0] if COLUMN_NAME_ORTHOLOGOUS_IDENTITY in save_columns else 0.0
++    similarity_qvalue = first_result_by_nes[COLUMN_NAME_MOTIF_SIMILARITY_QVALUE].values[0] if COLUMN_NAME_MOTIF_SIMILARITY_QVALUE in save_columns else 0.0
++    annotation = first_result_by_nes[COLUMN_NAME_ANNOTATION].values[0] if COLUMN_NAME_ANNOTATION in save_columns else ''
+ 
+     # First we create a regulon for each enriched and annotated feature and then we aggregate these regulons into a
+     # single one using the union operator. This operator combined all target genes into a single set of genes keeping
+     # the maximum weight associated with a gene. In addition, the maximum combined score is kept as the score of the
+     # entire regulon.
+-    return reduce(Regulon.union, (row2regulon(row) for _, row in df_group.iterrows())).copy(context=frozenset(set(context).union({motif_logo})))
+-
+-
+-def df2regulons(df) -> Sequence[Regulon]:
++    return reduce(Regulon.union, (row2regulon(row) for _, row in df_group.iterrows())).copy(
++        context=frozenset(set(context).union({motif_logo})),
++        nes=nes,
++        orthologous_identity=orthologous_identity,
++        similarity_qvalue=similarity_qvalue,
++        annotation=annotation)
++
++    nes = first_result_by_nes[COLUMN_NAME_NES].values[0] if COLUMN_NAME_NES in save_columns else 0.0
++    orthologous_identity = first_result_by_nes[COLUMN_NAME_ORTHOLOGOUS_IDENTITY].values[0] if COLUMN_NAME_ORTHOLOGOUS_IDENTITY in save_columns else 0.0
++    similarity_qvalue = first_result_by_nes[COLUMN_NAME_MOTIF_SIMILARITY_QVALUE].values[0] if COLUMN_NAME_MOTIF_SIMILARITY_QVALUE in save_columns else 0.0
++    annotation = first_result_by_nes[COLUMN_NAME_ANNOTATION].values[0] if COLUMN_NAME_ANNOTATION in save_columns else ''
++
++def df2regulons(df, save_columns=[]) -> Sequence[Regulon]:
+     """
+     Create regulons from a dataframe of enriched features.
+ 
+     :param df: The dataframe.
++    :param save_columns: Additional columns to save from the given dataframe of enriched features. Possible values are COLUMN_NAME_NES, COLUMN_NAME_ORTHOLOGOUS_IDENTITY, COLUMN_NAME_MOTIF_SIMILARITY_QVALUE, COLUMN_NAME_ANNOTATION.
+     :return: A sequence of regulons.
+     """
++    
++    print("Create regulons from a dataframe of enriched features.")
++    print("Additional columns saved: {}".format(save_columns))
+ 
+     # Because the code below will alter the dataframe we need to make a defensive copy of it.
+     df = df.copy()
+@@ -298,7 +319,7 @@ def get_type(row):
+ 
+     # Group all rows per TF and type (+)/(-). Each group results in a single regulon.
+     not_none = lambda r: r is not None
+-    return list(filter(not_none, (_regulon4group(tf_name, frozenset([interaction_type]), df_grp)
++    return list(filter(not_none, (_regulon4group(tf_name, frozenset([interaction_type]), df_grp, save_columns)
+                                   for (tf_name, interaction_type), df_grp in df.groupby(by=[COLUMN_NAME_TF,
+                                                                                                   COLUMN_NAME_TYPE]))))
+ 
+diff --git a/src/pyscenic/utils.py b/src/pyscenic/utils.py
+index fc9317b..a66854c 100644
+--- a/src/pyscenic/utils.py
++++ b/src/pyscenic/utils.py
+@@ -157,7 +157,8 @@ def modules4thr(adjacencies, threshold, context=frozenset(), pattern="weight>{:.
+                 name="Regulon for {}".format(tf_name),
+                 context=frozenset([pattern.format(threshold)]).union(context),
+                 transcription_factor=tf_name,
+-                gene2weight=list(zip(df_grp[COLUMN_NAME_TARGET].values, df_grp[COLUMN_NAME_WEIGHT].values)))
++                gene2weight=list(zip(df_grp[COLUMN_NAME_TARGET].values, df_grp[COLUMN_NAME_WEIGHT].values)),
++                gene2occurrence=[])
+ 
+ 
+ def modules4top_targets(adjacencies, n, context=frozenset()):
+@@ -174,7 +175,8 @@ def modules4top_targets(adjacencies, n, context=frozenset()):
+                 name="Regulon for {}".format(tf_name),
+                 context=frozenset(["top{}".format(n)]).union(context),
+                 transcription_factor=tf_name,
+-                gene2weight=list(zip(module[COLUMN_NAME_TARGET].values, module[COLUMN_NAME_WEIGHT].values)))
++                gene2weight=list(zip(module[COLUMN_NAME_TARGET].values, module[COLUMN_NAME_WEIGHT].values)),
++                gene2occurrence=[])
+ 
+ 
+ def modules4top_factors(adjacencies, n, context=frozenset()):
+@@ -191,7 +193,8 @@ def modules4top_factors(adjacencies, n, context=frozenset()):
+                 name=tf_name,
+                 context=frozenset(["top{}perTarget".format(n)]).union(context),
+                 transcription_factor=tf_name,
+-                gene2weight=list(zip(df_grp[COLUMN_NAME_TARGET].values, df_grp[COLUMN_NAME_WEIGHT].values)))
++                gene2weight=list(zip(df_grp[COLUMN_NAME_TARGET].values, df_grp[COLUMN_NAME_WEIGHT].values)),
++                gene2occurrence=[])
+ 
+ 
+ ACTIVATING_MODULE = "activating"

@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__muon-13"
+description = "implement obsp/varp for MuData objects (closes #11)"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "muon",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/muon"
+ref = "88608734c99007b11547269125065fc0817d6a83"
+reference = "https://github.com/scverse/muon/pull/13"
+source_access = "auto"
+built_at = "2026-11-15T17:00:44.951762+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:1bee8e2518117e78d3a227d62d0cc5f43b3c6693b1019afe6a6f3ee3b08532bb"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2020-10-23T16:55:03Z"
+diff_format = "unified"
+context_files = [
+    "muon/_core/mudata.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 67
+difficulty = "medium"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

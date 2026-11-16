@@ -1,0 +1,936 @@
+diff --git a/docs/adr/0003-skill-template-is-human-copy-only.md b/docs/adr/0003-skill-template-is-human-copy-only.md
+new file mode 100644
+index 00000000..539e8a78
+--- /dev/null
++++ b/docs/adr/0003-skill-template-is-human-copy-only.md
+@@ -0,0 +1,99 @@
++# `templates/skill/` is a human-copy starter, not a codegen source-of-truth
++
++## Status
++
++Accepted (2026-05-12).
++
++## Context
++
++`templates/skill/` was originally framed (in its own `SKILL.md` preamble) as
++the canonical v2 OmicsClaw skill skeleton consumed by three callers:
++
++1. Humans copying the directory to bootstrap a new skill.
++2. `omics-skill-builder` (`skills/orchestrator/omics-skill-builder/`),
++   which wraps `omicsclaw/core/skill_scaffolder.py`.
++3. `scripts/migrate_skill.py`, the legacy → v2 migrator.
++
++In reality only the first is true today:
++
++- `skill_scaffolder.py` declares the path `SKILL_TEMPLATE_PATH = …/templates/skill/SKILL.md`
++  as provenance metadata on the result dataclass, but its `render_skill_markdown`
++  / `render_parameters_yaml` functions emit content from internal f-strings
++  and never read the template files.
++- `migrate_skill.py` contains no reference to `templates/skill/` at all.
++
++The reference v2 skills (e.g. `skills/singlecell/scrna/sc-de`,
++`skills/spatial/spatial-de`) have evolved into a richer shape than the
++template currently captures: a runnable `<skill>.py`, a `test_demo_mode`
++test, an optional `r_visualization/` directory, and a parameters sidecar
++with soft fields (`requires`, `install`, `os`, `homepage`) that `skill_lint.py`
++does not enforce but every gold skill carries.
++
++The question is whether to bring the codegen scripts inline so they read
++from `templates/skill/` as a single source-of-truth, or to keep them
++decoupled and treat the template purely as a human-copy starter.
++
++## Decision
++
++`templates/skill/` is **a human-copy starter only**. The codegen scripts
++(`skill_scaffolder.py`, `migrate_skill.py`) keep their internal renderers
++and are NOT refactored to read from this directory.
++
++Concretely:
++
++1. The template is structured to bring a new contributor ~80% of the way
++   to the shape of `sc-de` / `spatial-de` via `cp -r templates/skill new-skill/`
++   plus rename. It includes a runnable `replace_me.py`, a passing
++   `test_demo_mode`, the full parameters sidecar including soft fields,
++   and a 4-section `methodology.md` skeleton.
++2. The "AUTHORING GUIDE" preamble inside `SKILL.md` is shortened to a
++   5-line checklist; long-form usage notes move to a new
++   `templates/skill/README.md`.
++3. The false claim that the template is consumed by
++   `omics-skill-builder` and `migrate_skill.py` is removed.
++4. `skill_scaffolder.py`'s output, and `migrate_skill.py`'s output, are
++   kept honest by `scripts/skill_lint.py` — the same lint that gates the
++   gold skills. The template and the codegen share a *shape contract*
++   (the lint rules), not a *string contract*.
++
++## Consequences
++
++**Positive**
++
++- The template can be richer and more opinionated (HTML comments, prose
++  guidance, `_None yet —` empty markers, contributor-facing README)
++  without forcing the codegen to handle templating placeholders or
++  Jinja-style interpolation.
++- `omics-skill-builder` keeps the ability to render fully-parameterised
++  output for autonomous analysis promotion flows, which a static template
++  cannot serve.
++- `migrate_skill.py` keeps the ability to derive content from the legacy
++  SKILL.md it is migrating, which a static template cannot serve either.
++
++**Negative**
++
++- The template and the codegen renderers can drift apart over time.
++  Mitigation: both feed through `scripts/skill_lint.py`; structural
++  drift surfaces as lint failures rather than silent divergence.
++- Future contributors may reasonably ask "why doesn't `omics-skill-builder`
++  read this directory?" — this ADR is the answer.
++
++## Alternatives considered
++
++- **Make the codegen read the template** — requires introducing a
++  templating mechanism (placeholder substitution or Jinja). The template
++  becomes harder to read for the human-copy use case, and the codegen
++  gains a non-trivial dependency. Rejected: the cost of templating
++  exceeds the benefit of single-source-of-truth, given that `skill_lint.py`
++  already enforces the shape contract.
++- **Drop the template entirely and rely on copying `sc-de`** — copying
++  a gold skill brings along its domain-specific demo data, its R
++  visualization layer, and its argparse surface; the contributor has to
++  delete more than they keep. A purpose-built minimal template is a
++  better starting point.
++- **Split into per-domain templates** (`templates/skill-spatial/`,
++  `templates/skill-genomics/`, …) — every domain's script today imports
++  `omicsclaw.common.report` and follows the same argparse-plus-demo
++  shape; the cross-domain delta is mostly the primary input format,
++  which the contributor would have to change regardless. Rejected as
++  premature splitting.
+diff --git a/templates/skill/README.md b/templates/skill/README.md
+new file mode 100644
+index 00000000..ebf973b4
+--- /dev/null
++++ b/templates/skill/README.md
+@@ -0,0 +1,95 @@
++# OmicsClaw v2 Skill Template
++
++This directory is a **human-copy starter** for new OmicsClaw skills. It is not
++read by codegen — see [`docs/adr/0003-skill-template-is-human-copy-only.md`](../../docs/adr/0003-skill-template-is-human-copy-only.md).
++
++The goal: `cp -r` this directory into the right `skills/<domain>/` location,
++rename the placeholders, and you should be ~80% of the way to a gold-standard
++skill like `skills/singlecell/scrna/sc-de` or `skills/spatial/spatial-de`.
++
++## Bootstrap steps
++
++```bash
++# 1. Copy and rename
++cp -r templates/skill skills/<domain>/<my-new-skill>
++cd skills/<domain>/<my-new-skill>
++mv replace_me.py <my_new_skill>.py
++mv tests/test_replace_me.py tests/test_<my_new_skill>.py
++
++# 2. Edit the placeholders
++#    - SKILL.md            frontmatter name/description/tags + body sections
++#    - parameters.yaml     domain, script, trigger_keywords, soft fields
++#    - <my_new_skill>.py   replace the synthetic-CSV demo with real I/O
++#    - references/*.md     fill in methodology / output contract
++
++# 3. Regenerate the autogen parameters reference after editing the sidecar
++python scripts/generate_parameters_md.py skills/<domain>/<my-new-skill>
++
++# 4. Verify
++python scripts/skill_lint.py skills/<domain>/<my-new-skill>
++python <my_new_skill>.py --demo --output /tmp/<my-new-skill>_demo
++pytest tests/
++```
++
++## What the lint enforces
++
++`scripts/skill_lint.py` is the structural contract every v2 skill must pass.
++The full rule set lives in the script; the high-leverage rules are:
++
++| Surface | Rule |
++|---|---|
++| `SKILL.md` frontmatter `description` | Starts with `Load when`, contains a `Skip when/if/for` clause, ≤ 50 words |
++| `SKILL.md` body | ≤ 200 lines; must contain `## When to use`, `## Inputs & Outputs`, `## Flow`, `## Gotchas`, `## Key CLI`, `## See also` |
++| `SKILL.md` Gotchas | Each non-empty bullet must anchor to a real code path (`<script>.py:LINE`), `result.json["key"]`, or a `tables/`/`figures/` filename that the script actually writes |
++| `parameters.yaml` | Must define `domain`, `script`, `saves_h5ad`, `requires_preprocessed`, `trigger_keywords`, `legacy_aliases`, `allowed_extra_flags`, `param_hints` |
++| `parameters.yaml` `allowed_extra_flags` | Must exactly match the `--flag` literals declared via `add_argument(...)` in the script (excluding the runner-blocked trio `--input`/`--output`/`--demo`) |
++| `references/` | Must contain `methodology.md`, `output_contract.md`, `parameters.md` |
++| `references/output_contract.md` | Every `tables/X.csv` / `figures/X.png` / etc. it mentions must appear as a substring in the script (or any sibling `_lib/*.py` it imports) |
++| `references/parameters.md` | Must match the output of `scripts/generate_parameters_md.py` — regenerate after every sidecar edit |
++
++## Soft conventions (not lint-enforced, but every gold skill does this)
++
++### Shared helpers live in `skills/<domain>/_lib/`
++
++When two skills in the same domain need the same utility (matrix-contract
++validation, pseudobulk aggregation, gallery rendering, …), put it under
++`skills/<domain>/_lib/` and import via `from skills.<domain>._lib.<module>`.
++Do **not** put helpers under the skill's own directory unless they are
++genuinely single-use.
++
++The template is domain-agnostic and cannot scaffold this for you — see the
++existing `skills/singlecell/_lib/` and `skills/spatial/_lib/` for shape.
++
++### Real demo data lives in `data/`
++
++The template's `replace_me.py` synthesises its demo in memory because that
++keeps the template domain-agnostic and avoids committing binary fixtures.
++When your skill needs a real demo (e.g. a small h5ad, a tiny VCF), drop it
++under `<skill>/data/` and load it from `--demo`. See
++`skills/singlecell/scrna/sc-de/data/pbmc3k_processed.h5ad` for shape.
++
++### Optional R Enhanced visualisation layer
++
++OmicsClaw has a three-tier visualisation flow: Python standard figures → R
++Enhanced figures (`omicsclaw.py replot`) → parameter tuning. The R layer is
++opt-in. If your skill exports `figure_data/*.csv` payloads and you want a
++publication-quality R renderer, add:
++
++```
++<skill>/r_visualization/
++├── <name>_publication_template.R   # consumes figure_data/, writes figures/r_enhanced/
++└── README.md                       # input contract + renderer list
++```
++
++See `skills/spatial/spatial-de/r_visualization/` for shape. The template
++deliberately does not scaffold this directory — leave
++`references/r_visualization.md` as-is until you actually add a renderer.
++
++## Reference skills
++
++When in doubt, read these end-to-end:
++
++- `skills/singlecell/scrna/sc-de/` — multi-method DE, AnnData I/O,
++  pseudobulk path, R renderers.
++- `skills/spatial/spatial-de/` — same DE problem in the spatial modality,
++  illustrates the cross-domain shape.
+diff --git a/templates/skill/SKILL.md b/templates/skill/SKILL.md
+index c0626919..74a1ed5e 100644
+--- a/templates/skill/SKILL.md
++++ b/templates/skill/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: skill-template
+-description: Load when copying this directory to bootstrap a new OmicsClaw v2 skill (rename, fill in, then `git add`). Skip when migrating an existing legacy skill — use `scripts/migrate_skill.py` instead, which generates the same layout from the legacy SKILL.md.
++description: Load when copying this directory to bootstrap a new OmicsClaw v2 skill (rename, fill in, then `git add`). Skip when an existing skill already covers the request.
+ version: 0.1.0
+ author: OmicsClaw
+ license: MIT
+@@ -8,39 +8,21 @@ tags:
+ - template
+ - scaffold
+ - v2
+-requires:
+-- pyyaml
+ ---
+ 
+ <!--
+-AUTHORING GUIDE — read once, then delete this comment block.
+-
+-This scaffold is the canonical v2 OmicsClaw skill skeleton.  It is consumed by:
+-  * humans copying this dir to start a new skill
+-  * `omics-skill-builder` (programmatic scaffolder)
+-  * `scripts/migrate_skill.py` (legacy → v2 migrator)
+-
+-Filling-in checklist (loosely follows Perplexity's skill-design framework):
+-
+-1. **Description** is the most important field.  It is the routing trigger
+-   read by every agent invocation, NOT documentation.
+-   - Format: "Load when <user intent / data shape>. Skip when <neighbouring
+-     skill / wrong input>."
+-   - Hard cap: 50 words (lint-enforced).
+-   - Mirror real user queries, not workflow summaries.
+-
+-2. **Body** is loaded into context every time an agent picks this skill.
+-   - Hard cap: 200 lines (lint-enforced).  Conditional / heavy logic belongs
+-     in `references/*` (lazy-loaded).
+-   - "Skip the obvious" — only document things the agent would otherwise get
+-     wrong.  If removing a sentence wouldn't confuse a future reader, drop it.
+-   - Every Gotcha bullet should anchor a code reference (`<file>.py:LINE` or
+-     `result.json[X]` or `tables/X.csv`) — the lint at
+-     `scripts/skill_lint.py:_check_gotchas_anchors` enforces this.
+-
+-3. **Gotchas Flywheel** — append-mostly maintenance.  When a reviewer or
+-   user reports a failure mode, add a Gotcha bullet.  Don't lengthen
+-   existing instructions; let gotchas accrue value over time.
++Authoring checklist (delete this comment block before committing):
++
++  1. Rename: copy this directory, rename `replace_me.py` and the `tests/`
++     file, update frontmatter `name`, `parameters.yaml::script`.
++  2. Fill: `description` (≤50 words, "Load when … Skip when …"), the six
++     `##` sections below, and the three `references/*.md` stubs.
++  3. Implement: replace the synthetic-CSV demo in the script with real I/O.
++  4. Verify: `python scripts/generate_parameters_md.py <skill_dir>` then
++     `python scripts/skill_lint.py <skill_dir>` then `pytest tests/`.
++
++Full usage notes, lint rules, and soft conventions live in
++`templates/skill/README.md`.
+ -->
+ 
+ # REPLACE_SKILL_NAME
+@@ -48,9 +30,9 @@ Filling-in checklist (loosely follows Perplexity's skill-design framework):
+ ## When to use
+ 
+ <!--
+-Replace this with one short paragraph (3-6 lines).  Mirror the frontmatter
+-`description` ("Load when… Skip when…") and explicitly call out the closest
+-adjacent skill so the agent knows when to redirect.
++One short paragraph (3-6 lines).  Mirror the frontmatter description
++("Load when … Skip when …") and explicitly call out the closest adjacent
++skill so the agent knows when to redirect.
+ -->
+ 
+ The user has `<input shape>` and wants `<output shape>`.  Pick this skill
+@@ -90,7 +72,8 @@ helps reviewers verify the contract.  Don't recapitulate idiomatic Python.
+ <!--
+ Empirically the highest-leverage section.  Each bullet should:
+   * State the trap in the lead sentence.
+-  * Anchor to a code line (`<file>.py:LINE`) or output filename.
++  * Anchor to a code line (`<file>.py:LINE`) or output filename — lint at
++    `scripts/skill_lint.py::_check_gotchas_anchors` enforces this.
+   * Explain WHY (the reason the trap exists), not just WHAT.
+ 
+ Skip obvious things — Python-101 advice or framework-standard behaviour.
+diff --git a/templates/skill/parameters.yaml b/templates/skill/parameters.yaml
+index 43aa0b02..60ea7154 100644
+--- a/templates/skill/parameters.yaml
++++ b/templates/skill/parameters.yaml
+@@ -21,22 +21,29 @@
+ # After copying this template, you can either keep these explanatory comments
+ # or strip them — the lint validates the YAML data, not the comments.
+ #
+-# Convention: every field below is REQUIRED unless its comment explicitly
+-# marks it optional (e.g. `emoji`).  `param_hints: {}` is valid for skills
+-# with no method-specific tuning, but the key itself must be present.
++# Field conventions:
++#   * REQUIRED (lint-enforced) fields are listed first and must be present.
++#     `param_hints: {}` is valid for skills with no method-specific tuning,
++#     but the key itself must exist.
++#   * SOFT fields appear after the divider — `skill_lint.py` does not enforce
++#     them, but every gold skill (sc-de, spatial-de, …) carries them and
++#     downstream consumers (`bot/`, `omicsclaw.py list`, parameter-card UX)
++#     surface them.  Prefer to keep, don't silently drop.
+ # =============================================================================
+ 
+-# --- Required: domain bucket -------------------------------------------------
++# ============================== REQUIRED ====================================
++
++# --- domain bucket -----------------------------------------------------------
+ # Must match an existing dir under skills/ (spatial / singlecell / genomics /
+ # proteomics / metabolomics / bulkrna / orchestrator / literature).
+ domain: replace-me
+ 
+-# --- Required: runtime entrypoint --------------------------------------------
++# --- runtime entrypoint ------------------------------------------------------
+ # Filename of the Python script, relative to this skill directory.
+ # Resolved by registry._resolve_script_path.
+ script: replace_me.py
+ 
+-# --- Required: behavioural flags ---------------------------------------------
++# --- behavioural flags -------------------------------------------------------
+ # True if the skill writes a `processed.h5ad` AnnData artifact to the output
+ # dir.  Used by the bot to decide whether to surface a downstream-AnnData hint.
+ saves_h5ad: false
+@@ -45,28 +52,29 @@ saves_h5ad: false
+ # computed).  Used by the orchestrator to gate routing.
+ requires_preprocessed: false
+ 
+-# --- Required: orchestrator routing keywords ---------------------------------
++# --- orchestrator routing keywords -------------------------------------------
+ # Free-text phrases used by capability_resolver's keyword-routing layer.
+ # Complement the SKILL.md description; NOT a substitute for it.
+ trigger_keywords:
+ - replace-me-keyword
+ 
+-# --- Required: legacy aliases ------------------------------------------------
++# --- legacy aliases ----------------------------------------------------------
+ # Old skill names this skill answers to.  registry._register_skill_entry
+ # registers each alias.  Drop entries here when the legacy name is fully
+ # out of circulation.
+ legacy_aliases: []
+ 
+-# --- Required: CLI flags exposed to `omicsclaw.py run` -----------------------
++# --- CLI flags exposed to `omicsclaw.py run` ---------------------------------
+ # Flags accepted by the runtime script *in addition* to the standard
+ # --input / --output / --demo set.  Each entry must start with "--".
+ # `omicsclaw/core/skill_runner.py:354-378` filters out user-supplied flags
+ # NOT listed here — empty / partial lists silently drop user flags.
+ # `scripts/skill_lint.py::_check_allowed_extra_flags` enforces this list
+ # matches the script's argparse declarations exactly (PR-eval-2 #163).
+-allowed_extra_flags: []
++allowed_extra_flags:
++- --method
+ 
+-# --- Required: per-method parameter hints ------------------------------------
++# --- per-method parameter hints ----------------------------------------------
+ # Per-method parameter tuning hints for the bot's parameter-card UX.
+ # Empty dict {} is valid for skills with no method-specific tuning.
+ # Each key is a lowercase method name (matching --method values).
+@@ -82,15 +90,51 @@ allowed_extra_flags: []
+ #     tips:            [str] — one short sentence per tip surfaced to user
+ param_hints: {}
+ 
+-# --- Optional: emoji ---------------------------------------------------------
++# ============================ SOFT (not lint-enforced) ======================
++# `skill_lint.py` does not require these, but every gold skill carries them
++# and the bot / parameter-card UI read them when present.  Prefer to keep.
++
++# --- runtime requirements ----------------------------------------------------
++# Declarative dependency manifest read by the bot's preflight UX.
++#   bins:    binary executables on $PATH the script shells out to
++#   env:     environment variable names the script reads
++#   config:  configuration file paths the script reads
++requires:
++  bins:
++  - python3
++  env: []
++  config: []
++
++# --- installation hints ------------------------------------------------------
++# Hints surfaced when a missing dependency is detected.  Each entry:
++#   kind:     pip | conda | apt | brew | r — installer kind
++#   package:  installer-native package name
++#   bins:     [str] — binary names provided by this package (cross-checked
++#                     against `requires.bins`)
++install:
++- kind: pip
++  package: replace-me-package
++  bins: []
++
++# --- supported operating systems ---------------------------------------------
++# Used by the bot to gate skill availability per platform.
++os:
++- macos
++- linux
++
++# --- homepage URL ------------------------------------------------------------
++# Surfaced in the bot's skill detail card.
++homepage: https://github.com/OmicsClaw/OmicsClaw
++
++# --- emoji -------------------------------------------------------------------
+ # Single emoji used in bot-rendered headers.  Decorative only.
+-# emoji: "🔬"
++emoji: "🔬"
+ 
+ # =============================================================================
+ # Forbidden fields
+ # =============================================================================
+ # The following keys MUST NOT appear in parameters.yaml.  They live in
+ # SKILL.md frontmatter (the user-visible / Anthropic-style metadata):
+-#   name, description, version, author, license, tags, requires
++#   name, description, version, author, license, tags
+ #
+ # scripts/skill_lint.py raises an error if any of these surface here.
+diff --git a/templates/skill/references/methodology.md b/templates/skill/references/methodology.md
+index 7b4a5c07..a8f6c5c9 100644
+--- a/templates/skill/references/methodology.md
++++ b/templates/skill/references/methodology.md
+@@ -1,29 +1,110 @@
+ # Methodology
+ 
+ <!--
+-Replace this with the WHY behind the algorithm.  Methodology lives here
+-(lazy-loaded), NOT in `SKILL.md`'s body — keep the body ≤200 lines.
++This file holds the WHY behind the algorithm.  It is lazy-loaded — `SKILL.md`
++is loaded on every agent invocation, this file only when the agent decides
++to dig in.  Keep `SKILL.md` ≤ 200 lines by pushing depth here.
+ 
+-Cover:
+-- The biological / statistical rationale for the chosen approach.
+-- When each `--method` backend wins or loses (multi-method skills).
+-- Per-method assumptions (e.g. "Welch t-test assumes unequal variance").
+-- Citations to the canonical papers.
++Four sections below are the recommended minimum.  Skills with multi-method
++dispatch, complex input matrix contracts, or extensive CLI surfaces should
++add the OPTIONAL sections listed at the end (see `skills/singlecell/scrna/
++sc-de/references/methodology.md` for a fully-fleshed example).
+ 
+-Skip obvious things — don't recapitulate Wikipedia.  Focus on what the agent
+-or human user would otherwise get wrong.
++Skip obvious things — don't recapitulate Wikipedia, don't restate framework-
++standard behaviour.  Focus on what the agent (or a future human) would
++otherwise get wrong.
+ -->
+ 
+-## Background
++## Capabilities
+ 
+-(Replace with 1-3 paragraphs of motivation.)
++<!--
++A numbered list of what this skill does.  Each entry is one short clause —
++"X does Y on Z" — not a sales pitch.  Items here should map 1:1 to the
++concrete artifacts the script produces (a table, a figure family, an
++export, a downstream-skill handoff).
++-->
++
++1. **<core capability>** — one-line description of the primary computation.
++2. **<secondary capability>** — e.g. a method variant or post-filter.
++3. **<export>** — what figure-ready / downstream-handoff artifacts the
++   skill emits.
++
++## Workflow
++
++<!--
++The runtime pipeline as the script actually executes it.  Match the
++numbered list in `SKILL.md`'s `## Flow` but go one level deeper — what
++each step validates, what it can raise, what intermediate state it
++produces.  Anchor to `<script>.py:LINE` where it helps.
++-->
++
++1. **Load** — read the input (`<reader>`) and surface what is in `<X>` /
++   `<obs[Y]>`.
++2. **Validate** — check required columns / matrix contract; raise
++   `ValueError(...)` on mismatch.
++3. **Run** — execute the chosen `--method` backend.
++4. **Export** — write `tables/<name>.csv` plus `report.md` and
++   `result.json` via the common report helper.
++
++## Methodology
++
++<!--
++The statistical / biological / algorithmic rationale.  This is the
++section a domain expert reads to decide whether to trust the result.
++Cover the assumptions each method makes, where each method is and is
++NOT appropriate, and the canonical citation.
++
++For multi-method skills, prefer a per-method subsection over a
++comparison table — caveats are usually too specific to fit a table cell.
++-->
+ 
+-## Method comparison
++### `<method-name>`
+ 
+-| Method | When to choose | Caveat |
+-|---|---|---|
+-| `<name>` | `<conditions>` | `<failure mode>` |
++- **Input contract**: `<matrix expectation, e.g. raw counts in
++  layers["counts"]>`.
++- **Test / algorithm**: one-line statement of the underlying method
++  (e.g. "Wilcoxon rank-sum on log-normalized expression").
++- **Assumptions**: what the method assumes about the data (e.g.
++  independent observations, unequal variance, sufficient sample size).
++- **Failure mode**: the most common silent-wrong-answer trap and how to
++  detect it from `result.json`.
++- **Citation**: (Author, year). Title. Journal. DOI.
+ 
+-## Citations
++## Dependencies
+ 
+-- (Author, year). Paper title. Journal. DOI.
++<!--
++The runtime requirements as the user will encounter them.  Split into
++required vs optional so the installation hint surfaced by the bot is
++precise.  `parameters.yaml::requires` and `parameters.yaml::install`
++should agree with this list.
++-->
++
++**Required**
++
++- `<package>` — `<reason>`
++
++**Optional**
++
++- `<package>` — `<feature that needs it>`
++
++<!--
++==============================================================================
++OPTIONAL sections — keep ONLY the ones your skill actually needs.  Delete
++the rest.  Adding empty placeholder sections is worse than omitting them.
++
++## Input Formats
++| Format | Extension | Required Fields | Example |
++|--------|-----------|-----------------|---------|
++
++## Input Matrix Convention
++(For omics skills with stringent per-method matrix expectations.)
++
++## CLI Reference
++(For skills with extensive flag surfaces — mirror the `## Key CLI` block
++from `SKILL.md` here with full per-method invocation examples.)
++
++## Safety
++(For skills with non-obvious data-handling implications — local-first
++caveats, fake-replicate guards, identity / PHI considerations.)
++==============================================================================
++-->
+diff --git a/templates/skill/references/output_contract.md b/templates/skill/references/output_contract.md
+index 604a2749..3dd9ce00 100644
+--- a/templates/skill/references/output_contract.md
++++ b/templates/skill/references/output_contract.md
+@@ -1,3 +1,16 @@
++# Output Contract
++
++<!--
++Describe ONLY the files the script actually writes (`.to_csv` / `.savefig` /
++`.write_text` / `json.dump` literals).  `scripts/skill_lint.py::_check_output_
++contract_paths` fails when a path mentioned here does not appear in the
++script (or any imported `_lib/*.py`).
++
++Framework files (report.md, result.json, processed.h5ad, commands.sh,
++manifest.json, requirements.txt, checksums.sha256) are exempt from the
++substring check — they are written by the common report helper.
++-->
++
+ ## Output Structure
+ 
+ ```
+@@ -10,19 +23,8 @@ output_directory/
+ 
+ ## File contents
+ 
+-<!--
+-Describe ONLY the files the script actually writes (`.to_csv` / `.savefig` /
+-`.write_text` / `json.dump` literals).  PR-eval-2 #163 added a lint check at
+-`scripts/skill_lint.py::_check_output_contract_paths` that fails when a path
+-mentioned here does not appear in the script (or any imported `_lib/*.py`).
+-
+-Framework files (report.md, result.json, processed.h5ad, commands.sh, etc.)
+-are exempt from the substring check — they are written by the common report
+-helper.
+--->
+-
+-- `tables/replace_me.csv` — written by `<script>.py`. One row per `<unit>`,
+-  columns: `<col1>, <col2>, ...`.
++- `tables/replace_me.csv` — written by `replace_me.py`. One row per `<unit>`,
++  columns: `feature, value, rank, method`.
+ - `report.md` — Markdown summary written by the common report helper.
+ - `result.json` — standardised result envelope (`summary` + `data` keys).
+ 
+@@ -30,3 +32,59 @@ helper.
+ 
+ (Replace with anything a downstream skill reading this output needs to know
+ about edge cases, sentinel values, NaN handling, etc.)
++
++<!--
++==============================================================================
++OPTIONAL outputs — add the blocks that match what your script actually
++writes.  REMOVE the ones that don't apply.  Every path you add here must
++appear as a substring in the script (or a sibling `_lib/*.py`) or the lint
++will fail.
++
++### When the skill writes a processed AnnData
++
++```
++output_directory/
++├── processed.h5ad
++```
++
++- `processed.h5ad` — written by `<script>.py`. Counts in
++  `layers["counts"]`, log-normalized in `adata.X`, results stashed in `uns`.
++- Set `saves_h5ad: true` in `parameters.yaml`.
++
++### When the skill emits Python figures
++
++```
++output_directory/
++└── figures/
++    └── <name>.png
++```
++
++- `figures/<name>.png` — written by `<script>.py` via matplotlib `savefig`.
++
++### When the skill emits figure-ready data for the R Enhanced layer
++
++```
++output_directory/
++├── figure_data/
++│   ├── manifest.json
++│   └── <name>.csv
++```
++
++- `figure_data/<name>.csv` — figure-ready export consumed by the optional
++  R post-renderer.  See `references/r_visualization.md`.
++
++### When the skill emits a reproducibility bundle
++
++```
++output_directory/
++└── reproducibility/
++    ├── commands.sh
++    └── analysis_notebook.ipynb
++```
++
++- `reproducibility/commands.sh` — re-invocation script written by the common
++  report helper via `write_standard_run_artifacts`.
++- `reproducibility/analysis_notebook.ipynb` — Jupyter notebook scaffolding
++  the same analysis end-to-end.
++==============================================================================
++-->
+diff --git a/templates/skill/references/parameters.md b/templates/skill/references/parameters.md
+index 833ba386..a148fb3c 100644
+--- a/templates/skill/references/parameters.md
++++ b/templates/skill/references/parameters.md
+@@ -6,7 +6,7 @@
+ 
+ ## Allowed extra CLI flags
+ 
+-_No extra flags beyond the standard `--input` / `--output` / `--demo` set._
++- `--method`
+ 
+ ## Per-method parameter hints
+ 
+diff --git a/templates/skill/replace_me.py b/templates/skill/replace_me.py
+new file mode 100644
+index 00000000..10daa550
+--- /dev/null
++++ b/templates/skill/replace_me.py
+@@ -0,0 +1,197 @@
++#!/usr/bin/env python3
++"""REPLACE_SKILL_NAME — placeholder runtime for the OmicsClaw v2 skill template.
++
++This is the minimum-viable wrapper that lints clean and runs `--demo` out of
++the box.  The demo synthesises a 5x3 CSV in memory so the template stays
++domain-agnostic; replace `synthesise_demo` and `load_input` with real I/O
++for your data modality (AnnData, VCF, mzML, …) when filling in.
++
++Usage:
++    python replace_me.py --demo --output /tmp/out
++    python replace_me.py --input data.csv --output results/ --method default
++"""
++
++from __future__ import annotations
++
++import argparse
++import logging
++import sys
++from pathlib import Path
++
++import numpy as np
++import pandas as pd
++
++# Bootstrap sys.path so `omicsclaw.common.report` resolves whether this script
++# is run from the template directory or after being copied into
++# `skills/<domain>/<skill>/`.  Walk up looking for the omicsclaw package.
++_HERE = Path(__file__).resolve()
++for _candidate in _HERE.parents:
++    if (_candidate / "omicsclaw" / "__init__.py").exists():
++        if str(_candidate) not in sys.path:
++            sys.path.insert(0, str(_candidate))
++        break
++
++from omicsclaw.common.report import (  # noqa: E402
++    generate_report_footer,
++    generate_report_header,
++    write_result_json,
++)
++
++SKILL_NAME = "REPLACE_SKILL_NAME"
++SKILL_VERSION = "0.1.0"
++
++DEFAULT_METHOD = "default"
++ALLOWED_METHODS = ("default",)
++
++logger = logging.getLogger(SKILL_NAME)
++
++
++def synthesise_demo() -> pd.DataFrame:
++    """Built-in synthetic data for `--demo`.
++
++    Replace this with a real demo fixture from `<skill>/data/` when your skill
++    needs a richer example (e.g. a small h5ad, a tiny VCF).
++    """
++    rng = np.random.default_rng(seed=42)
++    return pd.DataFrame(
++        {
++            "feature": [f"feature_{i}" for i in range(5)],
++            "value": rng.normal(loc=0.0, scale=1.0, size=5).round(4),
++            "rank": np.arange(1, 6),
++        }
++    )
++
++
++def load_input(input_path: Path) -> pd.DataFrame:
++    """Read real input.  Replace with your modality's reader."""
++    if input_path.suffix == ".csv":
++        return pd.read_csv(input_path)
++    raise ValueError(
++        f"replace_me.py loads CSV only — swap this for your modality's "
++        f"reader (e.g. anndata.read_h5ad).  Saw: {input_path}"
++    )
++
++
++def run_method(frame: pd.DataFrame, method: str) -> pd.DataFrame:
++    """Placeholder transformation — replace with the real algorithm."""
++    if method not in ALLOWED_METHODS:
++        raise ValueError(
++            f"--method {method!r} not in allowed list {ALLOWED_METHODS}"
++        )
++    out = frame.copy()
++    out["method"] = method
++    return out
++
++
++def write_outputs(
++    output_dir: Path,
++    *,
++    frame: pd.DataFrame,
++    method: str,
++    input_path: Path | None,
++) -> None:
++    """Write the three baseline artifacts: `tables/replace_me.csv`,
++    `report.md`, `result.json`.
++
++    Every path written here MUST also appear in `references/output_contract.md`
++    or `scripts/skill_lint.py::_check_output_contract_paths` will fail.
++    """
++    output_dir.mkdir(parents=True, exist_ok=True)
++    tables_dir = output_dir / "tables"
++    tables_dir.mkdir(exist_ok=True)
++
++    table_path = tables_dir / "replace_me.csv"
++    frame.to_csv(table_path, index=False)
++
++    summary = {
++        "method": method,
++        "n_rows": int(len(frame)),
++        "n_columns": int(frame.shape[1]),
++    }
++
++    header = generate_report_header(
++        title=f"{SKILL_NAME} Report",
++        skill_name=SKILL_NAME,
++        input_files=[input_path] if input_path else None,
++        extra_metadata={"Method": method},
++    )
++    body_lines = [
++        "## Summary",
++        "",
++        f"- **Method**: {method}",
++        f"- **Rows**: {summary['n_rows']}",
++        f"- **Columns**: {summary['n_columns']}",
++        "",
++        "## Outputs",
++        "",
++        f"- `tables/replace_me.csv` — {summary['n_rows']} rows",
++    ]
++    footer = generate_report_footer()
++    (output_dir / "report.md").write_text(
++        header + "\n".join(body_lines) + "\n" + footer
++    )
++
++    write_result_json(
++        output_dir,
++        skill=SKILL_NAME,
++        version=SKILL_VERSION,
++        summary=summary,
++        data={
++            "method": method,
++            "table": str(table_path.relative_to(output_dir)),
++        },
++    )
++
++
++def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
++    parser = argparse.ArgumentParser(
++        prog=SKILL_NAME,
++        description=(
++            "Placeholder OmicsClaw v2 skill — replace with real logic."
++        ),
++    )
++    parser.add_argument("--input", type=Path, help="Path to input file.")
++    parser.add_argument(
++        "--output", type=Path, required=True, help="Output directory."
++    )
++    parser.add_argument(
++        "--demo",
++        action="store_true",
++        help="Run on built-in synthetic data instead of --input.",
++    )
++    parser.add_argument(
++        "--method",
++        default=DEFAULT_METHOD,
++        choices=ALLOWED_METHODS,
++        help=f"Method backend (default: {DEFAULT_METHOD}).",
++    )
++    return parser.parse_args(argv)
++
++
++def main(argv: list[str] | None = None) -> int:
++    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
++    args = parse_args(argv)
++
++    if not args.demo and args.input is None:
++        raise SystemExit("Provide --input <file> or --demo.")
++
++    if args.demo:
++        frame = synthesise_demo()
++        input_path: Path | None = None
++    else:
++        input_path = args.input.resolve()
++        frame = load_input(input_path)
++
++    result = run_method(frame, args.method)
++    write_outputs(
++        args.output,
++        frame=result,
++        method=args.method,
++        input_path=input_path,
++    )
++    logger.info("Wrote outputs to %s", args.output)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/templates/skill/tests/.gitkeep b/templates/skill/tests/__init__.py
+similarity index 100%
+rename from templates/skill/tests/.gitkeep
+rename to templates/skill/tests/__init__.py
+diff --git a/templates/skill/tests/test_replace_me.py b/templates/skill/tests/test_replace_me.py
+new file mode 100644
+index 00000000..b4b5b8c6
+--- /dev/null
++++ b/templates/skill/tests/test_replace_me.py
+@@ -0,0 +1,52 @@
++"""Tests for the REPLACE_SKILL_NAME skill scaffold.
++
++Rename this file when copying the template (`mv test_replace_me.py
++test_<my_skill>.py`) and adjust the SKILL_SCRIPT import accordingly.
++"""
++
++from __future__ import annotations
++
++import json
++import subprocess
++import sys
++from pathlib import Path
++
++import pytest
++
++SKILL_SCRIPT = Path(__file__).resolve().parent.parent / "replace_me.py"
++
++
++@pytest.fixture
++def tmp_output(tmp_path: Path) -> Path:
++    return tmp_path / "replace_me_out"
++
++
++def test_demo_mode(tmp_output: Path) -> None:
++    """`--demo` must run without error and produce report.md + result.json."""
++    result = subprocess.run(
++        [sys.executable, str(SKILL_SCRIPT), "--demo", "--output", str(tmp_output)],
++        capture_output=True,
++        text=True,
++        timeout=60,
++        cwd=str(SKILL_SCRIPT.parent),
++    )
++    assert result.returncode == 0, f"stderr: {result.stderr}"
++    assert (tmp_output / "report.md").exists()
++    assert (tmp_output / "result.json").exists()
++    assert (tmp_output / "tables" / "replace_me.csv").exists()
++
++
++def test_demo_result_envelope(tmp_output: Path) -> None:
++    """`result.json` should be a well-formed envelope with summary + data."""
++    subprocess.run(
++        [sys.executable, str(SKILL_SCRIPT), "--demo", "--output", str(tmp_output)],
++        check=True,
++        capture_output=True,
++        timeout=60,
++        cwd=str(SKILL_SCRIPT.parent),
++    )
++    payload = json.loads((tmp_output / "result.json").read_text())
++    assert "summary" in payload
++    assert "data" in payload
++    assert payload["summary"]["method"] == "default"
++    assert payload["summary"]["n_rows"] == 5

@@ -1,0 +1,595 @@
+diff --git a/client/package-lock.json b/client/package-lock.json
+index 097995a2..40493d5b 100644
+--- a/client/package-lock.json
++++ b/client/package-lock.json
+@@ -18124,6 +18124,35 @@
+                 "node": ">=6"
+             }
+         },
++        "node_modules/tar": {
++            "version": "6.1.11",
++            "resolved": "https://registry.npmjs.org/tar/-/tar-6.1.11.tgz",
++            "integrity": "sha512-an/KZQzQUkZCkuoAA64hM92X0Urb6VpRhAFllDzz44U2mcD5scmT3zBc4VgVpkugF580+DQn8eAFSyoQt0tznA==",
++            "dev": true,
++            "dependencies": {
++                "chownr": "^2.0.0",
++                "fs-minipass": "^2.0.0",
++                "minipass": "^3.0.0",
++                "minizlib": "^2.1.1",
++                "mkdirp": "^1.0.3",
++                "yallist": "^4.0.0"
++            },
++            "engines": {
++                "node": ">= 10"
++            }
++        },
++        "node_modules/tar/node_modules/mkdirp": {
++            "version": "1.0.4",
++            "resolved": "https://registry.npmjs.org/mkdirp/-/mkdirp-1.0.4.tgz",
++            "integrity": "sha512-vVqVZQyf3WLx2Shd0qJ9xuvqgAyKPLAiqITEtqW0oIUjzo3PePDd6fW9iFz30ef7Ysp/oiWqbhszeGWW2T6Gzw==",
++            "dev": true,
++            "bin": {
++                "mkdirp": "bin/cmd.js"
++            },
++            "engines": {
++                "node": ">=10"
++            }
++        },
+         "node_modules/terminal-link": {
+             "version": "2.1.1",
+             "resolved": "https://registry.npmjs.org/terminal-link/-/terminal-link-2.1.1.tgz",
+@@ -34189,6 +34218,28 @@
+             "integrity": "sha512-FBk4IesMV1rBxX2tfiK8RAmogtWn53puLOQlvO8XuwlgxcYbP4mVPS9Ph4aeamSyyVjOl24aYWAuc8U5kCVwMw==",
+             "dev": true
+         },
++        "tar": {
++            "version": "6.1.11",
++            "resolved": "https://registry.npmjs.org/tar/-/tar-6.1.11.tgz",
++            "integrity": "sha512-an/KZQzQUkZCkuoAA64hM92X0Urb6VpRhAFllDzz44U2mcD5scmT3zBc4VgVpkugF580+DQn8eAFSyoQt0tznA==",
++            "dev": true,
++            "requires": {
++                "chownr": "^2.0.0",
++                "fs-minipass": "^2.0.0",
++                "minipass": "^3.0.0",
++                "minizlib": "^2.1.1",
++                "mkdirp": "^1.0.3",
++                "yallist": "^4.0.0"
++            },
++            "dependencies": {
++                "mkdirp": {
++                    "version": "1.0.4",
++                    "resolved": "https://registry.npmjs.org/mkdirp/-/mkdirp-1.0.4.tgz",
++                    "integrity": "sha512-vVqVZQyf3WLx2Shd0qJ9xuvqgAyKPLAiqITEtqW0oIUjzo3PePDd6fW9iFz30ef7Ysp/oiWqbhszeGWW2T6Gzw==",
++                    "dev": true
++                }
++            }
++        },
+         "terminal-link": {
+             "version": "2.1.1",
+             "resolved": "https://registry.npmjs.org/terminal-link/-/terminal-link-2.1.1.tgz",
+diff --git a/client/src/components/AppSidebar.jsx b/client/src/components/AppSidebar.jsx
+index c986e567..3ff26f8d 100644
+--- a/client/src/components/AppSidebar.jsx
++++ b/client/src/components/AppSidebar.jsx
+@@ -26,7 +26,7 @@ class AppSidebar extends Component {
+         super();
+         let sprite = BackendAPI.getSpriteSettings();
+         this.state = {
+-            activeCoordinates: BackendAPI.getActiveCoordinates(),
++            activeEmbeddingId: BackendAPI.getActiveEmbeddingId(),
+             settings: BackendAPI.getSettings(),
+             loomFiles: BackendAPI.getLoomFiles(),
+             userLoomTree: null,
+@@ -46,7 +46,7 @@ class AppSidebar extends Component {
+     render() {
+         const { match } = this.props;
+         const {
+-            activeCoordinates,
++            activeEmbeddingId,
+             settings,
+             loading,
+             loomFiles,
+@@ -206,7 +206,7 @@ class AppSidebar extends Component {
+                             ].join('/')
+                         }
+                         onClick={() => {
+-                            this.setState({ activeCoordinates: -1 });
++                            this.setState({ activeEmbeddingId: -1 });
+                             this.props.onMetadataChange(file);
+                         }}>
+                         <Menu.Item
+@@ -373,9 +373,9 @@ class AppSidebar extends Component {
+                         <Menu.Item>
+                             <Dropdown
+                                 inline
+-                                value={activeCoordinates}
++                                value={activeEmbeddingId}
+                                 options={coordinates}
+-                                onChange={this.setActiveCoordinates.bind(this)}
++                                onChange={this.setActiveEmbeddingId.bind(this)}
+                             />
+                         </Menu.Item>
+                         {BackendAPI.hasActiveCoordinatesTrajectory() && (
+@@ -523,7 +523,7 @@ class AppSidebar extends Component {
+         let sprite = BackendAPI.getSpriteSettings();
+         this.setState({
+             settings: BackendAPI.getSettings(),
+-            activeCoordinates: BackendAPI.getActiveCoordinates(),
++            activeEmbeddingId: BackendAPI.getActiveEmbeddingId(),
+             spriteAlpha: sprite.alpha,
+             spriteScale: sprite.scale,
+         });
+@@ -688,9 +688,9 @@ class AppSidebar extends Component {
+         this.setState({ settings: settings });
+     }
+ 
+-    setActiveCoordinates(evt, coords) {
+-        BackendAPI.setActiveCoordinates(coords.value);
+-        this.setState({ activeCoordinates: coords.value });
++    setActiveEmbeddingId(evt, coords) {
++        BackendAPI.setActiveEmbeddingId(coords.value);
++        this.setState({ activeEmbeddingId: coords.value });
+     }
+ 
+     onLoomUploaded(filename) {
+diff --git a/client/src/components/CommunityAnnotationTable/components/VotesTableCell.tsx b/client/src/components/CommunityAnnotationTable/components/VotesTableCell.tsx
+index a36d73b1..e8d2b9fe 100644
+--- a/client/src/components/CommunityAnnotationTable/components/VotesTableCell.tsx
++++ b/client/src/components/CommunityAnnotationTable/components/VotesTableCell.tsx
+@@ -58,8 +58,7 @@ class VotesTableCell extends React.Component<
+             activeFeature,
+             orcidData,
+             uuid,
+-            (response) => {
+-                console.log(response);
++            () => {
+                 this.setState({ status: 'ready' });
+             }
+         );
+diff --git a/client/src/components/OLSAutocomplete/index.tsx b/client/src/components/OLSAutocomplete/index.tsx
+index 88ac7c95..aee228b3 100644
+--- a/client/src/components/OLSAutocomplete/index.tsx
++++ b/client/src/components/OLSAutocomplete/index.tsx
+@@ -79,7 +79,6 @@ export default class OLSAutocomplete extends Component<
+     }
+ 
+     handleResultSelect = (e: React.SyntheticEvent, { result }) => {
+-        console.log(result);
+         this.props.updateParent(result);
+         this.setState({
+             value: result.label + ' (' + result.obo_id + ')',
+diff --git a/client/src/components/Search/FeatureSearch.tsx b/client/src/components/Search/FeatureSearch.tsx
+index b9f78c22..e1b88c8e 100644
+--- a/client/src/components/Search/FeatureSearch.tsx
++++ b/client/src/components/Search/FeatureSearch.tsx
+@@ -13,9 +13,6 @@ interface FeatureSearchProps {
+     /** Use this to initialise the feature types dropdown. */
+     filter: FeatureCategory;
+ 
+-    /** Use this to restrict selectable feature types (to only `feature`). */
+-    singleFeature: boolean;
+-
+     /** Determine the background colour */
+     colour?: (_which: number) => string;
+ }
+diff --git a/client/src/components/common/API.jsx b/client/src/components/common/API.jsx
+index cce97463..8e67ffea 100644
+--- a/client/src/components/common/API.jsx
++++ b/client/src/components/common/API.jsx
+@@ -68,7 +68,7 @@ class API {
+         this.activePage = 'welcome';
+         this.activePageListeners = [];
+         this.activeLooms = [];
+-        this.activeCoordinates = -1;
++        this.activeEmbeddingId = -1;
+         this.activeLoomChangeListeners = [];
+ 
+         this.features = {};
+@@ -121,7 +121,7 @@ class API {
+         this.spriteSettings = api.spriteSettings;
+         this.activePage = api.activePage;
+         this.activeLooms = api.activeLooms;
+-        this.activeCoordinates = api.activeCoordinates;
++        this.activeEmbeddingId = api.activeEmbeddingId;
+         this.features = api.features;
+         this.settings = api.settings;
+         this.viewerTool = api.viewerTool;
+@@ -146,7 +146,7 @@ class API {
+             'alpha',
+             'activePage',
+             'activeLooms',
+-            'activeCoordinates',
++            'activeEmbeddingId',
+             'features',
+             'gene',
+             'regulon',
+@@ -259,7 +259,7 @@ class API {
+ 
+     setActiveLooms(looms) {
+         this.activeLooms = looms.slice(0);
+-        this.activeCoordinates = -1;
++        this.activeEmbeddingId = -1;
+         this.getMaxScale(null, (customValues) => {
+             this.customValuesChangeListeners.forEach((listener) => {
+                 listener(customValues);
+@@ -280,12 +280,12 @@ class API {
+         this.viewerSelectionsChangeListeners.forEach((listener) => {
+             listener(this.viewerSelections[this.activePage]);
+         });
+-        this.activeCoordinates = -1;
++        this.activeEmbeddingId = -1;
+         this.activeLoomChangeListeners.forEach((listener) => {
+             listener(
+                 this.activeLooms[id],
+                 this.loomFiles[this.activeLooms[id]],
+-                this.activeCoordinates
++                this.activeEmbeddingId
+             );
+         });
+         this.getMaxScale(null, (customValues) => {
+@@ -295,13 +295,13 @@ class API {
+         });
+     }
+ 
+-    setActiveCoordinates(coords) {
+-        this.activeCoordinates = coords;
++    setActiveEmbeddingId(activeEmbeddingId) {
++        this.activeEmbeddingId = activeEmbeddingId;
+         this.activeLoomChangeListeners.forEach((listener) => {
+             listener(
+                 this.activeLooms[0],
+                 this.loomFiles[this.activeLooms[0]],
+-                this.activeCoordinates
++                this.activeEmbeddingId
+             );
+         });
+     }
+@@ -320,7 +320,7 @@ class API {
+ 
+     getActiveLoomMetaDataEmbedding() {
+         return this.getActiveLoomMetadataEmbeddings().filter(
+-            (x) => x.id === this.getActiveCoordinates()
++            (x) => x.id === this.getActiveEmbeddingId()
+         )[0];
+     }
+ 
+@@ -335,8 +335,8 @@ class API {
+         }
+     }
+ 
+-    getActiveCoordinates() {
+-        return this.activeCoordinates;
++    getActiveEmbeddingId() {
++        return this.activeEmbeddingId;
+     }
+ 
+     hasActiveCoordinatesTrajectory() {
+@@ -410,7 +410,7 @@ class API {
+                 listener(
+                     this.activeLooms[0],
+                     this.loomFiles[this.activeLooms[0]],
+-                    this.activeCoordinates
++                    this.activeEmbeddingId
+                 );
+             });
+         }
+diff --git a/client/src/components/common/Viewer.jsx b/client/src/components/common/Viewer.jsx
+index 915cfaef..dc581f0e 100644
+--- a/client/src/components/common/Viewer.jsx
++++ b/client/src/components/common/Viewer.jsx
+@@ -65,7 +65,7 @@ export default class Viewer extends Component {
+ 
+                 this.getFeatureLabels(
+                     this.props.loomFile,
+-                    BackendAPI.getActiveCoordinates(),
++                    BackendAPI.getActiveEmbeddingId(),
+                     this.state.activeFeatures
+                 );
+             }
+@@ -152,7 +152,7 @@ export default class Viewer extends Component {
+     getDataToDisplay() {
+         this.getPoints(
+             this.props.loomFile,
+-            this.props.activeCoordinates,
++            this.props.activeEmbeddingId,
+             this.props.activeAnnotations,
+             this.props.superposition,
+             () => {
+@@ -170,7 +170,7 @@ export default class Viewer extends Component {
+ 
+                     this.getFeatureLabels(
+                         this.props.loomFile,
+-                        BackendAPI.getActiveCoordinates(),
++                        BackendAPI.getActiveEmbeddingId(),
+                         this.state.activeFeatures
+                     );
+                 }
+@@ -200,7 +200,7 @@ export default class Viewer extends Component {
+         );
+         if (
+             prevProps.loomFile !== this.props.loomFile ||
+-            prevProps.activeCoordinates !== this.props.activeCoordinates
++            prevProps.activeEmbeddingId !== this.props.activeEmbeddingId
+         ) {
+             if (this.props.loomFile !== null && this.props.loomFile !== '*') {
+                 this.mainLayer.removeChildren();
+@@ -698,7 +698,7 @@ export default class Viewer extends Component {
+                 );
+                 this.getFeatureLabels(
+                     this.props.loomFile,
+-                    BackendAPI.getActiveCoordinates(),
++                    BackendAPI.getActiveEmbeddingId(),
+                     features
+                 );
+             } else {
+@@ -1086,7 +1086,7 @@ export default class Viewer extends Component {
+                             this.setState({ colors });
+                             this.updateDataPoints(colors);
+ 
+-                            if (this.props.onActiveLegendChange !== null) {
++                            if (this.props?.onActiveLegendChange) {
+                                 this.props.onActiveLegendChange(
+                                     response.legend
+                                 );
+diff --git a/client/src/components/pages/Compare.jsx b/client/src/components/pages/Compare.jsx
+index 28b97f55..3ac215ce 100644
+--- a/client/src/components/pages/Compare.jsx
++++ b/client/src/components/pages/Compare.jsx
+@@ -40,7 +40,7 @@ class Compare extends Component {
+         this.state = {
+             activePage: BackendAPI.getActivePage(),
+             multiLoom: BackendAPI.getActiveLooms(),
+-            multiCoordinates: [BackendAPI.getActiveCoordinates()],
++            multiCoordinates: [BackendAPI.getActiveEmbeddingId()],
+             multiMetadata: [BackendAPI.getActiveLoomMetadata()],
+             activeFeatures: BackendAPI.getActiveFeatures(),
+             activeAnnotation: -1,
+@@ -398,7 +398,7 @@ class Compare extends Component {
+                                             }
+                                             activeFeatures={activeFeatures}
+                                             superposition={superposition}
+-                                            activeCoordinates={
++                                            activeEmbeddingId={
+                                                 configuration === 'multi'
+                                                     ? R.defaultTo(
+                                                           -1,
+diff --git a/client/src/components/pages/Gene.jsx b/client/src/components/pages/Gene.jsx
+index 138a6e77..488fe9d9 100644
+--- a/client/src/components/pages/Gene.jsx
++++ b/client/src/components/pages/Gene.jsx
+@@ -14,25 +14,25 @@ export default class Gene extends Component {
+         super();
+         this.state = {
+             activeLoom: BackendAPI.getActiveLoom(),
+-            activeCoordinates: BackendAPI.getActiveCoordinates(),
++            activeEmbeddingId: BackendAPI.getActiveEmbeddingId(),
+             activeMetadata: BackendAPI.getActiveLoomMetadata(),
+             activeFeatures: BackendAPI.getActiveFeatures(),
+             activeLegend: null,
+         };
+-        this.activeLoomListener = (loom, metadata, coordinates) => {
++        this.activeLoomListener = (loom, metadata, embeddingId) => {
+             if (DEBUG) {
+-                console.log('activeLoomListener', loom, metadata, coordinates);
++                console.log('activeLoomListener', loom, metadata, embeddingId);
+             }
+             this.setState({
+                 activeLoom: loom,
+-                activeCoordinates: coordinates,
++                activeEmbeddingId: embeddingId,
+                 activeMetadata: metadata,
+             });
+         };
+     }
+ 
+     render() {
+-        const { activeLoom, activeFeatures, activeCoordinates, activeLegend } =
++        const { activeLoom, activeFeatures, activeEmbeddingId, activeLegend } =
+             this.state;
+ 
+         if (!activeLoom || activeLoom === '*') {
+@@ -55,7 +55,7 @@ export default class Gene extends Component {
+                             name='expr'
+                             loomFile={activeLoom}
+                             activeFeatures={activeFeatures}
+-                            activeCoordinates={activeCoordinates}
++                            activeEmbeddingId={activeEmbeddingId}
+                             onActiveLegendChange={(legend) => {
+                                 this.setState({ activeLegend: legend });
+                             }}
+diff --git a/client/src/components/pages/Regulon.jsx b/client/src/components/pages/Regulon.tsx
+similarity index 78%
+rename from client/src/components/pages/Regulon.jsx
+rename to client/src/components/pages/Regulon.tsx
+index 729a5d8f..17696e33 100644
+--- a/client/src/components/pages/Regulon.jsx
++++ b/client/src/components/pages/Regulon.tsx
+@@ -12,26 +12,45 @@ import RightSidebar from '../RightSidebar';
+ import ViewerToolbar from '../common/ViewerToolbar';
+ import Histogram from '../Histogram';
+ 
+-export default class Regulon extends Component {
+-    constructor() {
+-        super();
++import { Metadata, Feature } from '../../model';
++
++type RegulonState = {
++    activeLoom: string;
++    activeEmbeddingId: number;
++    activeFeatures: Feature[];
++};
++
++export default class Regulon extends Component<any, RegulonState> {
++    activeLoomListener: (
++        _loom: string,
++        _metadata: Metadata,
++        _embeddingId: number
++    ) => void;
++    activeFeaturesListener: (_features: Feature[]) => void;
++
++    constructor(props) {
++        super(props);
+         this.state = {
+             activeLoom: BackendAPI.getActiveLoom(),
+-            activeCoordinates: BackendAPI.getActiveCoordinates(),
++            activeEmbeddingId: BackendAPI.getActiveEmbeddingId(),
+             activeFeatures: BackendAPI.getActiveFeatures(),
+         };
+-        this.activeLoomListener = (loom, metadata, coordinates) => {
+-            this.setState({ activeLoom: loom, activeCoordinates: coordinates });
++        this.activeLoomListener = (
++            loom: string,
++            metadata: Metadata,
++            embeddingId: number
++        ) => {
++            this.setState({ activeLoom: loom, activeEmbeddingId: embeddingId });
+         };
+-        this.activeFeaturesListener = (features) => {
++        this.activeFeaturesListener = (features: Feature[]) => {
+             this.setState({ activeFeatures: features });
+         };
+     }
+ 
+     render() {
+-        const { activeLoom, activeCoordinates, activeFeatures } = this.state;
++        const { activeLoom, activeEmbeddingId, activeFeatures } = this.state;
+ 
+-        let featureThreshold = [0, 1, 2].map((i) => (
++        const featureThreshold = [0, 1, 2].map((i) => (
+             <Grid.Column key={i} className='flexDisplay' stretched>
+                 <Histogram
+                     field={i}
+@@ -66,14 +85,14 @@ export default class Regulon extends Component {
+                 </Grid>
+                 <div
+                     style={{
+-                        flexGrow: '1',
++                        flexGrow: 1,
+                         display: 'flex',
+                         flexDirection: 'row',
+                     }}>
+-                    <div style={{ width: '78px', paddingTop: '20px' }}>
++                    <div style={{ width: '78px', paddingTop: '45px' }}>
+                         <ViewerToolbar location={this.props.location} />
+                     </div>
+-                    <div style={{ flexGrow: '1' }}>
++                    <div style={{ flexGrow: 1, paddingTop: '45px' }}>
+                         <Grid
+                             className='flexDisplay'
+                             style={{ height: '100%' }}>
+@@ -88,7 +107,7 @@ export default class Regulon extends Component {
+                                         name='reg'
+                                         loomFile={activeLoom}
+                                         activeFeatures={activeFeatures}
+-                                        activeCoordinates={activeCoordinates}
++                                        activeEmbeddingId={activeEmbeddingId}
+                                         scale={true}
+                                         location={this.props.location}
+                                     />
+@@ -105,8 +124,8 @@ export default class Regulon extends Component {
+                                             name='auc'
+                                             loomFile={activeLoom}
+                                             activeFeatures={activeFeatures}
+-                                            activeCoordinates={
+-                                                activeCoordinates
++                                            activeEmbeddingId={
++                                                activeEmbeddingId
+                                             }
+                                             thresholds={true}
+                                             location={this.props.location}
+@@ -123,8 +142,8 @@ export default class Regulon extends Component {
+                                             name='expr'
+                                             loomFile={activeLoom}
+                                             activeFeatures={activeFeatures}
+-                                            activeCoordinates={
+-                                                activeCoordinates
++                                            activeEmbeddingId={
++                                                activeEmbeddingId
+                                             }
+                                             scale={true}
+                                             genes={true}
+@@ -141,6 +160,9 @@ export default class Regulon extends Component {
+                                                 activeFeatures: features,
+                                             });
+                                         }}
++                                        hideFeatures={false}
++                                        activeLegend={true}
++                                        selectedAnnotations={{}}
+                                     />
+                                 </Grid.Column>
+                             </Grid.Row>
+@@ -167,7 +189,7 @@ export default class Regulon extends Component {
+         );
+     }
+ 
+-    onThresholdChange(idx, threshold) {
++    onThresholdChange(idx: number, threshold: number) {
+         BackendAPI.setFeatureThreshold(idx, threshold);
+     }
+ }
+diff --git a/client/src/model.ts b/client/src/model.ts
+index 683f3f7b..092b48b9 100644
+--- a/client/src/model.ts
++++ b/client/src/model.ts
+@@ -30,3 +30,61 @@ export type Feature = {
+     threshold?: number;
+     type: FeatureCategory;
+ };
++
++type Voter = {
++    voter_name: string;
++    voter_id: string;
++    voter_hash: string;
++};
++
++export type Metadata = {
++    loomFilePath: string;
++    cellMetaData: {
++        annotations: { name: string; values: string[] }[];
++        clusterings: {
++            id: number;
++            groupe: string;
++            name: string;
++            clusters: {
++                id: number;
++                description: string;
++                cell_type_annotation: {
++                    data: {
++                        curator_name: string;
++                        curator_id: string;
++                        timestamp: number;
++                        obo_id: string;
++                        ols_iri: string;
++                        annotation_label: string;
++                        markers: string[];
++                        publication: string;
++                        comment: string;
++                    };
++                    validate_hash: string;
++                    votes: {
++                        votes_for: {
++                            total: number;
++                            voters: Voter[];
++                        };
++                        votes_against: {
++                            total: number;
++                            voters: Voter[];
++                        };
++                    };
++                }[];
++            };
++            clusterMarkerMetrics: {
++                accessor: string;
++                description: string;
++                name: string;
++            }[];
++        }[];
++    };
++    fileMetaData: {
++        hasClusterings: boolean;
++        hasExtraEmbeddings: boolean;
++        hasGeneSets: boolean;
++        hasRegulonsAUC: boolean;
++        hasGlobalMeta: boolean;
++    };
++};

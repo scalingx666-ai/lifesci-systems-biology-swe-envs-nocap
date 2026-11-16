@@ -1,0 +1,74 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-200"
+description = "fix(memory): break \"记住\" ambiguity that routed remember requests to task_create"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "acc785950c7f71c91cee11b0ebd95d1431247f0a"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/200"
+source_access = "auto"
+built_at = "2026-11-15T18:16:42.456101+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:0eb2f5988fd43567b8c3f8d5cd2037868ff2e5a30ebfd6d1fbff1b51c95af9c7"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-05-13T11:33:17Z"
+diff_format = "unified"
+context_files = [
+    "omicsclaw/runtime/bot_tools.py",
+    "omicsclaw/runtime/context_layers/__init__.py",
+    "omicsclaw/runtime/engineering_tools.py",
+    "tests/fixtures/tool_list/baseline_bot.json",
+    "tests/fixtures/tool_list/realistic_bot_bulkrna_de.json",
+    "tests/fixtures/tool_list/realistic_bot_code_edit_intent.json",
+    "tests/fixtures/tool_list/realistic_bot_pdf_paper.json",
+    "tests/fixtures/tool_list/realistic_bot_plot_intent.json",
+    "tests/fixtures/tool_list/realistic_bot_save_intent.json",
+    "tests/fixtures/tool_list/realistic_bot_scde.json",
+    "tests/fixtures/tool_list/realistic_bot_web_intent.json",
+    "tests/fixtures/tool_list/realistic_bot_workspace.json",
+    "tests/test_predicate_gated_injectors.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 74
+difficulty = "medium"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

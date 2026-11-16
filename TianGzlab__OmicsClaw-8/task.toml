@@ -1,0 +1,63 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-8"
+description = "feat: Enhance Feishu bot group chat support and documentation"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "5bc90fff91f2b105dc418f91df65f409f4c376d2"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/8"
+source_access = "auto"
+built_at = "2026-11-15T18:18:44.519934+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:02d6d0652867254391e4acfe505d00225806722c43e6dcbe4ba4044c75dbb201"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-03-15T10:54:46Z"
+diff_format = "unified"
+context_files = [
+    "bot/FEISHU_SETUP.md",
+    "bot/feishu_bot.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 104
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

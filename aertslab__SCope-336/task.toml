@@ -1,0 +1,66 @@
+version = "1.0"
+
+[task]
+name = "default/aertslab__SCope-336"
+description = "Replace lru_cache with methodtools version"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "SCope",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aertslab/SCope"
+ref = "cf0a479669663f8040601fd5431b7cea49b37b86"
+reference = "https://github.com/aertslab/SCope/pull/336"
+source_access = "auto"
+built_at = "2026-11-15T19:38:42.897565+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:4683262eedc26ba0186f3e938f6adf4be93b036ce76b44b90c66b9b539177764"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2020-05-25T10:35:13Z"
+diff_format = "unified"
+context_files = [
+    "opt/poetry.lock",
+    "opt/pyproject.toml",
+    "opt/scopeserver/dataserver/modules/gserver/GServer.py",
+    "opt/scopeserver/dataserver/utils/loom.py",
+    "opt/scopeserver/dataserver/utils/search_space.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 75
+difficulty = "medium"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

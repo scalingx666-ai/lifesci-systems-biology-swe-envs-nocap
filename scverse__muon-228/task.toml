@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__muon-228"
+description = "Bump the pre-commit group with 3 updates"
+
+[metadata]
+difficulty = "small"
+category = "bugfix"
+keywords = [
+    "muon",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/muon"
+ref = "a39f7988360327cc832b95f9daae4fc3d846b12c"
+reference = "https://github.com/scverse/muon/pull/228"
+source_access = "auto"
+built_at = "2026-11-15T16:59:29.506859+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:d544c378d1de9a447b1d1f223392440cef6b7bad1608bb193273c0f10fd82ea7"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-08-31T19:00:34Z"
+diff_format = "unified"
+context_files = [
+    ".pre-commit-config.yaml",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 6
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

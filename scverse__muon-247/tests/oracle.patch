@@ -1,0 +1,102 @@
+diff --git a/.editorconfig b/.editorconfig
+index 66678e3..2a027f1 100644
+--- a/.editorconfig
++++ b/.editorconfig
+@@ -8,7 +8,7 @@ charset = utf-8
+ trim_trailing_whitespace = true
+ insert_final_newline = true
+ 
+-[{*.{yml,yaml,toml},.cruft.json}]
++[{*.yml,*.yaml,toml,.cruft.json}]
+ indent_size = 2
+ 
+ [Makefile]
+diff --git a/.github/workflows/test.yaml b/.github/workflows/test.yaml
+index 4c1ab3d..2622603 100644
+--- a/.github/workflows/test.yaml
++++ b/.github/workflows/test.yaml
+@@ -52,8 +52,8 @@ jobs:
+   test:
+     needs: get-environments
+     permissions:
+-       id-token: write  # for codecov OIDC
+-       contents: read
++      id-token: write # for codecov OIDC
++      contents: read
+ 
+     strategy:
+       fail-fast: false
+@@ -63,7 +63,7 @@ jobs:
+ 
+     name: ${{ matrix.env.label }}
+     runs-on: ${{ matrix.os }}
+-    continue-on-error: ${{ contains(matrix.env.name, 'pre') }}  # make "all-green" pass even if pre-release job fails
++    continue-on-error: ${{ contains(matrix.env.name, 'pre') }} # make "all-green" pass even if pre-release job fails
+     env:
+       UV_PYTHON: ${{ matrix.env.python }}
+ 
+@@ -111,6 +111,6 @@ jobs:
+       - lint
+     runs-on: ubuntu-latest
+     steps:
+-        - uses: re-actors/alls-green@b5b5b37504aa4183270bd3d855c52a67f212be35 # v1.3.0
+-          with:
+-            jobs: ${{ toJSON(needs) }}
++      - uses: re-actors/alls-green@b5b5b37504aa4183270bd3d855c52a67f212be35 # v1.3.0
++        with:
++          jobs: ${{ toJSON(needs) }}
+diff --git a/.pre-commit-config.yaml b/.pre-commit-config.yaml
+index 62b9737..35f2f41 100644
+--- a/.pre-commit-config.yaml
++++ b/.pre-commit-config.yaml
+@@ -9,16 +9,16 @@ minimum_pre_commit_version: 2.16.0
+ exclude: ^src/muon/atac/_ref/jaspar/
+ repos:
+   - repo: https://github.com/biomejs/pre-commit
+-    rev: 5090c1e080cc8cec15feee68a9355c0f660d3712  # frozen: v2.5.15
++    rev: f9fccc969fb42a59a17a1a430df9f38851f9b2da # frozen: v2.6.3
+     hooks:
+       - id: biome-format
+         exclude: ^\.cruft\.json$ # inconsistent indentation with cruft - file never to be modified manually.
+   - repo: https://github.com/tox-dev/pyproject-fmt
+-    rev: 50e0f3aee9dc5747a5f173f79a7417403c18dda6  # frozen: v2.30.3
++    rev: 50e0f3aee9dc5747a5f173f79a7417403c18dda6 # frozen: v2.30.3
+     hooks:
+       - id: pyproject-fmt
+   - repo: https://github.com/astral-sh/ruff-pre-commit
+-    rev: 44b5042edab9382aba712eed4f9c7bab7a3d6a3e  # frozen: v0.17.0
++    rev: f368fb366ff7f2f808dd324b83a6d32267799e19 # frozen: v0.17.2
+     hooks:
+       - id: ruff-check
+         types_or: [python, pyi, jupyter]
+@@ -36,7 +36,7 @@ repos:
+         require_serial: true
+         pass_filenames: false
+   - repo: https://github.com/pre-commit/pre-commit-hooks
+-    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c  # frozen: v6.0.0
++    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # frozen: v6.0.0
+     hooks:
+       - id: detect-private-key
+       - id: check-ast
+@@ -50,7 +50,7 @@ repos:
+         args: [--assume-in-merge]
+ 
+   - repo: https://github.com/zizmorcore/zizmor-pre-commit
+-    rev: fa412071e4f5d44d44f9e365f4676f9df92456a2  # frozen: v1.30.1
++    rev: c92afdf2c6ca336aaa8f39e2bd8d48f62dbd8e1f # frozen: v1.31.1
+     hooks:
+       - id: zizmor
+         args: [--no-progress, --fix]
+diff --git a/docs/contributing.md b/docs/contributing.md
+index 6ce27c1..a96c0dd 100644
+--- a/docs/contributing.md
++++ b/docs/contributing.md
+@@ -11,7 +11,7 @@ the [scientific Python tutorials][], or the [scanpy developer guide][].
+ [scientific Python tutorials]: https://learn.scientific-python.org/development/tutorials/
+ [scanpy developer guide]: https://scanpy.scverse.org/page/dev/
+ 
+-:::{tip} The *hatch* project manager
++:::{tip} The _hatch_ project manager
+ 
+ We highly recommend to familiarize yourself with [`hatch`][hatch].
+ Hatch is a Python project manager that

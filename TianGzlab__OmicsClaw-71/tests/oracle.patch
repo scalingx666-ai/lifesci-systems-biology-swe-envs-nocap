@@ -1,0 +1,262 @@
+diff --git a/skills/singlecell/_lib/viz/r/communication.R b/skills/singlecell/_lib/viz/r/communication.R
+index b4c4a794..3dea5646 100644
+--- a/skills/singlecell/_lib/viz/r/communication.R
++++ b/skills/singlecell/_lib/viz/r/communication.R
+@@ -269,3 +269,84 @@ plot_ccc_network <- function(data_dir, out_path, params) {
+     quit(status = 1)
+   })
+ }
++
++# ---- Function 3: plot_ccc_bubble ----
++
++#' Ligand-receptor bubble matrix (CCCHeatmap bubble variant).
++#'
++#' Reads top_interactions.csv. Shows top L-R pairs as a bubble matrix:
++#' rows = ligand-receptor pairs, columns = source->target cell type pairs,
++#' size = score, color = -log10(pvalue) or score.
++#'
++#' @param data_dir Character. Directory containing CCC CSV files.
++#' @param out_path Character. Output PNG path.
++#' @param params Named list. Optional: top_n (default 30).
++plot_ccc_bubble <- function(data_dir, out_path, params) {
++  tryCatch({
++    csv_path <- file.path(data_dir, "top_interactions.csv")
++    if (!file.exists(csv_path)) {
++      stop("top_interactions.csv not found in ", data_dir)
++    }
++
++    df <- read.csv(csv_path, stringsAsFactors = FALSE)
++    if (nrow(df) == 0) stop("Empty interactions table")
++
++    top_n <- as.integer(params[["top_n"]] %||% 30)
++    df <- df[df$score > 0, ]
++    df <- head(df[order(-df$score), ], top_n)
++
++    # Build pair labels
++    df$lr_pair <- paste0(df$ligand, " -> ", df$receptor)
++    df$cell_pair <- paste0(df$source, " -> ", df$target)
++
++    # Handle pvalue: use -log10(pvalue) for color if available
++    if ("pvalue" %in% colnames(df) && !all(is.na(df$pvalue))) {
++      df$pvalue <- as.numeric(df$pvalue)
++      df$color_val <- -log10(df$pvalue + 1e-300)
++      color_name <- "-log10(p)"
++    } else {
++      df$color_val <- df$score
++      color_name <- "Score"
++    }
++
++    # Order LR pairs by mean score (descending)
++    lr_order <- aggregate(score ~ lr_pair, data = df, FUN = mean)
++    lr_order <- lr_order$lr_pair[order(-lr_order$score)]
++    df$lr_pair <- factor(df$lr_pair, levels = rev(lr_order))
++
++    # Order cell pairs by frequency
++    cp_order <- names(sort(table(df$cell_pair), decreasing = TRUE))
++    df$cell_pair <- factor(df$cell_pair, levels = cp_order)
++
++    n_lr <- length(unique(df$lr_pair))
++    n_cp <- length(unique(df$cell_pair))
++
++    p <- ggplot(df, aes(x = cell_pair, y = lr_pair)) +
++      geom_point(aes(size = score, fill = color_val),
++                 shape = 21, color = "black", stroke = 0.3) +
++      scale_size_continuous(range = c(2, 7), name = "Score",
++                            breaks = scales::breaks_extended(n = 4)) +
++      scale_fill_gradientn(
++        name = color_name,
++        colours = c("#FEE8C8", "#FDBB84", "#E34A33", "#B2182B"),
++        guide = guide_colorbar(frame.colour = "black", ticks.colour = "black")
++      ) +
++      labs(x = "Cell pair (source -> target)",
++           y = "Ligand -> Receptor",
++           title = "Ligand-receptor interaction bubble matrix") +
++      theme_omics() +
++      theme(
++        axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
++        axis.text.y = element_text(size = 7),
++        panel.grid.major = element_line(colour = "grey90", linewidth = 0.2)
++      )
++
++    w <- max(7, n_cp * 0.8 + 3)
++    h <- max(5, n_lr * 0.3 + 2)
++    ggsave_standard(p, out_path, width = w, height = h)
++
++  }, error = function(e) {
++    cat("ERROR:", conditionMessage(e), "\n", file = stderr())
++    quit(status = 1)
++  })
++}
+diff --git a/skills/singlecell/_lib/viz/r/registry.R b/skills/singlecell/_lib/viz/r/registry.R
+index 2a95210a..0e123d0e 100644
+--- a/skills/singlecell/_lib/viz/r/registry.R
++++ b/skills/singlecell/_lib/viz/r/registry.R
+@@ -75,7 +75,8 @@ R_PLOT_REGISTRY <- list(
+   plot_cell_proportion       = plot_cell_proportion,
+   plot_enrichment_dotplot    = plot_enrichment_dotplot,
+   plot_enrichment_lollipop   = plot_enrichment_lollipop,
+-  plot_pseudotime_heatmap    = plot_pseudotime_heatmap
++  plot_pseudotime_heatmap    = plot_pseudotime_heatmap,
++  plot_ccc_bubble            = plot_ccc_bubble
+ )
+ 
+ # ---- CLI dispatcher (runs only when script is invoked directly) ----
+diff --git a/skills/singlecell/scrna/sc-ambient-removal/sc_ambient.py b/skills/singlecell/scrna/sc-ambient-removal/sc_ambient.py
+index 09bb9711..25004e78 100644
+--- a/skills/singlecell/scrna/sc-ambient-removal/sc_ambient.py
++++ b/skills/singlecell/scrna/sc-ambient-removal/sc_ambient.py
+@@ -56,6 +56,26 @@
+ SKILL_NAME = "sc-ambient-removal"
+ SKILL_VERSION = "0.6.0"
+ 
++R_ENHANCED_PLOTS: dict[str, str] = {
++    "plot_embedding_discrete": "r_embedding_discrete.png",
++    "plot_embedding_feature": "r_embedding_feature.png",
++}
++
++
++def _render_r_enhanced(output_dir: Path, figure_data_dir: Path, r_enhanced: bool) -> list[str]:
++    if not r_enhanced:
++        return []
++    from skills.singlecell._lib.viz.r import call_r_plot
++    r_figures_dir = output_dir / "figures" / "r_enhanced"
++    r_figures_dir.mkdir(parents=True, exist_ok=True)
++    r_figure_paths: list[str] = []
++    for renderer, filename in R_ENHANCED_PLOTS.items():
++        out_path = r_figures_dir / filename
++        call_r_plot(renderer, figure_data_dir, out_path)
++        if out_path.exists():
++            r_figure_paths.append(str(out_path))
++    return r_figure_paths
++
+ 
+ def _write_repro_requirements(repro_dir: Path, packages: list[str]) -> None:
+     try:
+@@ -709,6 +729,8 @@ def main():
+     parser.add_argument("--raw-matrix-dir", type=str, default=None, help="10x raw_feature_bc_matrix directory for SoupX")
+     parser.add_argument("--filtered-matrix-dir", type=str, default=None, help="10x filtered_feature_bc_matrix directory for SoupX")
+     parser.add_argument("--contamination", type=float, default=0.05)
++    parser.add_argument("--r-enhanced", action="store_true", default=False,
++                        help="Generate R-enhanced figures via ggplot2 renderers")
+     args = parser.parse_args()
+     _validate_inputs(args)
+ 
+@@ -927,6 +949,8 @@ def main():
+     result_data["next_steps"] = [
+         {"skill": "sc-qc", "reason": "Re-compute QC metrics after ambient RNA removal", "priority": "recommended"},
+     ]
++    r_enhanced_figures = _render_r_enhanced(output_dir, output_dir / "figure_data", args.r_enhanced)
++    result_data["r_enhanced_figures"] = r_enhanced_figures
+     write_result_json(output_dir, SKILL_NAME, SKILL_VERSION, summary, result_data, checksum)
+     result_payload = load_result_json(output_dir) or {
+         "skill": SKILL_NAME,
+diff --git a/skills/singlecell/scrna/sc-cell-communication/sc_cell_communication.py b/skills/singlecell/scrna/sc-cell-communication/sc_cell_communication.py
+index 47ab29f6..d44c0ef7 100644
+--- a/skills/singlecell/scrna/sc-cell-communication/sc_cell_communication.py
++++ b/skills/singlecell/scrna/sc-cell-communication/sc_cell_communication.py
+@@ -71,6 +71,7 @@
+ R_ENHANCED_PLOTS: dict[str, str] = {
+     "plot_ccc_heatmap": "r_ccc_heatmap.png",
+     "plot_ccc_network": "r_ccc_network.png",
++    "plot_ccc_bubble": "r_ccc_bubble.png",
+ }
+ 
+ 
+diff --git a/skills/singlecell/scrna/sc-filter/sc_filter.py b/skills/singlecell/scrna/sc-filter/sc_filter.py
+index dfae3c8b..56d66739 100644
+--- a/skills/singlecell/scrna/sc-filter/sc_filter.py
++++ b/skills/singlecell/scrna/sc-filter/sc_filter.py
+@@ -66,6 +66,26 @@
+ SKILL_NAME = "sc-filter"
+ SKILL_VERSION = "0.4.0"
+ 
++R_ENHANCED_PLOTS: dict[str, str] = {
++    "plot_feature_violin": "r_feature_violin.png",
++    "plot_cell_barplot": "r_cell_barplot.png",
++}
++
++
++def _render_r_enhanced(output_dir: Path, figure_data_dir: Path, r_enhanced: bool) -> list[str]:
++    if not r_enhanced:
++        return []
++    from skills.singlecell._lib.viz.r import call_r_plot
++    r_figures_dir = output_dir / "figures" / "r_enhanced"
++    r_figures_dir.mkdir(parents=True, exist_ok=True)
++    r_figure_paths: list[str] = []
++    for renderer, filename in R_ENHANCED_PLOTS.items():
++        out_path = r_figures_dir / filename
++        call_r_plot(renderer, figure_data_dir, out_path)
++        if out_path.exists():
++            r_figure_paths.append(str(out_path))
++    return r_figure_paths
++
+ 
+ def _write_repro_requirements(repro_dir: Path, packages: list[str]) -> None:
+     try:
+@@ -509,6 +529,8 @@ def main():
+     parser.add_argument("--tissue", type=str, default=None,
+                         choices=["pbmc", "brain", "tumor", "heart", "kidney", "liver", "lung"],
+                         help="Use tissue-specific thresholds")
++    parser.add_argument("--r-enhanced", action="store_true", default=False,
++                        help="Generate R-enhanced figures via ggplot2 renderers")
+     args = parser.parse_args()
+ 
+     output_dir = Path(args.output_dir)
+@@ -651,6 +673,8 @@ def main():
+         {"skill": "sc-ambient-removal", "reason": "Optional: remove ambient RNA contamination", "priority": "optional"},
+     ]
+     result_data["preprocessing_state_after"] = "filtered"
++    r_enhanced_figures = _render_r_enhanced(output_dir, output_dir / "figure_data", args.r_enhanced)
++    result_data["r_enhanced_figures"] = r_enhanced_figures
+     write_result_json(output_dir, SKILL_NAME, SKILL_VERSION, summary, result_data, checksum)
+     result_payload = load_result_json(output_dir) or {
+         "skill": SKILL_NAME,
+diff --git a/skills/singlecell/scrna/sc-in-silico-perturbation/sc_in_silico_perturbation.py b/skills/singlecell/scrna/sc-in-silico-perturbation/sc_in_silico_perturbation.py
+index e155f517..50dc587d 100644
+--- a/skills/singlecell/scrna/sc-in-silico-perturbation/sc_in_silico_perturbation.py
++++ b/skills/singlecell/scrna/sc-in-silico-perturbation/sc_in_silico_perturbation.py
+@@ -51,6 +51,26 @@
+ SKILL_NAME = "sc-in-silico-perturbation"
+ SKILL_VERSION = "0.2.0"
+ 
++R_ENHANCED_PLOTS: dict[str, str] = {
++    "plot_embedding_discrete": "r_embedding_discrete.png",
++    "plot_embedding_feature": "r_embedding_feature.png",
++}
++
++
++def _render_r_enhanced(output_dir: Path, figure_data_dir: Path, r_enhanced: bool) -> list[str]:
++    if not r_enhanced:
++        return []
++    from skills.singlecell._lib.viz.r import call_r_plot
++    r_figures_dir = output_dir / "figures" / "r_enhanced"
++    r_figures_dir.mkdir(parents=True, exist_ok=True)
++    r_figure_paths: list[str] = []
++    for renderer, filename in R_ENHANCED_PLOTS.items():
++        out_path = r_figures_dir / filename
++        call_r_plot(renderer, figure_data_dir, out_path)
++        if out_path.exists():
++            r_figure_paths.append(str(out_path))
++    return r_figure_paths
++
+ # ---------------------------------------------------------------------------
+ # CLI
+ # ---------------------------------------------------------------------------
+@@ -87,6 +107,8 @@ def _parse_args() -> argparse.Namespace:
+     p.add_argument("--td-k", type=int, default=2)
+     p.add_argument("--ma-dim", type=int, default=2)
+     p.add_argument("--n-cores", type=int, default=1)
++    p.add_argument("--r-enhanced", action="store_true", default=False,
++                   help="Generate R-enhanced figures via ggplot2 renderers")
+     return p.parse_args()
+ 
+ # ---------------------------------------------------------------------------
+@@ -644,6 +666,8 @@ def main() -> int:
+     result_data["next_steps"] = [
+         {"skill": "sc-enrichment", "reason": "Pathway enrichment on predicted perturbation effects", "priority": "optional"},
+     ]
++    r_enhanced_figures = _render_r_enhanced(output_dir, output_dir / "figure_data", args.r_enhanced)
++    result_data["r_enhanced_figures"] = r_enhanced_figures
+     write_result_json(
+         output_dir,
+         SKILL_NAME,

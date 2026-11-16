@@ -1,0 +1,72 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-67"
+description = "Fix sc-cell-annotation all-Unknown bug and add UX templates"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "1025424c86ad55bb78020a5f44cb415f113666ea"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/67"
+source_access = "auto"
+built_at = "2026-11-15T18:18:21.914905+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:f2e4521acb8cf690c98aa034d2d488d18c9a0d82e75000c83fc411e1f901b333"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-04-10T09:58:35Z"
+diff_format = "unified"
+context_files = [
+    "knowledge_base/skill-guides/singlecell/sc-cell-annotation.md",
+    "skills/singlecell/_lib/__init__.py",
+    "skills/singlecell/_lib/adata_utils.py",
+    "skills/singlecell/_lib/annotation.py",
+    "skills/singlecell/scrna/sc-cell-annotation/SKILL.md",
+    "skills/singlecell/scrna/sc-cell-annotation/sc_annotate.py",
+    "skills/singlecell/scrna/sc-cell-communication/sc_cell_communication.py",
+    "templates/singlecell/README.md",
+    "templates/singlecell/SC-DEVELOPMENT-CHECKLIST.md",
+    "templates/singlecell/SC-SKILL-TEMPLATE.md",
+    "templates/singlecell/SC-USER-EXPERIENCE-RULES.md",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 776
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

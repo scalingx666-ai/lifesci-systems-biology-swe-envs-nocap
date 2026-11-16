@@ -1,0 +1,262 @@
+diff --git a/.babelrc b/.babelrc
+deleted file mode 100644
+index 8426bd61..00000000
+--- a/.babelrc
++++ /dev/null
+@@ -1,7 +0,0 @@
+-{
+-    "presets": [["es2015", {"modules": false}], "react"],
+-    "plugins": [
+-        ["transform-class-properties", { "spec": true }],
+-        ["transform-object-rest-spread"]
+-    ]
+-}
+\ No newline at end of file
+diff --git a/.gitignore b/.gitignore
+index 3ca6ee3a..6d2858da 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -3,7 +3,10 @@
+ # vscode settings
+ /.vscode
+ /.deprecated
+-.gitignore
++
++# Emacs
++.dir-locals.el
++*~
+ 
+ # pycache
+ **/__pycache__
+diff --git a/package.json b/package.json
+index 00285584..36f2f1b5 100644
+--- a/package.json
++++ b/package.json
+@@ -32,7 +32,8 @@
+     "author": "Maxime De Waegeneer <mdewaegeneer@gmail.com>",
+     "license": "GPL-3.0",
+     "dependencies": {
+-        "@types/google-protobuf": "^3.2.7",
++        "@improbable-eng/grpc-web": "^0.12.0",
++        "@types/google-protobuf": "^3.7.2",
+         "appdirs": "^1.1.0",
+         "bitlyapi": "^1.0.9",
+         "command-exists": "^1.2.6",
+@@ -47,7 +48,6 @@
+         "grpc-bus-websocket-server": "file:opt/scopeserver/bindserver",
+         "grpc-caller": "^0.3.1",
+         "grpc-tools": "^1.6.6",
+-        "grpc-web-client": "^0.3.1",
+         "json-schema": "^0.2.3",
+         "json2csv": "^4.0.1",
+         "launch-browser": "^1.0.0",
+@@ -85,14 +85,17 @@
+         "url-loader": "^0.6.2"
+     },
+     "devDependencies": {
+-        "babel-cli": "^6.26.0",
+-        "babel-core": "^6.26.0",
+-        "babel-loader": "^7.1.2",
+-        "babel-plugin-transform-object-rest-spread": "^6.26.0",
+-        "babel-preset-es2015": "^6.24.1",
+-        "babel-preset-es2017": "^6.24.1",
+-        "babel-preset-react": "^6.24.1",
+-        "babel-preset-stage-0": "^6.24.1",
++        "@babel/cli": "^7.8.4",
++        "@babel/core": "^7.8.7",
++        "@babel/plugin-proposal-class-properties": "^7.8.3",
++        "@babel/plugin-proposal-object-rest-spread": "^7.8.3",
++        "@babel/preset-env": "^7.8.7",
++        "@babel/preset-react": "^7.8.3",
++        "@babel/preset-typescript": "^7.8.3",
++        "@types/react": "^16.9.23",
++        "@types/react-dom": "^16.9.5",
++        "@types/react-router-dom": "^5.1.3",
++        "babel-loader": "^8.0.6",
+         "child_process": "^1.0.2",
+         "cross-env": "^5.1.4",
+         "css-loader": "^0.28.7",
+@@ -100,14 +103,15 @@
+         "electron-builder": "^20.8.1",
+         "electron-packager": "^12.1.0",
+         "file-system": "^2.2.2",
+-        "google-protobuf": "^3.5.0",
++        "fork-ts-checker-webpack-plugin": "^4.1.0",
++        "google-protobuf": "^3.11.4",
+         "grpc": "^1.7.2",
+         "grpc-loader": "^2.0.1",
+         "prettier": "^1.19.1",
+-        "react-hot-loader": "^3.1.3",
+         "script-loader": "^0.7.2",
+         "semantic-ui-react": "^0.77.0",
+         "style-loader": "^0.19.0",
++        "typescript": "^3.8.3",
+         "uglifyjs-webpack-plugin": "^1.2.5",
+         "webpack": "^4.0.0",
+         "webpack-cli": "^3.2.3",
+diff --git a/src/main.jsx b/src/main.jsx
+deleted file mode 100644
+index 02c8d580..00000000
+--- a/src/main.jsx
++++ /dev/null
+@@ -1,30 +0,0 @@
+-import React from 'react';
+-import ReactDOM from 'react-dom';
+-import App from './components/App';
+-import 'semantic-ui-css/semantic.min.css';
+-import './css/header.css';
+-import './css/sidebar.css';
+-import './css/viewer.css';
+-import './css/features.css';
+-import { HashRouter, Route } from 'react-router-dom';
+-import { AppContainer } from 'react-hot-loader';
+-import { CookiesProvider } from 'react-cookie';
+-
+-const renderApp = () => {
+-    ReactDOM.render(
+-        <AppContainer>
+-            <CookiesProvider>
+-                <HashRouter>
+-                    <Route path='/:uuid?/:loom?/:page?' component={App} />
+-                </HashRouter>
+-            </CookiesProvider>
+-        </AppContainer>,
+-        document.getElementById('scope')
+-    );
+-};
+-
+-if (module.hot) {
+-    module.hot.accept('./components/App', renderApp);
+-}
+-
+-renderApp();
+diff --git a/src/main.tsx b/src/main.tsx
+new file mode 100644
+index 00000000..0d963cf9
+--- /dev/null
++++ b/src/main.tsx
+@@ -0,0 +1,24 @@
++import * as React from 'react';
++import { render } from 'react-dom';
++import App from './components/App';
++import 'semantic-ui-css/semantic.min.css';
++import './css/header.css';
++import './css/sidebar.css';
++import './css/viewer.css';
++import './css/features.css';
++import { HashRouter, Route } from 'react-router-dom';
++import { CookiesProvider } from 'react-cookie';
++
++const renderApp = () => {
++    render(
++        <CookiesProvider>
++            <HashRouter>
++                <Route path='/:uuid?/:loom?/:page?' component={App} />
++            </HashRouter>
++        </CookiesProvider>,
++        document.getElementById('scope')
++    );
++};
++
++renderApp();
++
+diff --git a/tsconfig.json b/tsconfig.json
+new file mode 100644
+index 00000000..55d7f012
+--- /dev/null
++++ b/tsconfig.json
+@@ -0,0 +1,10 @@
++{
++    "compilerOptions": {
++        "outDir": "./assests/",
++        "sourceMap": true,
++        "noImplicitAny": false,
++        "module": "commonjs",
++        "target": "es6",
++        "jsx": "react"
++    }
++}
+diff --git a/webpack.config.js b/webpack.config.js
+index 0e13d8f3..6856e26d 100644
+--- a/webpack.config.js
++++ b/webpack.config.js
+@@ -1,9 +1,11 @@
+ const path = require('path')
+ const webpack = require('webpack')
+-var WebpackGitHash = require('webpack-git-hash');
+-var fs = require('fs')
+-var pkg = require('./package.json')
++const WebpackGitHash = require('webpack-git-hash');
++const fs = require('fs');
++const pkg = require('./package.json');
+ const UglifyJsPlugin = require("uglifyjs-webpack-plugin");
++const ForkTsCheckerWebpackPlugin = require('fork-ts-checker-webpack-plugin');
++
+ // Import config file
+ let isAWS = process.env.NODE_TYPE == "aws"
+ let _config = null
+@@ -15,7 +17,9 @@ if(isAWS) {
+ console.log(_config)
+ 
+ let config = {
+-    entry: './src/main.jsx',
++    mode: process.env.NODE_ENV,
++    devtool: 'inline-source-map',
++    entry: './src/main.tsx',
+     devServer: {
+       host: '0.0.0.0',
+       port: _config.mPort,
+@@ -29,14 +33,31 @@ let config = {
+         chunkFilename: pkg.name +'-chunk.[githash].js'
+     },
+     resolve: {
+-        extensions: ['.js', '.jsx', '.css']
++        extensions: ['.ts', '.tsx', '.js', '.jsx', '.css']
+     },
+     module: {
+         rules: [
+         {
+-            test: /\.(js|jsx)$/,
+-            loader: ['react-hot-loader/webpack', 'babel-loader'],
+-            exclude: /node_modules/
++            test: /\.(t|j)s(x?)$/,
++            exclude: /node_modules/,
++            use: [
++                {
++                    loader: 'babel-loader',
++                    options: {
++                        cacheDirectory: true,
++                        babelrc: false,
++                        presets: [
++                            '@babel/preset-env',
++                            '@babel/preset-typescript',
++                            '@babel/preset-react',
++                        ],
++                        plugins: [
++                            ['@babel/plugin-proposal-class-properties', { loose: true }],
++                            ['@babel/plugin-proposal-object-rest-spread']
++                        ]
++                    }
++                }
++            ]
+         },
+         {
+             test: /\.css$/,
+@@ -88,7 +109,8 @@ let config = {
+                 indexHtml = indexHtml.replace(/src="\.\/assets\/.*\.js"/, 'src="./assets/'+ pkg.name +'-'+ pkg.version +'.' + versionHash + '.js"');
+                 fs.writeFileSync('./index.html', indexHtml);
+             }
+-        })
++        }),
++        new ForkTsCheckerWebpackPlugin()
+ 
+     ]
+ }
+@@ -107,7 +129,6 @@ if (process.env.NODE_ENV === 'production') {
+     )
+ } else {
+     config.plugins.push(new webpack.NamedModulesPlugin())
+-    config.entry = ['react-hot-loader/patch', config.entry]
+ }
+ 
+ // config.node = { fs: 'empty', child_process: 'empty' };

@@ -1,0 +1,64 @@
+version = "1.0"
+
+[task]
+name = "default/aertslab__pySCENIC-90"
+description = "Updated the binarization function to use multiprocessing"
+
+[metadata]
+difficulty = "small"
+category = "bugfix"
+keywords = [
+    "pySCENIC",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aertslab/pySCENIC"
+ref = "eab459782a7470bc7f8f641d1481140b7a418fe1"
+reference = "https://github.com/aertslab/pySCENIC/pull/90"
+source_access = "auto"
+built_at = "2026-11-15T11:05:51.228329+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:6b32c5c6d0e03ae4f7c818196b007d83325c65b25a76fde0c71ec89b1cabe616"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2019-07-28T18:44:54Z"
+diff_format = "unified"
+context_files = [
+    "src/pyscenic/binarization.py",
+    "src/pyscenic/cli/pyscenic.py",
+    "src/pyscenic/cli/utils.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 13
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

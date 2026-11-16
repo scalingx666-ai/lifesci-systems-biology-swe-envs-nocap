@@ -1,0 +1,75 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-77"
+description = "fix: R Enhanced full coverage (43 renderers) + primary method validation (liana/SEACells/cNMF)"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "7651c6842ae4baecba36fddd33a7f19b147de5c6"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/77"
+source_access = "auto"
+built_at = "2026-11-15T18:18:13.311255+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:0e25266f6231dfaa6bea46ba7a64d562370e4db821e0d84384cc86461ae3cb49"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-04-12T13:30:06Z"
+diff_format = "unified"
+context_files = [
+    "skills/singlecell/_lib/viz/r/density.R",
+    "skills/singlecell/_lib/viz/r/embedding.R",
+    "skills/singlecell/scrna/sc-ambient-removal/sc_ambient.py",
+    "skills/singlecell/scrna/sc-batch-integration/sc_integrate.py",
+    "skills/singlecell/scrna/sc-de/sc_de.py",
+    "skills/singlecell/scrna/sc-filter/sc_filter.py",
+    "skills/singlecell/scrna/sc-gene-programs/sc_gene_programs.py",
+    "skills/singlecell/scrna/sc-grn/sc_grn.py",
+    "skills/singlecell/scrna/sc-in-silico-perturbation/sc_in_silico_perturbation.py",
+    "skills/singlecell/scrna/sc-metacell/sc_metacell.py",
+    "skills/singlecell/scrna/sc-pathway-scoring/sc_pathway_scoring.py",
+    "skills/singlecell/scrna/sc-perturb/sc_perturb.py",
+    "skills/singlecell/scrna/sc-preprocessing/sc_preprocess.py",
+    "skills/singlecell/scrna/sc-qc/sc_qc.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 341
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

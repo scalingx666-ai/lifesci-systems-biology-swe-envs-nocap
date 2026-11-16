@@ -1,0 +1,67 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-169"
+description = "feat(interactive): wire CLI/TUI /memory to the graph engine"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "d4b9cc23b5a4595583f791fc76bd1959bf639ce9"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/169"
+source_access = "auto"
+built_at = "2026-11-15T18:17:21.761135+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:f9f4813e0d8a2183d37a273d5a9c298dd3e6a06c80996738320b2f585f2e9eb9"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-05-11T05:54:12Z"
+diff_format = "unified"
+context_files = [
+    "docs/2026-05-09-memory-refactor-plan.md",
+    "docs/CONTEXT.md",
+    "omicsclaw/interactive/_memory_command_support.py",
+    "omicsclaw/interactive/interactive.py",
+    "omicsclaw/interactive/tui.py",
+    "tests/memory/test_cli_graph_memory_command.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 1159
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

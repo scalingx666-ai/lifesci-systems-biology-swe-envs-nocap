@@ -1,0 +1,13 @@
+diff --git a/src/components/App.jsx b/src/components/App.jsx
+index c87b54e6..e710b278 100644
+--- a/src/components/App.jsx
++++ b/src/components/App.jsx
+@@ -264,7 +264,7 @@ class App extends Component {
+ 					this.setState({loading: false, sessionsLimitReached: true});
+ 				} else {
+ 					this.timeout = response ? parseInt(response.timeRemaining * 1000) : 0;
+-					cookies.set(cookieName, uuid, { path: '/', maxAge: this.timeout });
++					// cookies.set(cookieName, uuid, { path: '/', maxAge: this.timeout });
+ 					if (!ping) {
+ 						this.setState({loading: false, uuid: uuid});
+ 					}

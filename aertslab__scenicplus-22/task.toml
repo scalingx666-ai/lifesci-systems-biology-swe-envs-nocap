@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/aertslab__scenicplus-22"
+description = "refactor + speed improvement (7x) + bug fix "
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "scenicplus",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aertslab/scenicplus"
+ref = "7c807b9d5eb91d58dcf911443ee830ccf22dd5dd"
+reference = "https://github.com/aertslab/scenicplus/pull/22"
+source_access = "auto"
+built_at = "2026-11-15T17:00:18.907197+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:3847dde9cfa2a5f12425b2cca0df709609aef673901fc2f8cfd1ca2826548ff1"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2022-08-17T10:09:00Z"
+diff_format = "unified"
+context_files = [
+    "src/scenicplus/cistromes.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 118
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

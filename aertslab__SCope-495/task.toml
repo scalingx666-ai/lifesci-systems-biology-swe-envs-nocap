@@ -1,0 +1,72 @@
+version = "1.0"
+
+[task]
+name = "default/aertslab__SCope-495"
+description = "Convert Regulon page to TypeScript"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "SCope",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aertslab/SCope"
+ref = "8babc5792b321c5fc0496fc440e03c8bbcfd4459"
+reference = "https://github.com/aertslab/SCope/pull/495"
+source_access = "auto"
+built_at = "2026-11-15T19:36:54.146943+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:07c726e61a2588cb021aa5eea1f7eb6093974fa08b0a939018e631230ae2cea0"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2021-10-21T08:05:11Z"
+diff_format = "unified"
+context_files = [
+    "client/package-lock.json",
+    "client/src/components/AppSidebar.jsx",
+    "client/src/components/CommunityAnnotationTable/components/VotesTableCell.tsx",
+    "client/src/components/OLSAutocomplete/index.tsx",
+    "client/src/components/Search/FeatureSearch.tsx",
+    "client/src/components/common/API.jsx",
+    "client/src/components/common/Viewer.jsx",
+    "client/src/components/pages/Compare.jsx",
+    "client/src/components/pages/Gene.jsx",
+    "client/src/components/pages/Regulon.tsx",
+    "client/src/model.ts",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 246
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

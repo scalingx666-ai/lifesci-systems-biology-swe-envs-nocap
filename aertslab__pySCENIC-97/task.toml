@@ -1,0 +1,63 @@
+version = "1.0"
+
+[task]
+name = "default/aertslab__pySCENIC-97"
+description = "Change the default settings in the TF-gene correlation calculation to include all cells (no dropout masking)"
+
+[metadata]
+difficulty = "small"
+category = "bugfix"
+keywords = [
+    "pySCENIC",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aertslab/pySCENIC"
+ref = "f8f3d9a6eee48e2e2784db5c67276a59181a3875"
+reference = "https://github.com/aertslab/pySCENIC/pull/97"
+source_access = "auto"
+built_at = "2026-11-15T11:05:44.988710+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:05bc5030966147c564efc18cb2bcd942293579bd43e0b30dda88194c0b7cdc3c"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2019-09-25T12:43:08Z"
+diff_format = "unified"
+context_files = [
+    "src/pyscenic/cli/pyscenic.py",
+    "src/pyscenic/utils.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 8
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

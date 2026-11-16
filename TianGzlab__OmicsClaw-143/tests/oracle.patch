@@ -1,0 +1,226 @@
+diff --git a/omicsclaw/memory/engine.py b/omicsclaw/memory/engine.py
+index b91e68df..2ac71e99 100644
+--- a/omicsclaw/memory/engine.py
++++ b/omicsclaw/memory/engine.py
+@@ -21,6 +21,7 @@
+     - search(query, namespace, ...)           — FTS over (namespace, __shared__)
+     - list_children(uri, namespace)           — strict-namespace children
+     - get_subtree(uri, namespace, ...)        — flat listing under a prefix
++    - get_recent(namespace, ...)              — recently-updated memory listing
+ 
+ Read-fallback policy (CONTEXT.md): ``recall`` and ``search`` fall back to
+ ``__shared__`` so per-user contexts can see globally-shared content;
+@@ -34,7 +35,7 @@
+ from dataclasses import dataclass
+ from typing import TYPE_CHECKING, Optional, Union
+ 
+-from sqlalchemy import or_, select
++from sqlalchemy import and_, or_, select
+ from sqlalchemy.ext.asyncio import AsyncSession
+ 
+ from .models import (
+@@ -765,3 +766,71 @@ async def get_subtree(
+             return await self._materialize_listing(
+                 s, list(path_rows), edge_id_to_child, namespace
+             )
++
++    async def get_recent(
++        self,
++        *,
++        namespace: str,
++        limit: int = 10,
++        include_shared: bool = False,
++    ) -> list[dict]:
++        """Return recently-updated active memories scoped to ``namespace``.
++
++        Strict by default: only rows whose Path is in ``namespace`` show
++        up — same rule as ``list_children`` and ``get_subtree``. Pass
++        ``include_shared=True`` for the desktop UI mode that also surfaces
++        ``__shared__`` rows (so user-customised ``core://agent/*`` shows
++        up in the recent listing alongside per-user writes).
++
++        Output dict shape mirrors the legacy
++        ``GraphService.get_recent_memories`` so the call sites that swap
++        over need no result-shape changes.
++
++        Note: this verb is intentionally namespace-required — engine reads
++        always carry a partition. The legacy ``namespace=None`` admin
++        mode lives in ``GraphService.get_recent_memories`` and remains
++        for ``oc memory-server``-style admin tooling.
++        """
++        async with self._db.session() as s:
++            stmt = (
++                select(Memory, Edge, Path)
++                .select_from(Path)
++                .join(Edge, Path.edge_id == Edge.id)
++                .join(
++                    Memory,
++                    and_(
++                        Memory.node_uuid == Edge.child_uuid,
++                        Memory.deprecated == False,  # noqa: E712
++                    ),
++                )
++                .order_by(Memory.created_at.desc())
++            )
++            if include_shared:
++                stmt = stmt.where(
++                    Path.namespace.in_([namespace, SHARED_NAMESPACE])
++                )
++            else:
++                stmt = stmt.where(Path.namespace == namespace)
++
++            rows = (await s.execute(stmt)).all()
++
++            seen: set[int] = set()
++            results: list[dict] = []
++            for memory, edge, path_obj in rows:
++                if memory.id in seen:
++                    continue
++                seen.add(memory.id)
++                results.append(
++                    {
++                        "memory_id": memory.id,
++                        "uri": f"{path_obj.domain}://{path_obj.path}",
++                        "priority": edge.priority,
++                        "disclosure": edge.disclosure,
++                        "created_at": memory.created_at.isoformat()
++                        if memory.created_at
++                        else None,
++                    }
++                )
++                if len(results) >= limit:
++                    break
++            return results
+diff --git a/omicsclaw/memory/memory_client.py b/omicsclaw/memory/memory_client.py
+index ffd4970f..97881c7d 100644
+--- a/omicsclaw/memory/memory_client.py
++++ b/omicsclaw/memory/memory_client.py
+@@ -364,8 +364,11 @@ async def boot(self) -> str:
+         return "\n\n".join(parts) if parts else ""
+ 
+     # ------------------------------------------------------------------
+-    # Verbs still routed through the legacy GraphService
+-    # (PR #4b ReviewLog will replace these.)
++    # forget still routes through the legacy GraphService for the
++    # subtree-cascade + orphan-prevention semantics that the engine
++    # delete verb does not yet replicate. (Next PR in the §6.2
++    # GraphService retirement walks the cascade logic into ReviewLog
++    # so this last call site can come off graph.py too.)
+     # ------------------------------------------------------------------
+ 
+     async def get_recent(self, limit: int = 10) -> List[Dict[str, Any]]:
+@@ -376,12 +379,9 @@ async def get_recent(self, limit: int = 10) -> List[Dict[str, Any]]:
+         ``__shared__`` system rows into a per-user view).
+         """
+         await self._ensure_init()
+-        from .graph import GraphService
+-
+         assert self._engine is not None
+-        graph = GraphService(self._engine.db, self._engine.search_indexer)
+-        return await graph.get_recent_memories(
+-            limit=limit, namespace=self._namespace
++        return await self._engine.get_recent(
++            namespace=self._namespace, limit=limit
+         )
+ 
+     async def forget(self, uri: str) -> Dict[str, Any]:
+diff --git a/tests/memory/test_namespace_isolation.py b/tests/memory/test_namespace_isolation.py
+index 11e1bc08..1fbe8159 100644
+--- a/tests/memory/test_namespace_isolation.py
++++ b/tests/memory/test_namespace_isolation.py
+@@ -409,3 +409,95 @@ def test_desktop_chat_user_id_matches_desktop_namespace(monkeypatch):
+     monkeypatch.setenv("OMICSCLAW_DESKTOP_LAUNCH_ID", "launch-xyz")
+     assert desktop_chat_user_id() == "launch-xyz"
+     assert f"app/{desktop_chat_user_id()}" == desktop_namespace()
++
++
++# ----------------------------------------------------------------------
++# MemoryEngine.get_recent — hot-path "recent listing" verb that replaces
++# the GraphService.get_recent_memories call site inside MemoryClient.
++# ----------------------------------------------------------------------
++
++
++@pytest.mark.asyncio
++async def test_engine_get_recent_strict_namespace(env):
++    """engine.get_recent(namespace=X) returns only rows in X — never
++    rows from other namespaces, never __shared__ rows by default."""
++    engine, _, _ = env
++    a = MemoryClient(engine=engine, namespace="tg/A")
++    b = MemoryClient(engine=engine, namespace="tg/B")
++
++    await a.remember("dataset://only_a.h5ad", "A")
++    await b.remember("dataset://only_b.h5ad", "B")
++    await a.remember("core://agent/style", "concise")  # → __shared__
++
++    rows = await engine.get_recent(namespace="tg/A", limit=10)
++    uris = {r["uri"] for r in rows}
++    assert "dataset://only_a.h5ad" in uris
++    assert "dataset://only_b.h5ad" not in uris, "leaked B's row into A"
++    assert "core://agent/style" not in uris, "leaked __shared__ row by default"
++
++
++@pytest.mark.asyncio
++async def test_engine_get_recent_include_shared(env):
++    """engine.get_recent(include_shared=True) returns rows from
++    (namespace, __shared__) — desktop UI mode."""
++    engine, _, _ = env
++    a = MemoryClient(engine=engine, namespace="tg/A")
++
++    await a.remember("dataset://only_a.h5ad", "A")
++    await a.remember("core://agent/style", "concise")  # → __shared__
++
++    rows = await engine.get_recent(
++        namespace="tg/A", limit=10, include_shared=True
++    )
++    uris = {r["uri"] for r in rows}
++    assert "dataset://only_a.h5ad" in uris
++    assert "core://agent/style" in uris
++
++
++@pytest.mark.asyncio
++async def test_engine_get_recent_return_shape(env):
++    """Each row has memory_id, uri, priority, disclosure, created_at —
++    matching the legacy GraphService.get_recent_memories shape so the
++    MemoryClient swap is shape-preserving."""
++    engine, _, _ = env
++    a = MemoryClient(engine=engine, namespace="tg/A")
++    await a.remember("dataset://x.h5ad", "X", priority=42)
++
++    rows = await engine.get_recent(namespace="tg/A", limit=5)
++    assert len(rows) == 1
++    row = rows[0]
++    assert row["uri"] == "dataset://x.h5ad"
++    assert row["priority"] == 42
++    assert "disclosure" in row
++    assert "memory_id" in row
++    assert "created_at" in row  # ISO-format string or None
++
++
++@pytest.mark.asyncio
++async def test_engine_get_recent_honors_limit(env):
++    """limit parameter caps result count."""
++    engine, _, _ = env
++    a = MemoryClient(engine=engine, namespace="tg/A")
++    for i in range(5):
++        await a.remember(f"dataset://x{i}.h5ad", f"row {i}")
++
++    rows = await engine.get_recent(namespace="tg/A", limit=3)
++    assert len(rows) == 3
++
++
++@pytest.mark.asyncio
++async def test_engine_get_recent_excludes_deprecated(env):
++    """Versioned writes deprecate the old Memory; get_recent returns
++    only the active head, not deprecated predecessors."""
++    engine, _, _ = env
++    a = MemoryClient(engine=engine, namespace="tg/A")
++    # core://my_user is versioned per namespace_policy → upsert_versioned
++    await a.remember("core://my_user/note", "v1")
++    await a.remember("core://my_user/note", "v2")
++
++    rows = await engine.get_recent(namespace="tg/A", limit=10)
++    matching = [r for r in rows if r["uri"] == "core://my_user/note"]
++    assert len(matching) == 1, (
++        f"expected exactly one active row for the versioned URI, "
++        f"got {len(matching)} — deprecated predecessor leaked"
++    )

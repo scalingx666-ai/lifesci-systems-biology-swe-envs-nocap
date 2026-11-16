@@ -1,0 +1,72 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-102"
+description = "fix(runner): live log streaming, cancel-kills-subprocess, registry alias shadow"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "ae43724c3b286421e953e19cc1dccf75145c2c8a"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/102"
+source_access = "auto"
+built_at = "2026-11-15T18:17:55.402262+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:a517d69ead6916e6eca7244223caeac25ff2798e406fce5fa9351a2d8fd4c856"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-05-08T10:05:51Z"
+diff_format = "unified"
+context_files = [
+    "bot/core.py",
+    "omicsclaw/core/registry.py",
+    "omicsclaw/core/skill_result.py",
+    "omicsclaw/core/skill_runner.py",
+    "omicsclaw/execution/executors/default.py",
+    "tests/test_bot_runner_contract.py",
+    "tests/test_execution_default_executor.py",
+    "tests/test_output_ux.py",
+    "tests/test_registry_alias_contract.py",
+    "tests/test_skill_run_result.py",
+    "tests/test_skill_runner_contract.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 994
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

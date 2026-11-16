@@ -1,0 +1,1054 @@
+diff --git a/docs/engineering/session-state-inventory.md b/docs/engineering/session-state-inventory.md
+new file mode 100644
+index 00000000..02cb7b34
+--- /dev/null
++++ b/docs/engineering/session-state-inventory.md
+@@ -0,0 +1,106 @@
++# Interactive Session State Inventory
++
++Task 2.1 of the Phase 2 deepening plan. Enumerates every site that reads or
++writes the `state: dict[str, Any]` used by `omicsclaw/interactive/interactive.py`,
++as the discovery basis for the typed `SessionState` module that replaces it.
++
++## Scope
++
++- **Files using the dict-as-state pattern**: 1 (`omicsclaw/interactive/interactive.py`).
++- **Files NOT using it**: `tui.py`, `_session.py`, `_session_command_support.py`,
++  `_skill_run_support.py`, `_skill_management_support.py`, `_pipeline_support.py`,
++  `_plan_mode_support.py`, `_memory_command_support.py`, `_omicsclaw_actions.py`,
++  `_slash_command_support.py`, `_llm_bridge_support.py`, `_history_support.py`, `_mcp.py`.
++- **Total access sites in interactive.py**: ~90 (across `state["k"]`, `state.get("k")`,
++  `state.setdefault("k", …)`, etc.).
++
++This is significantly smaller than initially feared; the migration is contained
++to a single file. The original Phase 2 plan's tasks 2.4 (migrate `tui.py`) and
++2.5 (migrate `_*_support.py`) are no-ops and can be skipped.
++
++## Key inventory
++
++The dict is initialized as a 7-field literal at `interactive.py:1782` inside
++`run_interactive()`:
++
++```python
++state = {
++    "session_id":         effective_session_id,
++    "workspace_dir":      effective_workspace,
++    "pipeline_workspace": "",
++    "session_metadata":   {},
++    "messages":           [],
++    "running":            True,
++    "ui_backend":         ui_backend,
++}
++```
++
++Two additional keys are mutated into the dict later in the same function:
++
++| Key | First write | Reason added later |
++|---|---|---|
++| `tips_enabled` | `interactive.py:2050,2058` | Toggled by user `/tips` slash command |
++| `tips_level`   | `interactive.py:2068`      | Set by `/tips verbose|short|off` |
++
++So the **full key set** is 9.
++
++## Per-key contract
++
++| Key | Type | Default | Mutability | Read access | Write access |
++|---|---|---|---|---|---|
++| `session_id` | `str` | required (caller of `run_interactive` provides) | mutated only by `_apply_session_command_view` (resume flow) | 10 | low (1-2 sites) |
++| `workspace_dir` | `str` (path) | required | rarely mutated; mostly stable for lifetime | 19 (incl. `state.get`) | low |
++| `pipeline_workspace` | `str` (path or "") | `""` | toggled by `_set_active_pipeline_workspace` | 7 | 2 sites |
++| `session_metadata` | `dict[str, Any]` | `{}` | rebuilt by `build_session_metadata` after every mutation | 28 | 3-4 sites |
++| `messages` | `list[dict]` (LLM message log) | `[]` | append-mostly during chat loop | 15 | many |
++| `running` | `bool` | `True` | set False on shutdown sentinel | 4 | 1-2 sites |
++| `ui_backend` | `str` (`"cli"` or `"tui"`) | required | immutable after init | 0 reads via `state[...]` (passed via other channels) | 1 (init) |
++| `tips_enabled` | `bool` (optional) | absent → defaults `True` via `state.get(..., True)` | toggled by `/tips on|off` | 3 | 2 |
++| `tips_level` | `str` (`"verbose"`/`"short"`/`"off"`) | absent → defaults via `state.get(..., "verbose")` | set by `/tips <level>` | 4 | 1 |
++
++## Invariants observed
++
++1. **session_metadata is a derived view**: rebuilt via `build_session_metadata(session_id, messages, …)` after any change to `pipeline_workspace`, `workspace_dir`, or `messages`. Three places call `build_session_metadata` (`_set_active_pipeline_workspace`, `_apply_session_command_view`, `_session_metadata_from_state`).
++2. **`pipeline_workspace == "" XOR pipeline_mode_enabled`** is implicit: the empty string means "no active pipeline workspace"; non-empty means a pipeline is active. Never `None` in this dict (it would be `None` in `session_metadata.get("pipeline_workspace")`).
++3. **`tips_enabled` / `tips_level` may be absent** initially and only appear after the user toggles them. Reads use `state.get(..., default)`.
++4. **`running` is the chat-loop sentinel**: while True, the prompt loop continues; set False only by the loop's own exit conditions.
++5. **`ui_backend` is set once and never written again**: it carries the initial UI choice (CLI vs TUI) so downstream rendering can branch.
++
++## Function signatures that take `state`
++
++15 functions take `state: dict[str, Any]` as a parameter (per grep). The pattern
++is concentrated in two clusters:
++
++- **Helpers (lines 534-660)**: `_session_metadata_from_state`,
++  `_active_pipeline_workspace`, `_active_output_style`,
++  `_active_scoped_memory_scope`, `_set_active_pipeline_workspace`,
++  `_apply_session_command_view`, `_apply_pipeline_command_view`,
++  `_apply_interactive_plan_command_view`.
++- **Slash command handlers (lines 846-1300)**: `_handle_resume`, `_handle_delete`,
++  `_handle_memory`, `_handle_tasks`, `_handle_plan`, `_handle_approve_plan`,
++  `_handle_research`, `_handle_resume_task`, `_handle_do_current_task`.
++- **Plan context** (line 1713): `_interactive_plan_context`.
++
++All of these will accept `SessionState` instead of `dict[str, Any]`.
++
++## Implications for SessionState design
++
++- 9 typed fields with defaults documented above.
++- 3 mutator methods cover the actual transitions: `mark_session_metadata`,
++  `set_pipeline_workspace`, `apply_session_command_view`.
++- 2 toggle methods for tips: `set_tips_enabled`, `set_tips_level`.
++- A `running: bool` field with a `stop()` method (or just direct attribute set).
++- `to_dict() / from_dict()` adapters for staged migration (caller-by-caller),
++  so old call sites can keep using the dict shape during the transition.
++- `messages` stays a `list[dict]` — no benefit to typing each LLM message dict
++  here.
++
++## Phase 2 plan adjustments (post-2.1)
++
++- **Task 2.4 SKIP**: `tui.py` does not use the state-dict pattern.
++- **Task 2.5 SKIP**: `_*_support.py` files do not use the state-dict pattern.
++- **Task 2.3 expanded**: migrate the *whole* `interactive.py` (not just lines
++  534-652), since the dict access spans 1700+ lines of the same file.
++
++The plan thus collapses from 6 work tasks to 4 (2.1 done, 2.2, 2.3, 2.6) plus
++the review task 2.7. Total work effort drops accordingly.
+diff --git a/omicsclaw/interactive/_session_state.py b/omicsclaw/interactive/_session_state.py
+new file mode 100644
+index 00000000..213fb4af
+--- /dev/null
++++ b/omicsclaw/interactive/_session_state.py
+@@ -0,0 +1,95 @@
++"""Typed session state for the interactive CLI loop.
++
++Replaces the legacy ``state: dict[str, Any]`` pattern in
++``omicsclaw/interactive/interactive.py`` with a documented dataclass whose
++field set, defaults, and transitions are enforced rather than implied.
++
++Keep this module free of imports from other ``interactive/`` submodules so
++``_session_command_support`` and other helpers can adopt it without
++introducing circular imports. Complex transitions that touch other
++modules (e.g. refreshing ``session_metadata`` via ``build_session_metadata``)
++live in those modules and take a ``SessionState`` as input.
++
++Dict round-trip adapters (``from_dict`` / ``to_dict``) were intentionally
++not shipped — the migration was direct, no caller needed them. Add them
++back when a real serialization consumer (snapshot dump, debugger view,
++remote replication) shows up.
++"""
++
++from __future__ import annotations
++
++from dataclasses import dataclass, field
++from typing import Any
++
++
++_VALID_TIPS_LEVELS: frozenset[str] = frozenset({"basic", "expert"})
++
++
++@dataclass
++class SessionState:
++    """Mutable per-session state for the interactive CLI loop.
++
++    Required fields (must be supplied at construction):
++      - ``session_id``: the persisted session identifier.
++      - ``workspace_dir``: the active workspace path string.
++      - ``ui_backend``: ``"cli"`` or ``"tui"``.
++
++    Optional fields with documented defaults:
++      - ``pipeline_workspace`` (``""``) — empty string means "no active pipeline".
++      - ``session_metadata`` (``{}``) — derived view, refreshed via the helper
++        in ``_session_command_support``.
++      - ``messages`` (``[]``) — LLM message log, append-mostly.
++      - ``running`` (``True``) — chat-loop sentinel; flipped by ``stop()``.
++      - ``tips_enabled`` (``True``) — `/tips on|off` flag.
++      - ``tips_level`` (``"basic"``) — one of ``basic|expert``, matching the
++        ``/tips level`` slash-command's accepted values.
++    """
++
++    session_id: str
++    workspace_dir: str
++    ui_backend: str
++    pipeline_workspace: str = ""
++    session_metadata: dict[str, Any] = field(default_factory=dict)
++    messages: list[dict[str, Any]] = field(default_factory=list)
++    running: bool = True
++    tips_enabled: bool = True
++    tips_level: str = "basic"
++
++    # ---- transitions -------------------------------------------------------
++
++    def stop(self) -> None:
++        """Flip the chat-loop sentinel so the next iteration exits."""
++        self.running = False
++
++    def set_tips(
++        self,
++        *,
++        enabled: bool | None = None,
++        level: str | None = None,
++    ) -> None:
++        """Update tips flag/level. ``None`` for either argument is a no-op so
++        callers that forward optional CLI flags don't accidentally clear state.
++
++        Raises ``ValueError`` if ``level`` is not one of ``basic|expert``.
++        """
++        if enabled is not None:
++            self.tips_enabled = bool(enabled)
++        if level is not None:
++            if level not in _VALID_TIPS_LEVELS:
++                raise ValueError(
++                    f"tips level must be one of {sorted(_VALID_TIPS_LEVELS)!r}, got {level!r}"
++                )
++            self.tips_level = level
++
++    def set_pipeline_workspace(self, workspace: str | None) -> None:
++        """Set the active pipeline workspace, normalizing ``None`` → ``""``.
++
++        Note: refreshing ``session_metadata`` is intentionally NOT done here —
++        that requires ``build_session_metadata`` from ``_session_command_support``
++        and would create a circular import. Callers should use the helper in
++        that module which takes a ``SessionState`` and updates both fields.
++        """
++        self.pipeline_workspace = workspace or ""
++
++
++__all__ = ["SessionState"]
+diff --git a/omicsclaw/interactive/interactive.py b/omicsclaw/interactive/interactive.py
+index 6fff2f98..5a83d389 100644
+--- a/omicsclaw/interactive/interactive.py
++++ b/omicsclaw/interactive/interactive.py
+@@ -148,6 +148,7 @@
+     parse_slash_command,
+     slash_command_help_rows,
+ )
++from ._session_state import SessionState
+ from ._session import (
+     format_relative_time,
+     generate_session_id,
+@@ -531,66 +532,65 @@ def _print_cli_response_text(text: str) -> None:
+     formatter.finish()
+ 
+ 
+-def _session_metadata_from_state(state: dict[str, Any]) -> dict[str, Any]:
++def _session_metadata_from_state(state: SessionState) -> dict[str, Any]:
+     metadata = enrich_session_metadata(
+-        state.get("session_metadata"),
+-        messages=state.get("messages"),
+-        workspace_dir=state.get("workspace_dir", "") or "",
+-        pipeline_workspace=state.get("pipeline_workspace"),
++        state.session_metadata,
++        messages=state.messages,
++        workspace_dir=state.workspace_dir or "",
++        pipeline_workspace=state.pipeline_workspace or None,
+         omicsclaw_dir=_OMICSCLAW_DIR,
+     )
+-    state["session_metadata"] = metadata
++    state.session_metadata = metadata
+     return metadata
+ 
+ 
+-def _active_pipeline_workspace(state: dict[str, Any]) -> str | None:
++def _active_pipeline_workspace(state: SessionState) -> str | None:
+     pipeline_workspace = resolve_active_pipeline_workspace(
+-        state.get("pipeline_workspace"),
+-        state.get("session_metadata"),
++        state.pipeline_workspace or None,
++        state.session_metadata,
+     )
+     if pipeline_workspace:
+-        state["pipeline_workspace"] = pipeline_workspace
+-        state["session_metadata"] = build_session_metadata(
+-            state.get("session_metadata"),
++        state.pipeline_workspace = pipeline_workspace
++        state.session_metadata = build_session_metadata(
++            state.session_metadata,
+             pipeline_workspace=pipeline_workspace,
+         )
+         return pipeline_workspace
+-    state["session_metadata"] = build_session_metadata(
+-        state.get("session_metadata"),
++    state.session_metadata = build_session_metadata(
++        state.session_metadata,
+         pipeline_workspace=None,
+     )
+     return None
+ 
+ 
+-def _active_output_style(state: dict[str, Any]) -> str | None:
+-    return resolve_active_output_style(state.get("session_metadata"))
++def _active_output_style(state: SessionState) -> str | None:
++    return resolve_active_output_style(state.session_metadata)
+ 
+ 
+-def _active_scoped_memory_scope(state: dict[str, Any]) -> str:
+-    return resolve_active_scoped_memory_scope(state.get("session_metadata"))
++def _active_scoped_memory_scope(state: SessionState) -> str:
++    return resolve_active_scoped_memory_scope(state.session_metadata)
+ 
+ 
+-def _set_active_pipeline_workspace(state: dict[str, Any], workspace: str | None) -> None:
+-    value = str(workspace or "").strip()
+-    state["pipeline_workspace"] = value
+-    state["session_metadata"] = build_session_metadata(
+-        state.get("session_metadata"),
+-        pipeline_workspace=value,
++def _set_active_pipeline_workspace(state: SessionState, workspace: str | None) -> None:
++    state.set_pipeline_workspace(str(workspace or "").strip() or None)
++    state.session_metadata = build_session_metadata(
++        state.session_metadata,
++        pipeline_workspace=state.pipeline_workspace,
+     )
+ 
+ 
+ async def _persist_session_state(
+-    state: dict[str, Any],
++    state: SessionState,
+     *,
+     model: str = "",
+ ) -> None:
+     await save_session(
+-        state["session_id"],
+-        state["messages"],
++        state.session_id,
++        state.messages,
+         model=model,
+-        workspace=state["workspace_dir"],
++        workspace=state.workspace_dir,
+         metadata=_session_metadata_from_state(state),
+-        transcript=state["messages"],
++        transcript=state.messages,
+     )
+ 
+ 
+@@ -634,7 +634,7 @@ def _print_skill_run_execution(execution: SkillRunExecutionView) -> None:
+ 
+ 
+ def _apply_pipeline_command_view(
+-    state: dict[str, Any],
++    state: SessionState,
+     view,
+ ) -> None:
+     if getattr(view, "active_workspace", ""):
+@@ -643,13 +643,13 @@ def _apply_pipeline_command_view(
+ 
+ 
+ def _apply_interactive_plan_command_view(
+-    state: dict[str, Any],
++    state: SessionState,
+     view,
+ ) -> None:
+     if getattr(view, "replace_session_metadata", False):
+         metadata = normalize_session_metadata(getattr(view, "session_metadata", {}))
+-        state["session_metadata"] = metadata
+-        state["pipeline_workspace"] = str(metadata.get("pipeline_workspace", "") or "")
++        state.session_metadata = metadata
++        state.pipeline_workspace = str(metadata.get("pipeline_workspace", "") or "")
+ 
+     text = str(getattr(view, "output_text", "") or "")
+     if not text:
+@@ -661,21 +661,21 @@ def _apply_interactive_plan_command_view(
+ 
+ 
+ def _apply_session_command_view(
+-    state: dict[str, Any],
++    state: SessionState,
+     view,
+ ) -> None:
+     if getattr(view, "session_id", ""):
+-        state["session_id"] = view.session_id
++        state.session_id = view.session_id
+     if getattr(view, "workspace_dir", ""):
+-        state["workspace_dir"] = view.workspace_dir
++        state.workspace_dir = view.workspace_dir
+     if getattr(view, "replace_session_metadata", False):
+         metadata = normalize_session_metadata(getattr(view, "session_metadata", {}))
+-        state["session_metadata"] = metadata
+-        state["pipeline_workspace"] = str(metadata.get("pipeline_workspace", "") or "")
++        state.session_metadata = metadata
++        state.pipeline_workspace = str(metadata.get("pipeline_workspace", "") or "")
+     if getattr(view, "clear_messages", False):
+-        state["messages"] = []
++        state.messages = []
+     if getattr(view, "replace_messages", False):
+-        state["messages"] = list(getattr(view, "messages", []))
++        state.messages = list(getattr(view, "messages", []))
+     if getattr(view, "clear_pipeline_workspace", False):
+         _set_active_pipeline_workspace(state, None)
+ 
+@@ -729,12 +729,12 @@ def _handle_run(arg: str) -> SkillRunExecutionView | None:
+ 
+ 
+ def _handle_doctor(
+-    state: dict[str, Any],
++    state: SessionState,
+ ) -> None:
+     _apply_session_command_view(
+         state,
+         build_doctor_command_view(
+-            workspace_dir=state.get("workspace_dir", "") or "",
++            workspace_dir=state.workspace_dir or "",
+             pipeline_workspace=_active_pipeline_workspace(state) or "",
+             omicsclaw_dir=str(_OMICSCLAW_DIR),
+             output_dir=str(_OMICSCLAW_DIR / "output"),
+@@ -744,15 +744,15 @@ def _handle_doctor(
+ 
+ def _handle_context(
+     arg: str,
+-    state: dict[str, Any],
++    state: SessionState,
+ ) -> None:
+     _apply_session_command_view(
+         state,
+         build_context_command_view(
+             arg,
+-            messages=state.get("messages", []),
+-            session_metadata=state.get("session_metadata"),
+-            workspace_dir=state.get("workspace_dir", "") or "",
++            messages=state.messages,
++            session_metadata=state.session_metadata,
++            workspace_dir=state.workspace_dir or "",
+             pipeline_workspace=_active_pipeline_workspace(state) or "",
+             output_style=_active_output_style(state) or "",
+             omicsclaw_dir=str(_OMICSCLAW_DIR),
+@@ -763,7 +763,7 @@ def _handle_context(
+ 
+ 
+ def _handle_usage(
+-    state: dict[str, Any],
++    state: SessionState,
+ ) -> None:
+     _apply_session_command_view(
+         state,
+@@ -843,11 +843,11 @@ async def _pick_session_interactive(
+             return None
+ 
+ 
+-async def _handle_resume(arg: str, state: dict[str, Any]) -> None:
++async def _handle_resume(arg: str, state: SessionState) -> None:
+     """Resume a saved session by ID or interactive picker."""
+     target_id = arg.strip()
+     if not target_id:
+-        selected = await _pick_session_interactive(state["session_id"])
++        selected = await _pick_session_interactive(state.session_id)
+         if not selected:
+             return
+         target_id = selected
+@@ -876,7 +876,7 @@ async def _handle_resume(arg: str, state: dict[str, Any]) -> None:
+         f"[yellow]Multiple sessions matched '{escape(target_id)}'. Narrow the query or choose one below.[/yellow]"
+     )
+     selected = await _pick_session_interactive(
+-        state["session_id"],
++        state.session_id,
+         query=target_id,
+     )
+     if not selected:
+@@ -887,21 +887,21 @@ async def _handle_resume(arg: str, state: dict[str, Any]) -> None:
+         console.print()
+ 
+ 
+-async def _handle_delete(arg: str, state: dict[str, Any]) -> None:
++async def _handle_delete(arg: str, state: SessionState) -> None:
+     """Delete a session by ID."""
+     view = await build_delete_session_command_view(
+         arg.strip(),
+-        current_session_id=state["session_id"],
++        current_session_id=state.session_id,
+     )
+     _apply_session_command_view(state, view)
+ 
+ 
+-async def _handle_memory(arg: str, state: dict[str, Any], *, model: str = "") -> None:
++async def _handle_memory(arg: str, state: SessionState, *, model: str = "") -> None:
+     """Manage scoped memory entries for the active workspace."""
+     view = build_memory_command_view(
+         arg,
+-        session_metadata=state.get("session_metadata"),
+-        workspace_dir=state.get("workspace_dir", "") or "",
++        session_metadata=state.session_metadata,
++        workspace_dir=state.workspace_dir or "",
+         pipeline_workspace=_active_pipeline_workspace(state) or "",
+     )
+     _apply_session_command_view(state, view)
+@@ -1074,46 +1074,46 @@ def _handle_refresh_skills() -> None:
+         _print_skill_command_status(status)
+ 
+ 
+-def _handle_tasks(arg: str, state: dict[str, Any]) -> None:
++def _handle_tasks(arg: str, state: SessionState) -> None:
+     if _should_route_plan_commands_to_pipeline(arg, state):
+         view = build_pipeline_tasks_command_view(
+             arg.strip() or None,
+-            workspace_fallback=_active_pipeline_workspace(state) or state.get("workspace_dir"),
++            workspace_fallback=_active_pipeline_workspace(state) or state.workspace_dir or None,
+         )
+         _apply_pipeline_command_view(state, view)
+         return
+ 
+     view = build_interactive_tasks_command_view(
+-        session_metadata=state.get("session_metadata"),
++        session_metadata=state.session_metadata,
+     )
+     _apply_interactive_plan_command_view(state, view)
+ 
+ 
+-def _handle_plan(arg: str, state: dict[str, Any]) -> bool:
++def _handle_plan(arg: str, state: SessionState) -> bool:
+     if _should_route_plan_commands_to_pipeline(arg, state):
+         view = build_plan_preview_command_view(
+             arg.strip() or None,
+-            workspace_fallback=_active_pipeline_workspace(state) or state.get("workspace_dir"),
++            workspace_fallback=_active_pipeline_workspace(state) or state.workspace_dir or None,
+         )
+         _apply_pipeline_command_view(state, view)
+         return False
+ 
+     view = build_interactive_plan_command_view(
+         arg,
+-        session_metadata=state.get("session_metadata"),
+-        messages=state.get("messages"),
+-        workspace_dir=state.get("workspace_dir", "") or "",
++        session_metadata=state.session_metadata,
++        messages=state.messages,
++        workspace_dir=state.workspace_dir or "",
+         omicsclaw_dir=str(_OMICSCLAW_DIR),
+     )
+     _apply_interactive_plan_command_view(state, view)
+     return view.persist_session
+ 
+ 
+-def _handle_approve_plan(arg: str, state: dict[str, Any]) -> bool:
++def _handle_approve_plan(arg: str, state: SessionState) -> bool:
+     if not _should_route_plan_commands_to_pipeline(arg, state):
+         view = build_interactive_approve_plan_command_view(
+             arg,
+-            session_metadata=state.get("session_metadata"),
++            session_metadata=state.session_metadata,
+             omicsclaw_dir=str(_OMICSCLAW_DIR),
+         )
+         _apply_interactive_plan_command_view(state, view)
+@@ -1122,7 +1122,7 @@ def _handle_approve_plan(arg: str, state: dict[str, Any]) -> bool:
+     try:
+         view = build_approve_plan_command_view(
+             arg,
+-            workspace_fallback=_active_pipeline_workspace(state) or state.get("workspace_dir"),
++            workspace_fallback=_active_pipeline_workspace(state) or state.workspace_dir or None,
+             omicsclaw_dir=str(_OMICSCLAW_DIR),
+         )
+     except ValueError as e:
+@@ -1135,7 +1135,7 @@ def _handle_approve_plan(arg: str, state: dict[str, Any]) -> bool:
+ 
+ async def _run_research_pipeline(
+     command_args,
+-    state: dict[str, Any],
++    state: SessionState,
+ ) -> None:
+     pdf_path = command_args.pdf_path
+     idea = command_args.idea
+@@ -1179,7 +1179,7 @@ async def _run_research_pipeline(
+     workspace_path = str(
+         resolve_research_workspace(
+             command_args.output_dir,
+-            _active_pipeline_workspace(state) or state.get("workspace_dir"),
++            _active_pipeline_workspace(state) or state.workspace_dir or None,
+         )
+     )
+     _set_active_pipeline_workspace(state, workspace_path)
+@@ -1227,7 +1227,7 @@ def on_stage(stage: str, status: str):
+             )
+         )
+ 
+-        state["messages"].extend(
++        state.messages.extend(
+             build_research_history_entries(
+                 command_args,
+                 result,
+@@ -1241,11 +1241,11 @@ def on_stage(stage: str, status: str):
+         console.print(f"[red]Research pipeline error: {e}[/red]")
+         import traceback
+         console.print(f"[dim]{traceback.format_exc()[:500]}[/dim]")
+-        if state["messages"]:
++        if state.messages:
+             await _persist_session_state(state)
+ 
+ 
+-async def _handle_research(arg: str, state: dict[str, Any]) -> None:
++async def _handle_research(arg: str, state: SessionState) -> None:
+     """Start or resume the multi-agent research pipeline."""
+     if not arg.strip():
+         console.print(
+@@ -1269,12 +1269,12 @@ async def _handle_research(arg: str, state: dict[str, Any]) -> None:
+     await _run_research_pipeline(command_args, state)
+ 
+ 
+-async def _handle_resume_task(arg: str, state: dict[str, Any]) -> bool:
++async def _handle_resume_task(arg: str, state: SessionState) -> bool:
+     """Resume the research pipeline from a specific structured stage."""
+     if not _should_route_resume_task_to_pipeline(arg, state):
+         view = build_interactive_resume_task_command_view(
+             arg,
+-            session_metadata=state.get("session_metadata"),
++            session_metadata=state.session_metadata,
+             omicsclaw_dir=str(_OMICSCLAW_DIR),
+         )
+         _apply_interactive_plan_command_view(state, view)
+@@ -1290,8 +1290,8 @@ async def _handle_resume_task(arg: str, state: dict[str, Any]) -> bool:
+     return False
+ 
+ 
+-async def _handle_do_current_task(arg: str, state: dict[str, Any]) -> bool:
+-    snapshot = load_interactive_plan_from_metadata(state.get("session_metadata"))
++async def _handle_do_current_task(arg: str, state: SessionState) -> bool:
++    snapshot = load_interactive_plan_from_metadata(state.session_metadata)
+     if snapshot is None and _should_route_plan_commands_to_pipeline("", state):
+         console.print(
+             "[yellow]/do-current-task currently targets interactive session plans. "
+@@ -1301,7 +1301,7 @@ async def _handle_do_current_task(arg: str, state: dict[str, Any]) -> bool:
+ 
+     view = build_do_current_task_command_view(
+         arg,
+-        session_metadata=state.get("session_metadata"),
++        session_metadata=state.session_metadata,
+         omicsclaw_dir=str(_OMICSCLAW_DIR),
+     )
+     _apply_interactive_plan_command_view(state, view)
+@@ -1605,15 +1605,15 @@ def _read():
+ 
+ 
+ async def _continue_interactive_turn(
+-    state: dict[str, Any],
++    state: SessionState,
+     user_prompt: str,
+ ) -> str:
+-    state["messages"].append({"role": "user", "content": user_prompt})
++    state.messages.append({"role": "user", "content": user_prompt})
+     console.print()
+     return await _stream_llm_response(
+-        state["messages"],
++        state.messages,
+         plan_context=_interactive_plan_context(state),
+-        workspace_dir=state.get("workspace_dir", "") or "",
++        workspace_dir=state.workspace_dir or "",
+         pipeline_workspace=_active_pipeline_workspace(state) or "",
+         scoped_memory_scope=_active_scoped_memory_scope(state),
+         output_style=_active_output_style(state) or "",
+@@ -1676,9 +1676,9 @@ def _pipeline_snapshot_exists(
+ 
+ def _should_route_plan_commands_to_pipeline(
+     arg: str,
+-    state: dict[str, Any],
++    state: SessionState,
+ ) -> bool:
+-    workspace_fallback = _active_pipeline_workspace(state) or state.get("workspace_dir")
++    workspace_fallback = _active_pipeline_workspace(state) or state.workspace_dir or None
+     if _pipeline_snapshot_exists(None, workspace_fallback=workspace_fallback):
+         return True
+     explicit_workspace = _command_leading_value(arg)
+@@ -1693,9 +1693,9 @@ def _should_route_plan_commands_to_pipeline(
+ 
+ def _should_route_resume_task_to_pipeline(
+     arg: str,
+-    state: dict[str, Any],
++    state: SessionState,
+ ) -> bool:
+-    workspace_fallback = _active_pipeline_workspace(state) or state.get("workspace_dir")
++    workspace_fallback = _active_pipeline_workspace(state) or state.workspace_dir or None
+     if _pipeline_snapshot_exists(None, workspace_fallback=workspace_fallback):
+         return True
+     try:
+@@ -1710,30 +1710,30 @@ def _should_route_resume_task_to_pipeline(
+     )
+ 
+ 
+-def _interactive_plan_context(state: dict[str, Any]) -> str:
++def _interactive_plan_context(state: SessionState) -> str:
+     return build_interactive_plan_context_from_metadata(
+-        state.get("session_metadata")
++        state.session_metadata
+     )
+ 
+ 
+ def _maybe_seed_interactive_plan(
+-    state: dict[str, Any],
++    state: SessionState,
+     user_input: str,
+ ) -> bool:
+-    workspace_fallback = _active_pipeline_workspace(state) or state.get("workspace_dir")
++    workspace_fallback = _active_pipeline_workspace(state) or state.workspace_dir or None
+     if _pipeline_snapshot_exists(None, workspace_fallback=workspace_fallback):
+         return False
+ 
+     seed = maybe_seed_interactive_plan(
+         user_input,
+-        session_metadata=state.get("session_metadata"),
+-        workspace_dir=state.get("workspace_dir", "") or "",
++        session_metadata=state.session_metadata,
++        workspace_dir=state.workspace_dir or "",
+         omicsclaw_dir=str(_OMICSCLAW_DIR),
+     )
+     if not seed.created:
+         return False
+ 
+-    state["session_metadata"] = normalize_session_metadata(seed.session_metadata)
++    state.session_metadata = normalize_session_metadata(seed.session_metadata)
+     if seed.notice_text:
+         console.print(f"[dim]{escape(seed.notice_text)}[/dim]")
+         console.print()
+@@ -1781,15 +1781,11 @@ async def _async_interactive_loop(
+     effective_workspace = workspace_dir or str(_OMICSCLAW_DIR)
+ 
+     # Mutable state
+-    state: dict[str, Any] = {
+-        "session_id":   effective_session_id,
+-        "workspace_dir": effective_workspace,
+-        "pipeline_workspace": "",
+-        "session_metadata": {},
+-        "messages":     [],
+-        "running":      True,
+-        "ui_backend":   ui_backend,
+-    }
++    state = SessionState(
++        session_id=effective_session_id,
++        workspace_dir=effective_workspace,
++        ui_backend=ui_backend,
++    )
+ 
+     # Try to resume existing session
+     if session_id:
+@@ -1818,8 +1814,8 @@ async def _async_interactive_loop(
+ 
+     # Print banner
+     print_banner(
+-        state["session_id"],
+-        state["workspace_dir"],
++        state.session_id,
++        state.workspace_dir,
+         resolved_model,
+         resolved_provider,
+         ui_backend,
+@@ -1830,7 +1826,7 @@ async def _async_interactive_loop(
+     _print_separator()
+ 
+     # ── Main REPL loop ──
+-    while state["running"]:
++    while state.running:
+         try:
+             user_input_raw: str = await pt_session.prompt_async(
+                 HTML("<ansiblue><b>❯</b></ansiblue> ")
+@@ -1849,7 +1845,7 @@ async def _async_interactive_loop(
+ 
+             if command is not None and command.name == "/exit":
+                 console.print("[dim]Goodbye! See you next time.[/dim]")
+-                state["running"] = False
++                state.stop()
+                 break
+ 
+             elif command is not None and command.name == "/help":
+@@ -1871,7 +1867,7 @@ async def _async_interactive_loop(
+             elif command is not None and command.name == "/run":
+                 run_result = _handle_run(command.arg)
+                 if run_result:
+-                    state["messages"].extend(run_result.history_messages)
++                    state.messages.extend(run_result.history_messages)
+                     await _persist_session_state(state, model=resolved_model)
+                 _print_separator()
+                 continue
+@@ -1937,13 +1933,13 @@ async def _async_interactive_loop(
+                 _apply_session_command_view(
+                     state,
+                     build_current_session_command_view(
+-                        session_id=state["session_id"],
+-                        workspace_dir=state["workspace_dir"],
++                        session_id=state.session_id,
++                        workspace_dir=state.workspace_dir,
+                         model=resolved_model,
+                         provider=resolved_provider,
+-                        messages=state["messages"],
+-                        session_metadata=state.get("session_metadata"),
+-                        pipeline_workspace=state.get("pipeline_workspace"),
++                        messages=state.messages,
++                        session_metadata=state.session_metadata,
++                        pipeline_workspace=state.pipeline_workspace or None,
+                         omicsclaw_dir=_OMICSCLAW_DIR,
+                     ),
+                 )
+@@ -1956,7 +1952,7 @@ async def _async_interactive_loop(
+                     state,
+                     build_session_title_command_view(
+                         command.arg,
+-                        session_metadata=state.get("session_metadata"),
++                        session_metadata=state.session_metadata,
+                     ),
+                 )
+                 await _persist_session_state(state, model=resolved_model)
+@@ -1968,7 +1964,7 @@ async def _async_interactive_loop(
+                     state,
+                     build_session_tag_command_view(
+                         command.arg,
+-                        session_metadata=state.get("session_metadata"),
++                        session_metadata=state.session_metadata,
+                     ),
+                 )
+                 await _persist_session_state(state, model=resolved_model)
+@@ -2004,7 +2000,7 @@ async def _async_interactive_loop(
+                     state,
+                     build_style_command_view(
+                         command.arg,
+-                        session_metadata=state.get("session_metadata"),
++                        session_metadata=state.session_metadata,
+                         omicsclaw_dir=str(_OMICSCLAW_DIR),
+                     ),
+                 )
+@@ -2024,9 +2020,9 @@ async def _async_interactive_loop(
+                 _apply_session_command_view(
+                     state,
+                     build_export_session_command_view(
+-                        state["session_id"],
+-                        state["messages"],
+-                        workspace_dir=state["workspace_dir"],
++                        state.session_id,
++                        state.messages,
++                        workspace_dir=state.workspace_dir,
+                     ),
+                 )
+                 _print_separator()
+@@ -2047,31 +2043,31 @@ async def _async_interactive_loop(
+             elif command is not None and command.name == "/tips":
+                 arg = command.arg.lower()
+                 if arg in ("on", ""):
+-                    state["tips_enabled"] = True
++                    state.set_tips(enabled=True)
+                     console.print("[green]💡 Inline knowledge tips: ON[/green]")
+                     try:
+                         from omicsclaw.knowledge.telemetry import get_telemetry
+-                        get_telemetry().log_tips_toggle(state["session_id"], True, state.get("tips_level", "basic"))
++                        get_telemetry().log_tips_toggle(state.session_id, True, state.tips_level)
+                     except Exception:
+                         pass
+                 elif arg == "off":
+-                    state["tips_enabled"] = False
++                    state.set_tips(enabled=False)
+                     console.print("[dim]💡 Inline knowledge tips: OFF[/dim]")
+                     try:
+                         from omicsclaw.knowledge.telemetry import get_telemetry
+-                        get_telemetry().log_tips_toggle(state["session_id"], False, state.get("tips_level", "basic"))
++                        get_telemetry().log_tips_toggle(state.session_id, False, state.tips_level)
+                     except Exception:
+                         pass
+                 elif arg.startswith("level"):
+                     level = arg[len("level"):].strip()
+-                    if level in ("basic", "expert"):
+-                        state["tips_level"] = level
++                    try:
++                        state.set_tips(level=level)
+                         console.print(f"[cyan]💡 Tips level set to: {level}[/cyan]")
+-                    else:
++                    except ValueError:
+                         console.print("[yellow]Usage: /tips level [basic|expert][/yellow]")
+                 else:
+-                    status = "ON" if state.get("tips_enabled", True) else "OFF"
+-                    level = state.get("tips_level", "basic")
++                    status = "ON" if state.tips_enabled else "OFF"
++                    level = state.tips_level
+                     console.print(f"[dim]💡 Tips: {status} (level: {level})[/dim]")
+                     console.print("[dim]  /tips on     — enable inline knowledge tips[/dim]")
+                     console.print("[dim]  /tips off    — disable tips[/dim]")
+@@ -2155,11 +2151,11 @@ async def _async_interactive_loop(
+ 
+         except KeyboardInterrupt:
+             console.print("\n[dim]Goodbye! See you next time.[/dim]")
+-            state["running"] = False
++            state.running = False
+             break
+         except EOFError:
+             console.print("\n[dim]Goodbye![/dim]")
+-            state["running"] = False
++            state.running = False
+             break
+         except Exception as e:
+             console.print(f"[red]Unexpected error: {escape(str(e))}[/red]")
+@@ -2167,7 +2163,7 @@ async def _async_interactive_loop(
+             _print_separator()
+ 
+     # Final session save on exit
+-    if state["messages"]:
++    if state.messages:
+         await _persist_session_state(state, model=resolved_model)
+ 
+ 
+diff --git a/tests/test_interactive_loop.py b/tests/test_interactive_loop.py
+index 1f5d3461..cf8f7444 100644
+--- a/tests/test_interactive_loop.py
++++ b/tests/test_interactive_loop.py
+@@ -14,6 +14,7 @@
+ 
+ from omicsclaw.core.registry import OmicsRegistry
+ from omicsclaw.interactive import interactive
++from omicsclaw.interactive._session_state import SessionState
+ from omicsclaw.interactive._session_command_support import (
+     SessionCommandView,
+     SessionListEntry,
+@@ -368,7 +369,10 @@ async def _build_session_list(limit: int = 20, *, query: str = "") -> SessionLis
+     )
+     monkeypatch.setattr(interactive, "console", Console(file=output, force_terminal=False))
+ 
+-    await interactive._handle_resume("brain", {"session_id": "current"})
++    await interactive._handle_resume(
++        "brain",
++        SessionState(session_id="current", workspace_dir="/tmp", ui_backend="cli"),
++    )
+ 
+     assert calls == ["brain", "abc12345"]
+     assert [view.session_id for view in applied] == ["abc12345"]
+@@ -641,12 +645,11 @@ async def _fake_llm_tool_loop(
+ 
+ def test_handle_doctor_applies_shared_diagnostics_view(monkeypatch):
+     captured: dict[str, object] = {}
+-    state = {
+-        "workspace_dir": "/tmp/workspace",
+-        "pipeline_workspace": "",
+-        "session_metadata": {},
+-        "messages": [],
+-    }
++    state = SessionState(
++        session_id="doctor",
++        workspace_dir="/tmp/workspace",
++        ui_backend="cli",
++    )
+ 
+     monkeypatch.setattr(interactive, "_active_pipeline_workspace", lambda state: "/tmp/pipeline")
+ 
+@@ -670,12 +673,13 @@ def _fake_build_doctor_command_view(**kwargs):
+ 
+ def test_handle_context_passes_session_state_to_shared_builder(monkeypatch):
+     captured: dict[str, object] = {}
+-    state = {
+-        "workspace_dir": "/tmp/workspace",
+-        "pipeline_workspace": "",
+-        "session_metadata": {"active_style": "teaching"},
+-        "messages": [{"role": "user", "content": "inspect sample.h5ad"}],
+-    }
++    state = SessionState(
++        session_id="ctx",
++        workspace_dir="/tmp/workspace",
++        ui_backend="cli",
++        session_metadata={"active_style": "teaching"},
++        messages=[{"role": "user", "content": "inspect sample.h5ad"}],
++    )
+ 
+     monkeypatch.setattr(interactive, "_active_pipeline_workspace", lambda state: "/tmp/pipeline")
+     monkeypatch.setattr(interactive, "_active_output_style", lambda state: "teaching")
+@@ -704,7 +708,7 @@ def _fake_build_context_command_view(arg, **kwargs):
+ 
+ def test_handle_usage_applies_shared_usage_view(monkeypatch):
+     captured: dict[str, object] = {}
+-    state = {"session_id": "demo"}
++    state = SessionState(session_id="demo", workspace_dir="/tmp", ui_backend="cli")
+ 
+     monkeypatch.setattr(
+         interactive,
+diff --git a/tests/test_session_state.py b/tests/test_session_state.py
+new file mode 100644
+index 00000000..e2ed1fdd
+--- /dev/null
++++ b/tests/test_session_state.py
+@@ -0,0 +1,102 @@
++"""Invariant tests for the typed ``SessionState`` module that replaces the
++``state: dict[str, Any]`` pattern in ``omicsclaw/interactive/interactive.py``.
++
++These tests exercise the dataclass shape, defaults, invariants, and the
++documented transition methods (``stop``, ``set_tips``, ``set_pipeline_workspace``).
++"""
++
++from __future__ import annotations
++
++from typing import Any
++
++import pytest
++
++from omicsclaw.interactive._session_state import SessionState
++
++
++# --- Construction & defaults --------------------------------------------------
++
++def test_session_state_required_fields_have_no_default():
++    """``session_id``, ``workspace_dir``, ``ui_backend`` are required."""
++    with pytest.raises(TypeError):
++        SessionState()  # type: ignore[call-arg]
++
++
++def test_session_state_optional_fields_have_documented_defaults():
++    s = SessionState(session_id="sess-1", workspace_dir="/tmp/x", ui_backend="cli")
++    assert s.pipeline_workspace == ""
++    assert s.session_metadata == {}
++    assert s.messages == []
++    assert s.running is True
++    assert s.tips_enabled is True
++    assert s.tips_level == "basic"
++
++
++def test_session_state_default_collections_are_independent_per_instance():
++    """Mutable defaults must not leak across instances (avoid the classic
++    ``messages=[]`` shared-default footgun)."""
++    a = SessionState(session_id="a", workspace_dir="/x", ui_backend="cli")
++    b = SessionState(session_id="b", workspace_dir="/y", ui_backend="tui")
++    a.messages.append({"role": "user", "content": "hi"})
++    a.session_metadata["k"] = "v"
++    assert b.messages == []
++    assert b.session_metadata == {}
++
++
++# --- Transitions --------------------------------------------------------------
++
++def test_stop_marks_session_not_running():
++    s = SessionState(session_id="x", workspace_dir="/w", ui_backend="cli")
++    assert s.running is True
++    s.stop()
++    assert s.running is False
++
++
++def test_set_tips_enabled_toggles_the_flag():
++    s = SessionState(session_id="x", workspace_dir="/w", ui_backend="cli")
++    s.set_tips(enabled=False)
++    assert s.tips_enabled is False
++    s.set_tips(enabled=True)
++    assert s.tips_enabled is True
++
++
++def test_set_tips_level_validates_input():
++    """Only ``basic`` / ``expert`` are valid levels (matching the
++    /tips level slash-command's accepted values). Other inputs must raise so
++    a typo never silently leaves the session in a malformed state."""
++    s = SessionState(session_id="x", workspace_dir="/w", ui_backend="cli")
++    s.set_tips(level="expert")
++    assert s.tips_level == "expert"
++    s.set_tips(level="basic")
++    assert s.tips_level == "basic"
++    with pytest.raises(ValueError):
++        s.set_tips(level="verbose")  # was the wrong default before fix
++    with pytest.raises(ValueError):
++        s.set_tips(level="not-a-level")
++
++
++def test_set_tips_with_none_arguments_is_idempotent():
++    """``set_tips()`` with no kwargs (or all-None) must be a no-op so callers
++    that forward optional CLI args don't accidentally clear the level."""
++    s = SessionState(
++        session_id="x", workspace_dir="/w", ui_backend="cli",
++        tips_enabled=False, tips_level="expert",
++    )
++    s.set_tips()
++    assert s.tips_enabled is False
++    assert s.tips_level == "expert"
++    s.set_tips(enabled=None, level=None)
++    assert s.tips_enabled is False
++    assert s.tips_level == "expert"
++
++
++def test_set_pipeline_workspace_normalizes_none_to_empty_string():
++    """The legacy state dict stored ``""`` for "no active workspace"; the
++    helper accepts None for ergonomics and coerces to that representation."""
++    s = SessionState(session_id="x", workspace_dir="/w", ui_backend="cli")
++    s.set_pipeline_workspace("/some/path")
++    assert s.pipeline_workspace == "/some/path"
++    s.set_pipeline_workspace(None)
++    assert s.pipeline_workspace == ""
++    s.set_pipeline_workspace("")
++    assert s.pipeline_workspace == ""

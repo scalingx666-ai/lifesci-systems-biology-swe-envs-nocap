@@ -1,0 +1,1859 @@
+diff --git a/knowledge_base/knowhows/KH-sc-markers-guardrails.md b/knowledge_base/knowhows/KH-sc-markers-guardrails.md
+index 52b14573..cee5abec 100644
+--- a/knowledge_base/knowhows/KH-sc-markers-guardrails.md
++++ b/knowledge_base/knowhows/KH-sc-markers-guardrails.md
+@@ -2,7 +2,7 @@
+ doc_id: sc-markers-guardrails
+ title: Single-Cell Marker Guardrails
+ doc_type: knowhow
+-critical_rule: MUST explain the cluster grouping and ranking method before running sc-markers
++critical_rule: MUST explain the grouping column and ranking method before running sc-markers
+ domains: [singlecell]
+ related_skills: [sc-markers]
+ phases: [before_run, on_warning, after_run]
+@@ -14,11 +14,11 @@ source_urls:
+ 
+ # Single-Cell Marker Guardrails
+ 
+-- **Inspect first**: confirm the grouping column really represents clusters or labels worth ranking against.
+-- **Standardize external inputs first when provenance is unclear**: recommend `sc-standardize-input` for object hygiene, but marker ranking still depends on a meaningful grouping column.
+-- **Key wrapper controls**: explain `groupby`, `method`, `n_genes`, and `n_top` before running.
++- **Inspect first**: confirm that the grouping column truly represents clusters or labels worth ranking.
++- **Use normalized expression**: this workflow should rank markers from normalized `adata.X`, not silently switch to raw counts.
++- **Key wrapper controls**: explain `groupby`, `method`, `n_genes`, `n_top`, and the public filtering thresholds before running.
+ - **Use method-correct language**: `wilcoxon`, `t-test`, and `logreg` are alternative ranking modes for the same cluster-marker question.
+-- **Explain expression-source behavior honestly**: when `adata.raw` exists, the wrapper may prefer it automatically; do not hide that source choice from the user.
+-- **Do not overclaim biological certainty**: top-ranked markers are candidate discriminative genes, not final cell-type labels by themselves.
+-- **Do not invent unsupported thresholds**: this wrapper does not expose a large matrix of extra rank-gene parameters beyond the public flags above.
++- **Do not overclaim certainty**: top-ranked markers are candidate discriminative genes, not final cell-type labels by themselves.
++- **Do not confuse with condition DE**: if the user wants treated-vs-control, point them to `sc-de`.
++- **Point to the next step**: after reviewing markers, the usual next branch is `sc-cell-annotation`.
+ - **For detailed parameter strategies**: see `knowledge_base/skill-guides/singlecell/sc-markers.md`.
+diff --git a/knowledge_base/skill-guides/singlecell/sc-markers.md b/knowledge_base/skill-guides/singlecell/sc-markers.md
+index 63aac330..a5c90abe 100644
+--- a/knowledge_base/skill-guides/singlecell/sc-markers.md
++++ b/knowledge_base/skill-guides/singlecell/sc-markers.md
+@@ -10,83 +10,38 @@ priority: 0.8
+ 
+ # OmicsClaw Skill Guide — SC Markers
+ 
+-**Status**: implementation-aligned guide derived from the current OmicsClaw
+-`sc-markers` skill. This guide is about cluster-level marker ranking, not
+-replicate-aware condition DE.
++## When To Use It
+ 
+-## Purpose
++Use this skill after clustering when you want to know which genes best distinguish each cluster or label.
+ 
+-Use this guide when you need to decide:
+-- whether the user wants cluster markers or condition DE
+-- which ranking method is the best first pass
+-- which output parameters matter for interpretation
++Common OmicsClaw path:
+ 
+-## Step 1: Inspect The Data First
++1. `sc-qc`
++2. `sc-preprocessing`
++3. optional `sc-batch-integration`
++4. `sc-clustering`
++5. `sc-markers`
++6. `sc-cell-annotation`
+ 
+-Key properties to check:
+-- **Grouping column**:
+-  - `groupby` should represent meaningful clusters or labels
+-- **Upstream clustering quality**:
+-  - poor clusters lead to poor markers
+-- **Expression state**:
+-  - the wrapper expects preprocessed single-cell data
+-- **Expression source**:
+-  - if `adata.raw` exists, the wrapper may use it instead of `adata.X`; mention that explicitly
++## Method Choice
+ 
+-Important implementation notes in current OmicsClaw:
+-- methods are `wilcoxon`, `t-test`, and `logreg`
+-- `groupby` is the core scientific parameter
+-- `n_genes` and `n_top` mainly control exported results and visualization scope
++| Method | Best first use | Main public controls | Main caveat |
++|--------|----------------|----------------------|-------------|
++| `wilcoxon` | safest first-pass cluster markers | `groupby`, `n_genes`, `n_top`, marker filters | exploratory, not replicate-aware |
++| `t-test` | parametric alternative | `groupby`, `n_genes`, `n_top`, marker filters | more sensitive to assumptions |
++| `logreg` | discriminative feature ranking | `groupby`, `n_genes`, `n_top`, marker filters | do not over-sell as a minimal marker-panel selector |
+ 
+-## Step 2: Pick The Method Deliberately
++## How To Explain Parameters
+ 
+-| Method | Best first use | Strong starting parameters | Main caveat |
+-|--------|----------------|----------------------------|-------------|
+-| **wilcoxon** | Safest first-pass cluster marker ranking | `groupby`, `n_genes`, `n_top` | Still exploratory, not replicate-aware |
+-| **t-test** | Parametric alternative when users want a simple mean-shift test | `groupby`, `n_genes`, `n_top` | More sensitive to distribution assumptions |
+-| **logreg** | When users want classification-style marker ranking | `groupby`, `n_genes`, `n_top` | Do not oversell as minimal marker-panel selection |
++Start with:
++- which grouping column will be ranked (`groupby`)
++- which ranking mode will be used (`method`)
++- how many genes will be exported (`n_genes`, `n_top`)
++- how strict the exported marker filter will be (`min_in_group_fraction`, `min_fold_change`, `max_out_group_fraction`)
+ 
+-## Step 3: Always Show A Parameter Summary Before Running
++## What To Say After The Run
+ 
+-```text
+-About to run cluster marker discovery
+-  Method: wilcoxon
+-  Parameters: groupby=leiden, n_genes=all, n_top=10
+-  Note: this skill is for cluster markers, not replicate-aware condition DE.
+-```
+-
+-## Step 4: Method-Specific Tuning Rules
+-
+-Tune in this order:
+-1. `groupby`
+-2. `method`
+-3. `n_genes`
+-4. `n_top`
+-
+-Guidance:
+-- treat `groupby` as the most important decision because it defines the biological comparison
+-- start with `wilcoxon` unless the user has a strong reason to prefer another ranking mode
+-- use `n_genes` to control export breadth
+-- use `n_top` to control summary tables and plots
+-- if `groupby` is not obviously the main clustering column, stop and ask instead of guessing
+-
+-Important warnings:
+-- do not present this as condition-aware DE
+-- do not claim low-level Scanpy ranking knobs are publicly exposed here
+-
+-## Step 5: What To Say After The Run
+-
+-- If markers look weak: question cluster quality before blaming the ranking test.
+-- If too many markers are exported: reduce `n_genes` or rely on `n_top` for summaries.
+-- If users want treated-vs-control DE: redirect them to `sc-de`.
+-
+-## Step 6: Explain Outputs Using Method-Correct Language
+-
+-- describe marker tables as cluster-discriminative genes
+-- describe the heatmap/dotplot as visualization summaries, not validation by themselves
+-- describe `adata_with_markers.h5ad` as the same AnnData with marker-related metadata preserved for reuse
+-
+-## Official References
+-
+-- https://scanpy.readthedocs.io/en/stable/api/scanpy.tl.rank_genes_groups.html
+-- https://scanpy.readthedocs.io/en/1.9.x/generated/scanpy.tl.rank_genes_groups.html
++- Review the top marker table and dotplot first.
++- If markers look weak, question cluster quality before blaming the test.
++- If users want formal treated-vs-control results, redirect to `sc-de`.
++- If cluster identity is still unclear, continue to `sc-cell-annotation` with these markers in hand.
+diff --git a/omicsclaw/core/registry.py b/omicsclaw/core/registry.py
+index 9fb159bc..89bab924 100644
+--- a/omicsclaw/core/registry.py
++++ b/omicsclaw/core/registry.py
+@@ -1004,7 +1004,10 @@ def ensure_registry_loaded(skills_dir: Path | None = None) -> OmicsRegistry:
+         "script": SKILLS_DIR / "singlecell" / "scrna" / "sc-markers" / "sc_markers.py",
+         "demo_args": ["--demo"],
+         "description": "Find marker genes for cell clusters using Wilcoxon, t-test, or logistic regression",
+-        "allowed_extra_flags": {"--groupby", "--method", "--n-genes", "--n-top"},
++        "allowed_extra_flags": {
++            "--groupby", "--method", "--n-genes", "--n-top",
++            "--min-in-group-fraction", "--min-fold-change", "--max-out-group-fraction",
++        },
+         "requires_preprocessed": True,
+         "saves_h5ad": True,
+     },
+diff --git a/skills/singlecell/_lib/markers.py b/skills/singlecell/_lib/markers.py
+index 75ae307f..1c70092f 100644
+--- a/skills/singlecell/_lib/markers.py
++++ b/skills/singlecell/_lib/markers.py
+@@ -35,7 +35,7 @@ def find_all_cluster_markers(
+     use_raw: bool | None = None,
+     layer: Optional[str] = None,
+ ) -> pd.DataFrame:
+-    """Find marker genes for all clusters (one-vs-rest).
++    """Find marker genes for all groups (one-vs-rest).
+ 
+     Runs :func:`scanpy.tl.rank_genes_groups` followed by
+     :func:`scanpy.tl.filter_rank_genes_groups` to produce a filtered
+@@ -44,7 +44,7 @@ def find_all_cluster_markers(
+     Parameters
+     ----------
+     adata
+-        AnnData with log-normalized data in ``adata.raw`` or ``adata.X``.
++        AnnData with normalized expression in ``adata.X``.
+     cluster_key
+         Column in ``adata.obs`` containing cluster labels.
+     method
+@@ -59,7 +59,8 @@ def find_all_cluster_markers(
+     max_out_group_fraction
+         Maximum fraction of cells outside the group expressing the gene.
+     use_raw
+-        Use ``adata.raw`` for the test.
++        Use ``adata.raw`` for the test. OmicsClaw marker workflows now prefer
++        normalized ``adata.X`` by default.
+     layer
+         Layer to use instead of ``X``.
+ 
+@@ -86,7 +87,7 @@ def find_all_cluster_markers(
+ 
+     # --- Run rank_genes_groups ---
+     if use_raw is None:
+-        use_raw = adata.raw is not None and adata.raw.shape == adata.shape
++        use_raw = False
+ 
+     kwargs: dict = dict(
+         groupby=cluster_key,
+@@ -120,6 +121,9 @@ def find_all_cluster_markers(
+             markers_df = sc.get.rank_genes_groups_df(adata, group=None, key=result_key)
+             # Drop rows where gene name is NaN (filtered out)
+             markers_df = markers_df.dropna(subset=["names"])
++            if markers_df.empty:
++                logger.warning("Filtered marker table is empty; falling back to unfiltered rank_genes_groups output.")
++                markers_df = sc.get.rank_genes_groups_df(adata, group=None)
+         else:
+             markers_df = sc.get.rank_genes_groups_df(adata, group=None)
+     except Exception as exc:
+@@ -133,7 +137,7 @@ def find_all_cluster_markers(
+             logger.info("  Percentage-of-cells data available")
+ 
+     n_total = len(markers_df)
+-    n_per_cluster = markers_df.groupby("group").size()
++    n_per_cluster = markers_df.groupby("group", observed=False).size()
+     logger.info(
+         "  Total markers: %d (per cluster: min=%d, max=%d, median=%d)",
+         n_total,
+diff --git a/skills/singlecell/_lib/preflight.py b/skills/singlecell/_lib/preflight.py
+index 35ff19ec..4acbf263 100644
+--- a/skills/singlecell/_lib/preflight.py
++++ b/skills/singlecell/_lib/preflight.py
+@@ -11,6 +11,7 @@
+ 
+ from .adata_utils import (
+     build_standardization_recommendation,
++    get_matrix_contract,
+     get_input_contract,
+     matrix_kind_is_count_like,
+     matrix_kind_is_normalized,
+@@ -1027,34 +1028,95 @@ def preflight_sc_filter(
+ def preflight_sc_markers(
+     adata: AnnData,
+     *,
+-    groupby: str,
++    groupby: str | None,
++    method: str,
++    n_genes: int | None,
++    n_top: int,
++    min_in_group_fraction: float,
++    min_fold_change: float,
++    max_out_group_fraction: float,
+     source_path: str | None = None,
+ ) -> PreflightDecision:
+     decision = PreflightDecision("sc-markers")
+     _add_standardization_guidance(decision, adata, source_path=source_path)
+ 
+-    if groupby not in adata.obs.columns:
+-        candidates = _obs_candidates(adata, "cluster") + _obs_candidates(adata, "cell_type")
+-        if candidates:
++    matrix_contract = get_matrix_contract(adata)
++    primary_cluster_key = matrix_contract.get("primary_cluster_key")
++    candidates = []
++    if primary_cluster_key and primary_cluster_key in adata.obs.columns:
++        candidates.append(str(primary_cluster_key))
++    for key in _obs_candidates(adata, "cluster") + _obs_candidates(adata, "cell_type"):
++        if key not in candidates:
++            candidates.append(key)
++
++    if groupby:
++        if groupby not in adata.obs.columns:
+             decision.require_field(
+                 "groupby",
+                 f"`--groupby {groupby}` was not found. Confirm which grouping column to use: {_format_candidates(candidates)}.",
+                 aliases=["groupby", "cluster_key"],
+             )
++        elif adata.obs[groupby].astype(str).nunique(dropna=False) < 2:
++            decision.block(
++                f"`--groupby {groupby}` has fewer than two groups, so marker ranking would not be meaningful."
++            )
++    else:
++        if len(candidates) > 1:
++            decision.require_field(
++                "groupby",
++                f"`sc-markers` needs a grouping column. Multiple candidates are available: {_format_candidates(candidates)}. Confirm which one should drive marker ranking.",
++                aliases=["groupby", "cluster_key"],
++                choices=candidates,
++            )
++        elif len(candidates) == 1:
++            if adata.obs[candidates[0]].astype(str).nunique(dropna=False) < 2:
++                decision.block(
++                    f"`{candidates[0]}` has fewer than two groups, so marker ranking would not be meaningful."
++                )
++            decision.add_guidance(
++                f"`sc-markers` will use `{candidates[0]}` as the grouping column."
++            )
+         else:
+             decision.block(
+                 "Marker detection requires an existing grouping column in `adata.obs` such as `leiden` or `cell_type`."
+             )
+ 
+-    if _declared_raw_is_normalized(adata):
++    if _declared_x_is_normalized(adata):
++        pass
++    elif not matrix_looks_count_like(adata.X):
+         decision.add_guidance(
+-            "`sc-markers` will prefer `adata.raw` over `adata.X` when available. Make sure that is the expression state you want for marker ranking."
++            "This object does not declare a matrix contract yet, but `adata.X` does not look raw count-like, so marker ranking will treat it as normalized expression."
+         )
+-    elif not _declared_x_is_normalized(adata):
++    else:
+         decision.require_confirmation(
+             "Marker detection expects normalized expression, but this object currently looks count-like. Run `sc-preprocessing` first or confirm that you want to continue anyway."
+         )
+ 
++    if n_top <= 0:
++        decision.block("`--n-top` must be greater than 0.")
++    if n_genes is not None and n_genes <= 0:
++        decision.block("`--n-genes` must be greater than 0 when provided.")
++    if min_in_group_fraction < 0 or min_in_group_fraction > 1:
++        decision.block("`--min-in-group-fraction` must be between 0 and 1.")
++    if max_out_group_fraction < 0 or max_out_group_fraction > 1:
++        decision.block("`--max-out-group-fraction` must be between 0 and 1.")
++
++    decision.add_guidance(
++        "`sc-markers` is usually the step after clustering and before final annotation. It ranks cluster-discriminative genes, not replicate-aware condition DE."
++    )
++    decision.add_guidance(
++        f"Current first-pass settings: `method={method}`, `n_genes={n_genes if n_genes is not None else 'all'}`, `n_top={n_top}`, `min_in_group_fraction={min_in_group_fraction}`, `min_fold_change={min_fold_change}`, `max_out_group_fraction={max_out_group_fraction}`."
++    )
++    if method == "wilcoxon":
++        decision.add_guidance("`wilcoxon` is the safest first-pass default for cluster marker ranking.")
++    elif method == "t-test":
++        decision.add_guidance("`t-test` is a more parametric alternative and is more sensitive to distributional assumptions.")
++    elif method == "logreg":
++        decision.add_guidance("`logreg` provides classification-style ranking and may emphasize discriminative genes rather than large fold changes.")
++    decision.add_guidance(
++        "After marker review, the usual next step is `sc-cell-annotation`; if the question is treated-vs-control rather than cluster identity, use `sc-de`."
++    )
++
+     return decision
+ 
+ 
+diff --git a/skills/singlecell/_lib/viz/__init__.py b/skills/singlecell/_lib/viz/__init__.py
+index 6d74bd70..9521ca57 100644
+--- a/skills/singlecell/_lib/viz/__init__.py
++++ b/skills/singlecell/_lib/viz/__init__.py
+@@ -10,6 +10,13 @@
+     plot_embedding_comparison,
+     plot_embedding_continuous,
+ )
++from .markers import (
++    plot_marker_cluster_summary,
++    plot_marker_dotplot,
++    plot_marker_effect_summary,
++    plot_marker_fraction_scatter,
++    plot_marker_heatmap,
++)
+ from .doublet import (
+     plot_doublet_call_summary,
+     plot_doublet_score_by_group,
+@@ -57,6 +64,11 @@
+     "plot_embedding_continuous",
+     "plot_cluster_size_summary",
+     "plot_cluster_qc_heatmap",
++    "plot_marker_heatmap",
++    "plot_marker_dotplot",
++    "plot_marker_effect_summary",
++    "plot_marker_fraction_scatter",
++    "plot_marker_cluster_summary",
+     "plot_doublet_score_distribution",
+     "plot_doublet_call_summary",
+     "plot_doublet_score_by_group",
+diff --git a/skills/singlecell/_lib/viz/markers.py b/skills/singlecell/_lib/viz/markers.py
+new file mode 100644
+index 00000000..cd97ee9e
+--- /dev/null
++++ b/skills/singlecell/_lib/viz/markers.py
+@@ -0,0 +1,396 @@
++"""Marker-specific visualization helpers for single-cell downstream skills."""
++
++from __future__ import annotations
++
++import logging
++from pathlib import Path
++from typing import Union
++
++import numpy as np
++import pandas as pd
++
++from .core import QC_PALETTE, apply_singlecell_theme, save_figure
++from .embedding import make_categorical_palette
++
++logger = logging.getLogger(__name__)
++
++
++def _choose_effect_column(markers: pd.DataFrame) -> str:
++    if "logfoldchanges" in markers.columns:
++        valid = pd.to_numeric(markers["logfoldchanges"], errors="coerce").notna()
++        if valid.any() and valid.mean() >= 0.6:
++            return "logfoldchanges"
++    if "scores" in markers.columns and pd.to_numeric(markers["scores"], errors="coerce").notna().any():
++        return "scores"
++    if "logfoldchanges" in markers.columns and pd.to_numeric(markers["logfoldchanges"], errors="coerce").notna().any():
++        return "logfoldchanges"
++    return "scores"
++
++
++def _top_markers(markers: pd.DataFrame, n_top: int, *, group_col: str = "group") -> pd.DataFrame:
++    if markers.empty or group_col not in markers.columns:
++        return markers.iloc[0:0].copy()
++    frame = markers.copy()
++    sort_cols: list[str] = []
++    ascending: list[bool] = []
++    if "pvals_adj" in frame.columns and pd.to_numeric(frame["pvals_adj"], errors="coerce").notna().any():
++        sort_cols.append("pvals_adj")
++        ascending.append(True)
++    effect_col = _choose_effect_column(frame)
++    sort_cols.append(effect_col)
++    ascending.append(False)
++    frame = frame.sort_values(sort_cols, ascending=ascending)
++    return frame.groupby(group_col, sort=False, observed=False).head(n_top).copy()
++
++
++def plot_marker_cluster_summary(
++    cluster_summary_df: pd.DataFrame,
++    output_dir: Union[str, Path],
++    *,
++    filename: str = "marker_cluster_summary.png",
++) -> Path | None:
++    """Plot number of exported markers per cluster plus the top gene label."""
++    import matplotlib.pyplot as plt
++
++    output_dir = Path(output_dir)
++    if cluster_summary_df.empty:
++        logger.warning("Cluster marker summary is empty; skipping %s", filename)
++        return None
++
++    frame = cluster_summary_df.copy().sort_values("n_markers", ascending=True)
++    apply_singlecell_theme()
++    height = max(4.2, 0.45 * len(frame) + 1.2)
++    fig, ax = plt.subplots(figsize=(8.8, height))
++    use_metric = "n_markers"
++    xlabel = "Marker genes exported"
++    title = "Marker counts by group"
++    if frame["n_markers"].nunique(dropna=False) <= 1 and "top_effect" in frame.columns:
++        use_metric = "top_effect"
++        xlabel = "Top marker effect"
++        title = "Top marker strength by group"
++
++    bars = ax.barh(frame["group"].astype(str), frame[use_metric], color=QC_PALETTE["bar"], alpha=0.92)
++    ax.set_xlabel(xlabel)
++    ax.set_ylabel("Group")
++    ax.set_title(title, fontsize=17, pad=14)
++
++    xmax = max(float(frame[use_metric].max()), 1.0)
++    for bar, gene in zip(bars, frame["top_gene"].astype(str)):
++        ax.text(
++            bar.get_width() + xmax * 0.015,
++            bar.get_y() + bar.get_height() / 2,
++            gene,
++            va="center",
++            fontsize=9,
++            color="#334155",
++        )
++    fig.tight_layout()
++    return save_figure(fig, output_dir, filename)
++
++
++def plot_marker_effect_summary(
++    markers: pd.DataFrame,
++    output_dir: Union[str, Path],
++    *,
++    n_top: int = 3,
++    filename: str = "marker_effect_summary.png",
++) -> Path | None:
++    """Plot top marker effects grouped by cluster."""
++    import matplotlib.pyplot as plt
++
++    output_dir = Path(output_dir)
++    top_df = _top_markers(markers, n_top)
++    if top_df.empty or "group" not in top_df.columns or "names" not in top_df.columns:
++        logger.warning("Top marker summary is empty; skipping %s", filename)
++        return None
++
++    effect_col = _choose_effect_column(top_df)
++    top_df[effect_col] = pd.to_numeric(top_df[effect_col], errors="coerce")
++    top_df = top_df.dropna(subset=[effect_col])
++    if top_df.empty:
++        return None
++
++    top_df["label"] = top_df["group"].astype(str) + " · " + top_df["names"].astype(str)
++    palette = make_categorical_palette(top_df["group"].astype(str).tolist())
++    colors = [palette.get(str(group), QC_PALETTE["counts"]) for group in top_df["group"]]
++
++    apply_singlecell_theme()
++    height = max(5.0, 0.34 * len(top_df) + 1.5)
++    fig, ax = plt.subplots(figsize=(9.4, height))
++    bars = ax.barh(top_df["label"], top_df[effect_col], color=colors, alpha=0.95)
++    ax.set_xlabel("log fold change" if effect_col == "logfoldchanges" else "ranking score")
++    ax.set_ylabel("")
++    ax.set_title("Top marker effects by group", fontsize=17, pad=14)
++
++    xpad = max(abs(float(top_df[effect_col].max())), 1.0) * 0.03
++    for bar, gene in zip(bars, top_df["names"].astype(str)):
++        ax.text(
++            bar.get_width() + xpad if bar.get_width() >= 0 else bar.get_width() - xpad,
++            bar.get_y() + bar.get_height() / 2,
++            gene,
++            va="center",
++            ha="left" if bar.get_width() >= 0 else "right",
++            fontsize=8.5,
++            color="#1F2937",
++        )
++    fig.tight_layout()
++    return save_figure(fig, output_dir, filename)
++
++
++def plot_marker_fraction_scatter(
++    markers: pd.DataFrame,
++    output_dir: Union[str, Path],
++    *,
++    n_top: int = 5,
++    filename: str = "marker_fraction_scatter.png",
++) -> Path | None:
++    """Plot pct-in-group versus pct-out-group for top markers when available."""
++    import matplotlib.pyplot as plt
++    import seaborn as sns
++
++    output_dir = Path(output_dir)
++    required = {"pct_nz_group", "pct_nz_reference", "group", "names"}
++    if not required.issubset(markers.columns):
++        return None
++
++    frame = _top_markers(markers, n_top)
++    if frame.empty:
++        return None
++
++    frame["pct_nz_group"] = pd.to_numeric(frame["pct_nz_group"], errors="coerce")
++    frame["pct_nz_reference"] = pd.to_numeric(frame["pct_nz_reference"], errors="coerce")
++    frame = frame.dropna(subset=["pct_nz_group", "pct_nz_reference"])
++    if frame.empty:
++        return None
++    if (
++        float(frame["pct_nz_group"].max() - frame["pct_nz_group"].min()) < 0.05
++        and float(frame["pct_nz_reference"].max() - frame["pct_nz_reference"].min()) < 0.05
++    ):
++        logger.warning("Marker prevalence scatter has too little variation; skipping %s", filename)
++        return None
++
++    effect_col = _choose_effect_column(frame)
++    effect = pd.to_numeric(frame[effect_col], errors="coerce").fillna(0.0).abs()
++    size = 40 + 70 * (effect / max(float(effect.max()), 1.0))
++
++    palette = make_categorical_palette(frame["group"].astype(str).tolist())
++    apply_singlecell_theme()
++    fig, ax = plt.subplots(figsize=(7.6, 6.2))
++    sns.scatterplot(
++        data=frame,
++        x="pct_nz_reference",
++        y="pct_nz_group",
++        hue="group",
++        palette=palette,
++        size=size,
++        sizes=(40, 120),
++        linewidth=0.4,
++        edgecolor="white",
++        alpha=0.88,
++        ax=ax,
++        legend="brief",
++    )
++    ax.plot([0, 1], [0, 1], linestyle="--", color="#94A3B8", alpha=0.7)
++    ax.set_xlabel("Fraction outside group")
++    ax.set_ylabel("Fraction inside group")
++    ax.set_title("Marker prevalence by group", fontsize=17, pad=14)
++    if ax.get_legend() is not None:
++        legend = ax.get_legend()
++        legend.set_bbox_to_anchor((1.02, 1.0))
++        legend._loc = 2
++        legend.set_frame_on(False)
++    fig.tight_layout()
++    return save_figure(fig, output_dir, filename)
++
++
++def plot_marker_heatmap(
++    adata,
++    markers: pd.DataFrame,
++    output_dir: Union[str, Path],
++    *,
++    groupby: str,
++    n_top: int = 10,
++    filename: str = "markers_heatmap.png",
++) -> Path | None:
++    """Plot a mean-expression heatmap for top markers per group."""
++    import matplotlib.pyplot as plt
++    import seaborn as sns
++
++    output_dir = Path(output_dir)
++    if groupby not in adata.obs.columns or "group" not in markers.columns or "names" not in markers.columns:
++        return None
++
++    top_df = _top_markers(markers, n_top)
++    genes = [gene for gene in top_df["names"].astype(str).tolist() if gene in adata.var_names]
++    genes = list(dict.fromkeys(genes))
++    if not genes:
++        return None
++
++    groups = [str(value) for value in pd.Index(adata.obs[groupby].astype(str)).unique().tolist()]
++    mean_expr = pd.DataFrame(index=groups, columns=genes, dtype=float)
++    for group in groups:
++        mask = adata.obs[groupby].astype(str) == group
++        subset = adata[mask, genes].X
++        if hasattr(subset, "toarray"):
++            subset = subset.toarray()
++        mean_expr.loc[group] = np.asarray(subset).mean(axis=0)
++
++    mean_expr = mean_expr.astype(float)
++    mean_expr_z = (mean_expr - mean_expr.mean(axis=0)) / (mean_expr.std(axis=0) + 1e-8)
++    apply_singlecell_theme()
++    g = sns.clustermap(
++        mean_expr_z.T,
++        cmap="RdBu_r",
++        center=0.0,
++        figsize=(11.5, max(6.0, 0.18 * len(genes) + 3.4)),
++        row_cluster=True,
++        col_cluster=False,
++        linewidths=0.25,
++        cbar_kws={"label": "gene-wise z-score"},
++    )
++    g.ax_heatmap.set_xlabel(groupby)
++    g.ax_heatmap.set_ylabel("Gene")
++    g.fig.suptitle(f"Top {n_top} marker genes per {groupby}", fontsize=16, y=1.02)
++    return save_figure(g.fig, output_dir, filename)
++
++
++def plot_marker_dotplot(
++    adata,
++    markers: pd.DataFrame,
++    output_dir: Union[str, Path],
++    *,
++    groupby: str,
++    n_top: int = 5,
++    filename: str = "markers_dotplot.png",
++) -> Path | None:
++    """Plot a custom block-ordered dotplot for top markers per group."""
++    import matplotlib.pyplot as plt
++    import seaborn as sns
++
++    output_dir = Path(output_dir)
++    if groupby not in adata.obs.columns or "group" not in markers.columns or "names" not in markers.columns:
++        return None
++
++    top_df = _top_markers(markers, n_top)
++    gene_blocks: list[tuple[str, list[str]]] = []
++    for group, group_df in top_df.groupby("group", sort=False, observed=False):
++        genes = [gene for gene in group_df["names"].astype(str).tolist() if gene in adata.var_names]
++        genes = list(dict.fromkeys(genes))
++        if genes:
++            gene_blocks.append((str(group), genes))
++    if not gene_blocks:
++        return None
++
++    apply_singlecell_theme()
++
++    ordered_groups = [str(value) for value in pd.Index(adata.obs[groupby].astype(str)).unique().tolist()]
++    gene_order: list[str] = []
++    source_group_labels: list[str] = []
++    block_midpoints: list[tuple[float, str]] = []
++    x_cursor = 0
++    for source_group, genes in gene_blocks:
++        start = x_cursor
++        for gene in genes:
++            gene_order.append(gene)
++            source_group_labels.append(source_group)
++            x_cursor += 1
++        block_midpoints.append(((start + x_cursor - 1) / 2.0, source_group))
++
++    records: list[dict[str, object]] = []
++    expr_cache: dict[str, np.ndarray] = {}
++    pct_cache: dict[str, np.ndarray] = {}
++    for gene in gene_order:
++        vec = adata[:, gene].X
++        if hasattr(vec, "toarray"):
++            vec = vec.toarray()
++        vec = np.asarray(vec).ravel()
++        expr_cache[gene] = vec
++        pct_cache[gene] = (vec > 0).astype(float)
++
++    for y_group in ordered_groups:
++        mask = (adata.obs[groupby].astype(str) == y_group).to_numpy()
++        for x_idx, gene in enumerate(gene_order):
++            expr = expr_cache[gene][mask]
++            pct = pct_cache[gene][mask]
++            mean_expr = float(np.mean(expr)) if expr.size else 0.0
++            frac_expr = float(np.mean(pct)) if pct.size else 0.0
++            records.append(
++                {
++                    "group": y_group,
++                    "gene": gene,
++                    "x": x_idx,
++                    "mean_expr": mean_expr,
++                    "frac_expr": frac_expr,
++                }
++            )
++
++    frame = pd.DataFrame(records)
++    if frame.empty:
++        return None
++
++    # Gene-wise min-max scaling makes different marker blocks comparable.
++    frame["mean_expr_scaled"] = (
++        frame.groupby("gene", observed=False)["mean_expr"]
++        .transform(lambda s: (s - s.min()) / (s.max() - s.min() + 1e-8))
++    )
++    frame["size"] = 10 + 180 * frame["frac_expr"].clip(lower=0, upper=1)
++
++    fig_width = max(12.0, 0.25 * len(gene_order) + 3.5)
++    fig_height = max(5.8, 0.55 * len(ordered_groups) + 2.8)
++    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
++    sns.scatterplot(
++        data=frame,
++        x="x",
++        y="group",
++        size="size",
++        sizes=(10, 190),
++        hue="mean_expr_scaled",
++        palette="YlOrRd",
++        linewidth=0.4,
++        edgecolor="white",
++        alpha=0.95,
++        legend=False,
++        ax=ax,
++    )
++
++    for split_idx in range(1, len(gene_order)):
++        if source_group_labels[split_idx] != source_group_labels[split_idx - 1]:
++            ax.axvline(split_idx - 0.5, color="#CBD5E1", linewidth=1.0, alpha=0.9)
++
++    ax.set_xticks(range(len(gene_order)))
++    ax.set_xticklabels(gene_order, rotation=90, fontsize=9)
++    ax.set_xlabel("Top marker genes grouped by source cluster")
++    ax.set_ylabel(groupby)
++    ax.set_title(f"Top {n_top} markers per {groupby}", fontsize=17, pad=18)
++
++    top_ax = ax.secondary_xaxis("top")
++    top_ax.set_xticks([mid for mid, _ in block_midpoints])
++    top_ax.set_xticklabels([label for _, label in block_midpoints], rotation=90, fontsize=10)
++    top_ax.set_xlabel("Source cluster of selected top markers")
++
++    # Size legend
++    size_levels = [0.2, 0.4, 0.6, 0.8]
++    size_handles = [
++        plt.scatter([], [], s=10 + 180 * level, color="#6B7280", alpha=0.75)
++        for level in size_levels
++    ]
++    size_labels = [f"{int(level * 100)}%" for level in size_levels]
++    legend1 = ax.legend(
++        size_handles,
++        size_labels,
++        title="Fraction of cells\nin group",
++        loc="upper left",
++        bbox_to_anchor=(1.01, 1.0),
++        frameon=False,
++    )
++    ax.add_artist(legend1)
++
++    # Colorbar
++    norm = plt.Normalize(vmin=0.0, vmax=1.0)
++    sm = plt.cm.ScalarMappable(cmap="YlOrRd", norm=norm)
++    sm.set_array([])
++    cbar = fig.colorbar(sm, ax=ax, fraction=0.03, pad=0.12)
++    cbar.set_label("Mean expression\nscaled per gene")
++
++    fig.tight_layout()
++    return save_figure(fig, output_dir, filename)
+diff --git a/skills/singlecell/scrna/sc-markers/SKILL.md b/skills/singlecell/scrna/sc-markers/SKILL.md
+index 23fefd3c..6978d520 100644
+--- a/skills/singlecell/scrna/sc-markers/SKILL.md
++++ b/skills/singlecell/scrna/sc-markers/SKILL.md
+@@ -1,12 +1,13 @@
+ ---
+ name: sc-markers
+ description: >-
+-  Find cluster marker genes from single-cell data using Scanpy-backed Wilcoxon,
+-  t-test, or logistic-regression ranking.
+-version: 0.4.0
++  Rank cluster marker genes from normalized single-cell AnnData using Scanpy-backed
++  Wilcoxon, t-test, or logistic-regression methods. The wrapper standardizes
++  outputs for downstream annotation and review.
++version: 0.5.0
+ author: OmicsClaw
+ license: MIT
+-tags: [singlecell, markers, differential-expression, annotation]
++tags: [singlecell, markers, cluster-markers, annotation, differential-expression]
+ metadata:
+   omicsclaw:
+     domain: singlecell
+@@ -15,61 +16,42 @@ metadata:
+       - "--method"
+       - "--n-genes"
+       - "--n-top"
++      - "--min-in-group-fraction"
++      - "--min-fold-change"
++      - "--max-out-group-fraction"
+     param_hints:
+       wilcoxon:
+         priority: "groupby -> n_genes -> n_top"
+-        params: ["groupby", "n_genes", "n_top"]
+-        defaults: {groupby: "leiden", n_top: 10}
+-        requires: ["cluster_labels_in_obs", "scanpy"]
++        params: ["groupby", "n_genes", "n_top", "min_in_group_fraction", "min_fold_change", "max_out_group_fraction"]
++        defaults: {n_genes: all, n_top: 10, min_in_group_fraction: 0.25, min_fold_change: 0.25, max_out_group_fraction: 0.5}
++        requires: ["normalized_expression", "group_labels_in_obs"]
+         tips:
+-          - "--method wilcoxon: Default non-parametric marker ranking path."
++          - "--method wilcoxon: safest first-pass default for cluster marker ranking."
+       t-test:
+         priority: "groupby -> n_genes -> n_top"
+-        params: ["groupby", "n_genes", "n_top"]
+-        defaults: {groupby: "leiden", n_top: 10}
+-        requires: ["cluster_labels_in_obs", "scanpy"]
++        params: ["groupby", "n_genes", "n_top", "min_in_group_fraction", "min_fold_change", "max_out_group_fraction"]
++        defaults: {n_genes: all, n_top: 10, min_in_group_fraction: 0.25, min_fold_change: 0.25, max_out_group_fraction: 0.5}
++        requires: ["normalized_expression", "group_labels_in_obs"]
+         tips:
+-          - "--method t-test: Parametric alternative for well-behaved inputs."
++          - "--method t-test: parametric alternative when users want a simple mean-shift test."
+       logreg:
+         priority: "groupby -> n_genes -> n_top"
+-        params: ["groupby", "n_genes", "n_top"]
+-        defaults: {groupby: "leiden", n_top: 10}
+-        requires: ["cluster_labels_in_obs", "scanpy"]
++        params: ["groupby", "n_genes", "n_top", "min_in_group_fraction", "min_fold_change", "max_out_group_fraction"]
++        defaults: {n_genes: all, n_top: 10, min_in_group_fraction: 0.25, min_fold_change: 0.25, max_out_group_fraction: 0.5}
++        requires: ["normalized_expression", "group_labels_in_obs"]
+         tips:
+-          - "--method logreg: Classification-style ranking path."
++          - "--method logreg: classification-style ranking for discriminative genes."
+     saves_h5ad: true
+     requires_preprocessed: true
+-    requires:
+-      bins: [python3]
+-      env: []
+-      config: []
+-    emoji: "S"
+-    homepage: https://github.com/OmicsClaw/OmicsClaw
+-    os: [macos, linux]
+-    install: []
+-    trigger_keywords:
+-      - marker genes
+-      - find markers
+-      - differential expression
+-      - cluster markers
+-      - cell type markers
+ ---
+ 
+ # Single-Cell Markers
+ 
+ ## Why This Exists
+ 
+-- Without it: users manually inspect cluster genes without a stable statistical contract.
+-- With it: marker ranking, top tables, and standard plots are generated in one run.
+-- Why OmicsClaw: the wrapper keeps cluster-level marker discovery separate from broader DE workflows.
+-
+-## Core Capabilities
+-
+-1. **Three marker-ranking modes**: Wilcoxon, t-test, and logistic regression.
+-2. **Cluster-focused interface**: one `groupby` contract for marker discovery across methods.
+-3. **Standard direct figure outputs**: heatmap, dotplot, and volcano-style summaries.
+-4. **Structured table exports**: full marker table plus configurable top-marker table.
+-5. **Downstream-ready export**: writes `adata_with_markers.h5ad`, report, result JSON, README, and notebook artifacts.
++- Without it: users jump straight from clusters to labels without a stable marker evidence layer.
++- With it: OmicsClaw exports cluster-level marker tables, summary figures, and a downstream-ready `processed.h5ad`.
++- Why OmicsClaw: it keeps marker ranking separate from replicate-aware condition DE.
+ 
+ ## Scope Boundary
+ 
+@@ -79,103 +61,55 @@ Implemented methods:
+ 2. `t-test`
+ 3. `logreg`
+ 
+-This skill is cluster-marker focused; for condition-aware DE use `sc-de`.
+-
+-## Input Formats
+-
+-| Format | Extension / form | Current wrapper support | Notes |
+-|--------|------------------|-------------------------|-------|
+-| AnnData | `.h5ad` | preferred | most realistic clustered-input path |
+-| Shared-loader formats | `.h5`, `.loom`, `.csv`, `.tsv`, 10x directory | technically loadable | still need cluster labels to be meaningful |
+-| Demo | `--demo` | yes | bundled fallback with synthetic clustering |
+-
+-### Input Expectations
+-
+-- The current skill expects a clustered or at least group-labeled AnnData object.
+-- Required metadata: a grouping column such as `leiden`.
+-- For best behavior, expression should already be normalized and clustering should already be biologically interpretable.
++This skill is for cluster or label marker ranking. For treated-vs-control or replicate-aware DE, use `sc-de`.
+ 
+-## Workflow
++## Input Expectations
+ 
+-1. Load clustered AnnData.
+-2. Rank genes for each cluster with the selected method.
+-3. Export full and top marker tables.
+-4. Generate heatmap, dotplot, and volcano-style summaries.
+-5. Save `adata_with_markers.h5ad`, `report.md`, and `result.json`.
+-
+-## CLI Reference
+-
+-```bash
+-python skills/singlecell/scrna/sc-markers/sc_markers.py \
+-  --input <data.h5ad> --groupby leiden --output <dir>
+-
+-python skills/singlecell/scrna/sc-markers/sc_markers.py \
+-  --input <data.h5ad> --groupby leiden --method t-test --output <dir>
+-
+-python skills/singlecell/scrna/sc-markers/sc_markers.py \
+-  --input <data.h5ad> --groupby leiden --n-genes 100 --n-top 10 --output <dir>
+-```
++- Expected state: normalized expression in `adata.X`
++- Typical upstream step: `sc-clustering`
++- Typical downstream step: `sc-cell-annotation`
++- Required metadata: an existing grouping column such as `leiden`, `louvain`, or `cell_type`
+ 
+ ## Public Parameters
+ 
+-| Parameter | Role | Notes |
+-|-----------|------|-------|
+-| `--groupby` | grouping column | core control for marker ranking |
+-| `--method` | ranking backend | `wilcoxon`, `t-test`, or `logreg` |
+-| `--n-genes` | maximum genes retained from ranking | affects exported ranking depth |
+-| `--n-top` | top-hit export size | controls the compact summary table |
+-
+-## Algorithm / Methodology
+-
+-Current OmicsClaw `sc-markers` always:
+-
+-1. validates the grouping column
+-2. runs Scanpy rank-gene logic with the selected statistical backend
+-3. exports both full and compact marker summaries
+-4. renders cluster-focused marker figures
+-
+-Important implementation notes:
+-
+-- this skill is for cluster-marker discovery, not replicate-aware condition DE
+-- the same grouping column drives ranking and figure generation
++- `--groupby`
++- `--method`
++- `--n-genes`
++- `--n-top`
++- `--min-in-group-fraction`
++- `--min-fold-change`
++- `--max-out-group-fraction`
+ 
+ ## Output Contract
+ 
+ Successful runs write:
+ 
+-- `adata_with_markers.h5ad`
++- `processed.h5ad`
+ - `report.md`
+ - `result.json`
+ - `figures/markers_heatmap.png`
+ - `figures/markers_dotplot.png`
+-- `figures/volcano_plots.png`
+-- `tables/cluster_markers_all.csv`
+-- `tables/cluster_markers_top10.csv`
+-
+-### Visualization Contract
+-
+-The current wrapper writes direct figure outputs rather than a recipe-driven gallery:
+-
+-- `figures/markers_heatmap.png`
+-- `figures/markers_dotplot.png`
+-- `figures/volcano_plots.png`
++- `figures/marker_effect_summary.png`
++- `figures/marker_cluster_summary.png`
++- `figures/marker_fraction_scatter.png` when fraction statistics are available
++- `tables/markers_all.csv`
++- `tables/markers_top.csv`
++- `tables/cluster_summary.csv`
++- `figure_data/`
+ 
+-### What Users Should Inspect First
++## What Users Should Inspect First
+ 
+ 1. `report.md`
+-2. `tables/cluster_markers_top*.csv`
++2. `tables/markers_top.csv`
+ 3. `figures/markers_dotplot.png`
+-4. `figures/markers_heatmap.png`
+-5. `adata_with_markers.h5ad`
+-
+-## Current Limitations
++4. `figures/marker_effect_summary.png`
++5. `processed.h5ad`
+ 
+-- This skill writes `README.md` and notebook-style reproducibility artifacts when notebook export dependencies are available.
+-- Marker ranking is cluster-centric and does not replace replicate-aware DE analysis.
++## Guardrails
+ 
+-## Safety And Guardrails
++- Treat `groupby` as the main scientific parameter.
++- Do not present cluster markers as replicate-aware condition DE.
++- Use normalized expression, not raw counts, for the public marker workflow.
++- After marker review, the usual next step is `sc-cell-annotation`.
+ 
+-- Confirm that `groupby` truly represents clusters or labels worth ranking before running.
+-- Marker ranking is not a final annotation by itself and should not be described as formal replicate-aware DE.
+-- For short execution guardrails, see `knowledge_base/knowhows/KH-sc-markers-guardrails.md`.
+-- For longer method and interpretation guidance, see `knowledge_base/skill-guides/singlecell/sc-markers.md`.
++For concise execution rules, see `knowledge_base/knowhows/KH-sc-markers-guardrails.md`. For longer interpretation guidance, see `knowledge_base/skill-guides/singlecell/sc-markers.md`.
+diff --git a/skills/singlecell/scrna/sc-markers/sc_markers.py b/skills/singlecell/scrna/sc-markers/sc_markers.py
+index 0cf8ce94..c295b53f 100644
+--- a/skills/singlecell/scrna/sc-markers/sc_markers.py
++++ b/skills/singlecell/scrna/sc-markers/sc_markers.py
+@@ -1,26 +1,19 @@
+ #!/usr/bin/env python3
+-"""Single-Cell Markers - Find marker genes for cell clusters.
++"""Single-Cell Markers - cluster marker discovery with standardized outputs."""
+ 
+-Usage:
+-    python sc_markers.py --input <data.h5ad> --output <dir> --groupby leiden
+-    python sc_markers.py --demo --output <dir>
+-"""
+ from __future__ import annotations
+ 
+ import argparse
+ import json
+ import logging
++import shlex
+ import sys
+ from pathlib import Path
+ 
+ import matplotlib
+-matplotlib.use("Agg")
+-import matplotlib.pyplot as plt
+-import numpy as np
++matplotlib.use('Agg')
+ import pandas as pd
+-import seaborn as sns
+ 
+-# Fix for anndata >= 0.11 with StringArray
+ try:
+     import anndata
+     anndata.settings.allow_write_nullable_strings = True
+@@ -31,28 +24,46 @@
+ if str(_PROJECT_ROOT) not in sys.path:
+     sys.path.insert(0, str(_PROJECT_ROOT))
+ 
++from omicsclaw.common.checksums import sha256_file
+ from omicsclaw.common.report import (
+-    generate_report_header,
+     generate_report_footer,
++    generate_report_header,
+     load_result_json,
+     write_output_readme,
+     write_result_json,
+ )
+-from omicsclaw.common.checksums import sha256_file
+-from skills.singlecell._lib.method_config import (
+-    MethodConfig,
+-    validate_method_choice,
+-)
+-from skills.singlecell._lib.preflight import apply_preflight, preflight_sc_markers
+-from skills.singlecell._lib.viz_utils import save_figure
+ from skills.singlecell._lib import io as sc_io
+ from skills.singlecell._lib import markers as sc_markers_utils
++from skills.singlecell._lib.adata_utils import (
++    ensure_input_contract,
++    get_matrix_contract,
++    infer_x_matrix_kind,
++    propagate_singlecell_contracts,
++    store_analysis_metadata,
++)
++from skills.singlecell._lib.export import save_h5ad
++from skills.singlecell._lib.method_config import MethodConfig, validate_method_choice
++from skills.singlecell._lib.preflight import apply_preflight, preflight_sc_markers, _obs_candidates
++from skills.singlecell._lib.viz import (
++    plot_marker_cluster_summary,
++    plot_marker_dotplot,
++    plot_marker_effect_summary,
++    plot_marker_fraction_scatter,
++    plot_marker_heatmap,
++)
+ 
+-logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
++logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+ logger = logging.getLogger(__name__)
+ 
+-SKILL_NAME = "sc-markers"
+-SKILL_VERSION = "0.3.0"
++SKILL_NAME = 'sc-markers'
++SKILL_VERSION = '0.5.0'
++SCRIPT_REL_PATH = 'skills/singlecell/scrna/sc-markers/sc_markers.py'
++
++METHOD_REGISTRY: dict[str, MethodConfig] = {
++    'wilcoxon': MethodConfig(name='wilcoxon', description='Wilcoxon rank-sum cluster marker ranking', dependencies=('scanpy',)),
++    't-test': MethodConfig(name='t-test', description="Welch's t-test cluster marker ranking", dependencies=('scanpy',)),
++    'logreg': MethodConfig(name='logreg', description='Logistic-regression marker ranking', dependencies=('scanpy',)),
++}
+ 
+ 
+ def _write_repro_requirements(repro_dir: Path, packages: list[str]) -> None:
+@@ -70,7 +81,7 @@ def _write_repro_requirements(repro_dir: Path, packages: list[str]) -> None:
+             continue
+         except Exception:
+             continue
+-    (repro_dir / "requirements.txt").write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
++    (repro_dir / 'requirements.txt').write_text('\n'.join(lines) + ('\n' if lines else ''), encoding='utf-8')
+ 
+ 
+ def write_standard_run_artifacts(output_dir: Path, result_payload: dict, summary: dict) -> None:
+@@ -81,404 +92,301 @@ def write_standard_run_artifacts(output_dir: Path, result_payload: dict, summary
+         notebook_path = write_analysis_notebook(
+             output_dir,
+             skill_alias=SKILL_NAME,
+-            description="Marker gene discovery for clustered single-cell RNA-seq data.",
++            description='Cluster marker discovery for single-cell RNA-seq data.',
+             result_payload=result_payload,
+-            preferred_method=summary.get("method", "wilcoxon"),
++            preferred_method=summary.get('method', 'wilcoxon'),
+             script_path=Path(__file__).resolve(),
+             actual_command=[sys.executable, str(Path(__file__).resolve()), *sys.argv[1:]],
+         )
+-    except Exception as exc:
+-        logger.warning("Failed to write analysis notebook: %s", exc)
++    except Exception as exc:  # pragma: no cover
++        logger.warning('Failed to write analysis notebook: %s', exc)
+ 
+     try:
+         write_output_readme(
+             output_dir,
+             skill_alias=SKILL_NAME,
+-            description="Marker gene discovery for clustered single-cell RNA-seq data.",
++            description='Cluster marker discovery for single-cell RNA-seq data.',
+             result_payload=result_payload,
+-            preferred_method=summary.get("method", "wilcoxon"),
++            preferred_method=summary.get('method', 'wilcoxon'),
+             notebook_path=notebook_path,
+         )
+-    except Exception as exc:
+-        logger.warning("Failed to write README.md: %s", exc)
+-
+-# ---------------------------------------------------------------------------
+-# Method registry
+-# ---------------------------------------------------------------------------
+-
+-METHOD_REGISTRY: dict[str, MethodConfig] = {
+-    "wilcoxon": MethodConfig(
+-        name="wilcoxon",
+-        description="Wilcoxon rank-sum test (scanpy built-in)",
+-        dependencies=("scanpy",),
+-    ),
+-    "t-test": MethodConfig(
+-        name="t-test",
+-        description="Welch's t-test (scanpy built-in)",
+-        dependencies=("scanpy",),
+-    ),
+-    "logreg": MethodConfig(
+-        name="logreg",
+-        description="Logistic regression (scanpy built-in)",
+-        dependencies=("scanpy",),
+-    ),
+-}
++    except Exception as exc:  # pragma: no cover
++        logger.warning('Failed to write README.md: %s', exc)
++
++
++def _candidate_groupby(adata) -> list[str]:
++    matrix_contract = get_matrix_contract(adata)
++    primary = matrix_contract.get('primary_cluster_key')
++    candidates: list[str] = []
++    if primary and primary in adata.obs.columns:
++        candidates.append(str(primary))
++    for key in _obs_candidates(adata, 'cluster') + _obs_candidates(adata, 'cell_type'):
++        if key not in candidates:
++            candidates.append(key)
++    return candidates
++
++
++def _resolve_groupby(adata, requested: str | None) -> str:
++    if requested and requested in adata.obs.columns:
++        return requested
++    candidates = _candidate_groupby(adata)
++    if requested and requested not in adata.obs.columns:
++        raise ValueError(f"Grouping column '{requested}' not found in adata.obs")
++    if not candidates:
++        raise ValueError('No cluster/cell-type grouping column available for marker discovery.')
++    return candidates[0]
++
++
++def _build_cluster_summary(markers: pd.DataFrame, *, n_top: int) -> tuple[pd.DataFrame, pd.DataFrame]:
++    if markers.empty:
++        return pd.DataFrame(), pd.DataFrame()
++    frame = markers.copy()
++    effect_col = 'logfoldchanges' if 'logfoldchanges' in frame.columns and pd.to_numeric(frame['logfoldchanges'], errors='coerce').notna().any() else 'scores'
++    sort_cols = []
++    ascending = []
++    if 'pvals_adj' in frame.columns and pd.to_numeric(frame['pvals_adj'], errors='coerce').notna().any():
++        sort_cols.append('pvals_adj')
++        ascending.append(True)
++    sort_cols.append(effect_col)
++    ascending.append(False)
++    frame = frame.sort_values(sort_cols, ascending=ascending)
++    top_df = frame.groupby('group', sort=False, observed=False).head(n_top).copy()
++    summary_df = (
++        frame.groupby('group', dropna=False, observed=False)
++        .agg(
++            n_markers=('names', 'count'),
++            top_gene=('names', 'first'),
++            top_effect=(effect_col, 'max'),
++            median_effect=(effect_col, 'median'),
++        )
++        .reset_index()
++    )
++    summary_df['effect_metric'] = effect_col
++    return summary_df, top_df
+ 
+-SUPPORTED_METHODS = tuple(METHOD_REGISTRY.keys())
+ 
+-# ---------------------------------------------------------------------------
+-# Method dispatch table
+-# ---------------------------------------------------------------------------
++def _write_figure_data(output_dir: Path, *, markers: pd.DataFrame, top_markers: pd.DataFrame, cluster_summary: pd.DataFrame) -> dict[str, str]:
++    figure_data_dir = output_dir / 'figure_data'
++    figure_data_dir.mkdir(parents=True, exist_ok=True)
++    files = {
++        'markers_all': 'markers_all.csv',
++        'markers_top': 'markers_top.csv',
++        'cluster_summary': 'cluster_summary.csv',
++    }
++    markers.to_csv(figure_data_dir / files['markers_all'], index=False)
++    top_markers.to_csv(figure_data_dir / files['markers_top'], index=False)
++    cluster_summary.to_csv(figure_data_dir / files['cluster_summary'], index=False)
++    (figure_data_dir / 'manifest.json').write_text(
++        json.dumps({'skill': SKILL_NAME, 'available_files': files}, indent=2, ensure_ascii=False),
++        encoding='utf-8',
++    )
++    return files
+ 
+-# All methods are dispatched via sc_markers_utils.find_all_cluster_markers;
+-# _METHOD_DISPATCH kept for structural consistency.
+-_METHOD_DISPATCH = {
+-    "wilcoxon": "wilcoxon",
+-    "t-test": "t-test",
+-    "logreg": "logreg",
+-}
+ 
++def generate_marker_figures(adata, markers: pd.DataFrame, output_dir: Path, *, groupby: str, n_top: int, cluster_summary_df: pd.DataFrame) -> None:
++    plot_marker_heatmap(adata, markers, output_dir, groupby=groupby, n_top=n_top)
++    plot_marker_dotplot(adata, markers, output_dir, groupby=groupby, n_top=min(5, n_top))
++    plot_marker_effect_summary(markers, output_dir, n_top=min(3, n_top))
++    plot_marker_cluster_summary(cluster_summary_df, output_dir)
++    plot_marker_fraction_scatter(markers, output_dir, n_top=min(5, n_top))
+ 
+-def generate_marker_figures(adata, markers, output_dir: Path, n_top: int = 10) -> list[str]:
+-    """Generate marker gene visualization figures."""
+-    figures = []
+-    figures_dir = output_dir / "figures"
+-    figures_dir.mkdir(parents=True, exist_ok=True)
+ 
+-    # Top markers heatmap
+-    try:
+-        logger.info("Generating marker heatmap...")
+-        sc_markers_utils.plot_top_markers_heatmap(
+-            adata, markers, n_top=n_top, output_dir=figures_dir
+-        )
+-        fig_path = figures_dir / "markers_heatmap.png"
+-        if fig_path.exists():
+-            figures.append(str(fig_path))
+-            logger.info(f"  Saved: markers_heatmap.png")
+-    except Exception as e:
+-        logger.warning(f"Marker heatmap failed: {e}")
+-
+-    # Top markers dotplot
+-    try:
+-        logger.info("Generating marker dotplot...")
+-        sc_markers_utils.plot_markers_dotplot(
+-            adata, markers, n_top=5, output_dir=figures_dir
+-        )
+-        fig_path = figures_dir / "markers_dotplot.png"
+-        if fig_path.exists():
+-            figures.append(str(fig_path))
+-            logger.info(f"  Saved: markers_dotplot.png")
+-    except Exception as e:
+-        logger.warning(f"Marker dotplot failed: {e}")
+-
+-    # Volcano plots for top clusters
+-    try:
+-        top_clusters = markers['group'].value_counts().head(4).index.tolist()
+-        fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+-        axes = axes.flatten()
+-
+-        for i, cluster in enumerate(top_clusters):
+-            cluster_markers = markers[markers['group'] == cluster].head(50)
+-            if len(cluster_markers) == 0:
+-                continue
+-
+-            ax = axes[i]
+-            x = cluster_markers['logfoldchanges'].values
+-            y = -np.log10(cluster_markers['pvals_adj'].values + 1e-300)
+-
+-            # Color by significance
+-            colors = ['red' if (lf > 1 and pv < 0.05) else 'gray'
+-                      for lf, pv in zip(cluster_markers['logfoldchanges'], cluster_markers['pvals_adj'])]
+-
+-            ax.scatter(x, y, c=colors, alpha=0.6, s=20)
+-            ax.set_xlabel('Log Fold Change')
+-            ax.set_ylabel('-Log10(Adj P-value)')
+-            ax.set_title(f'Cluster {cluster}')
+-            ax.axhline(-np.log10(0.05), color='blue', linestyle='--', alpha=0.5)
+-            ax.axvline(1, color='blue', linestyle='--', alpha=0.5)
+-
+-        fig.suptitle('Top Marker Genes by Cluster', fontweight='bold')
+-        fig.tight_layout()
+-        fig_path = figures_dir / "volcano_plots.png"
+-        fig.savefig(fig_path, dpi=300, bbox_inches='tight')
+-        figures.append(str(fig_path))
+-        plt.close()
+-        logger.info(f"  Saved: volcano_plots.png")
+-    except Exception as e:
+-        logger.warning(f"Volcano plots failed: {e}")
+-
+-    return figures
+-
+-
+-def write_marker_report(output_dir: Path, summary: dict, params: dict, input_file: str | None, top_markers: dict) -> None:
+-    """Write marker gene identification report."""
++def write_report(output_dir: Path, summary: dict, params: dict, input_file: str | None, *, cluster_summary_df: pd.DataFrame) -> None:
+     header = generate_report_header(
+-        title="Single-Cell Marker Genes Report",
++        title='Single-Cell Marker Report',
+         skill_name=SKILL_NAME,
+         input_files=[Path(input_file)] if input_file else None,
+         extra_metadata={
+-            "Clusters": str(summary["n_clusters"]),
+-            "Total Markers": str(summary["n_markers"]),
++            'Grouping': params['groupby'],
++            'Method': params['method'],
++            'Clusters': str(summary['n_clusters']),
++            'Total markers': str(summary['n_markers']),
+         },
+     )
+ 
+-    body_lines = [
+-        "## Summary\n",
+-        f"- **Clusters analyzed**: {summary['n_clusters']}",
+-        f"- **Total markers found**: {summary['n_markers']}",
+-        f"- **Method**: {params['method']}",
+-        f"- **Grouping**: {params['groupby']}",
+-        "",
+-        "## Top Markers by Cluster\n",
++    lines = [
++        '## Summary\n',
++        f"- **Grouping column**: `{params['groupby']}`",
++        f"- **Method**: `{params['method']}`",
++        f"- **Clusters / groups**: {summary['n_clusters']}",
++        f"- **Total markers exported**: {summary['n_markers']}",
++        '',
++        '## First-pass Settings\n',
++        f"- `groupby`: {params['groupby']}",
++        f"- `method`: {params['method']}",
++        f"- `n_genes`: {params['n_genes'] if params['n_genes'] is not None else 'all'}",
++        f"- `n_top`: {params['n_top']}",
++        f"- `min_in_group_fraction`: {params['min_in_group_fraction']}",
++        f"- `min_fold_change`: {params['min_fold_change']}",
++        f"- `max_out_group_fraction`: {params['max_out_group_fraction']}",
++        '',
++        '## Beginner Notes\n',
++        '- `sc-markers` is usually the step after clustering and before final annotation.',
++        '- The current wrapper ranks marker genes using normalized expression in `adata.X` rather than raw counts.',
++        '- Marker ranking helps interpret clusters, but it does not replace replicate-aware condition DE.',
++        '',
++        '## Recommended Next Steps\n',
++        '- If cluster identity is still unclear, use these markers to guide `sc-cell-annotation`.',
++        '- If you need treated-vs-control differential expression rather than cluster markers, use `sc-de`.',
++        '- If the clusters themselves look unstable, revisit `sc-clustering` before trusting markers.',
++        '',
++        '## Output Files\n',
++        '- `processed.h5ad` — normalized AnnData with marker-analysis metadata preserved.',
++        '- `tables/markers_all.csv` — all exported markers.',
++        '- `tables/markers_top.csv` — top marker rows used for compact summaries.',
++        '- `tables/cluster_summary.csv` — marker counts and top genes per group.',
++        '- `figures/` — marker gallery (heatmap, dotplot, effect summary, group summary, optional prevalence scatter).',
++        '- `figure_data/` — reusable tables for downstream styling and notebook work.',
+     ]
+ 
+-    for cluster, markers in top_markers.items():
+-        body_lines.append(f"### Cluster {cluster}\n")
+-        body_lines.append("| Gene | LogFC | P-adj |")
+-        body_lines.append("|------|-------|-------|")
+-        for _, row in markers.head(5).iterrows():
+-            gene = row.get('names', 'N/A')
+-            lfc = row.get('logfoldchanges', 0)
+-            padj = row.get('pvals_adj', 1)
+-            body_lines.append(f"| {gene} | {lfc:.2f} | {padj:.2e} |")
+-        body_lines.append("")
+-
+-    body_lines.extend([
+-        "## Parameters\n",
+-        f"- `--groupby`: {params['groupby']}",
+-        f"- `--method`: {params['method']}",
+-        f"- `--n-genes`: {params.get('n_genes', 'all')}",
+-        "",
+-        "## Output Files\n",
+-        "- `tables/cluster_markers_all.csv` — All markers for all clusters",
+-        "- `tables/cluster_markers_top10.csv` — Top 10 markers per cluster",
+-        "- `figures/markers_heatmap.png` — Heatmap of top markers",
+-        "- `figures/markers_dotplot.png` — Dot plot of marker expression",
+-        "- `figures/volcano_plots.png` — Volcano plots per cluster",
+-        "",
+-        "## Interpretation\n",
+-        "- **Log fold change > 1**: Gene is upregulated in this cluster",
+-        "- **Adjusted p-value < 0.05**: Statistically significant",
+-        "- Use these markers to annotate cell types",
+-        "",
+-    ])
+-
+-    footer = generate_report_footer()
+-    report = header + "\n" + "\n".join(body_lines) + "\n" + footer
+-
+-    (output_dir / "report.md").write_text(report)
+-
+-
+-def generate_demo_data():
+-    """Generate demo data with clusters."""
+-    import scanpy as sc
+-
+-    logger.info("Generating demo data with clusters...")
++    if not cluster_summary_df.empty:
++        lines.extend(['', '## Top Marker Snapshot\n'])
++        for _, row in cluster_summary_df.head(8).iterrows():
++            lines.append(f"- `{row['group']}`: top gene `{row['top_gene']}` ({row['effect_metric']} median={row['median_effect']:.2f})")
+ 
+-    try:
+-        adata, demo_path = sc_io.load_repo_demo_data("pbmc3k_raw")
+-        logger.info("Loaded demo dataset: %s", demo_path or "scanpy-pbmc3k")
+-        # Quick preprocessing
+-        sc.pp.filter_cells(adata, min_genes=200)
+-        sc.pp.filter_genes(adata, min_cells=3)
+-        sc.pp.normalize_total(adata, target_sum=1e4)
+-        sc.pp.log1p(adata)
+-        sc.pp.highly_variable_genes(adata, n_top_genes=2000)
+-        sc.pp.pca(adata)
+-        sc.pp.neighbors(adata)
+-
+-        # Try leiden clustering, fallback to kmeans if not available
+-        try:
+-            sc.tl.leiden(adata, resolution=0.8)
+-            cluster_key = 'leiden'
+-        except ImportError:
+-            logger.warning("leidenalg not installed, using kmeans clustering")
+-            from sklearn.cluster import KMeans
+-            kmeans = KMeans(n_clusters=5, random_state=42, n_init=10)
+-            adata.obs['leiden'] = pd.Categorical(kmeans.fit_predict(adata.obsm['X_pca'][:, :30]).astype(str))
+-            cluster_key = 'leiden'
+-
+-        logger.info(f"Generated: {adata.n_obs} cells x {adata.n_vars} genes, {adata.obs['leiden'].nunique()} clusters")
+-    except Exception as e:
+-        # Synthetic fallback
+-        logger.warning(f"Failed to load local/scanpy pbmc3k: {e}. Generating synthetic data.")
+-        np.random.seed(42)
+-        n_cells, n_genes = 500, 1000
+-        counts = np.random.negative_binomial(2, 0.02, size=(n_cells, n_genes))
+-        adata = sc.AnnData(
+-            X=counts.astype(np.float32),
+-            obs=pd.DataFrame(index=[f"cell_{i}" for i in range(n_cells)]),
+-            var=pd.DataFrame(index=[f"gene_{i}" for i in range(n_genes)]),
+-        )
+-        sc.pp.normalize_total(adata, target_sum=1e4)
+-        sc.pp.log1p(adata)
+-        sc.pp.pca(adata)
+-        sc.pp.neighbors(adata)
++    report = header + '\n'.join(lines) + '\n' + generate_report_footer()
++    (output_dir / 'report.md').write_text(report, encoding='utf-8')
+ 
+-        # Use kmeans for clustering
+-        from sklearn.cluster import KMeans
+-        kmeans = KMeans(n_clusters=5, random_state=42, n_init=10)
+-        adata.obs['leiden'] = pd.Categorical(kmeans.fit_predict(adata.obsm['X_pca'][:, :30]).astype(str))
+ 
++def write_reproducibility(output_dir: Path, params: dict, input_file: str | None, *, demo_mode: bool = False) -> None:
++    repro_dir = output_dir / 'reproducibility'
++    repro_dir.mkdir(parents=True, exist_ok=True)
++    command_parts = ['python', SCRIPT_REL_PATH]
++    if demo_mode:
++        command_parts.append('--demo')
++    elif input_file:
++        command_parts.extend(['--input', input_file])
++    else:
++        command_parts.extend(['--input', '<input.h5ad>'])
++    command_parts.extend(['--output', str(output_dir)])
++    for key in ('groupby','method','n_genes','n_top','min_in_group_fraction','min_fold_change','max_out_group_fraction'):
++        value = params.get(key)
++        if value not in (None, ''):
++            command_parts.extend([f"--{key.replace('_','-')}", str(value)])
++    command = ' '.join(shlex.quote(part) for part in command_parts)
++    (repro_dir / 'commands.sh').write_text(f"#!/bin/bash\n{command}\n", encoding='utf-8')
++    _write_repro_requirements(repro_dir, ['scanpy', 'anndata', 'numpy', 'pandas', 'matplotlib', 'seaborn'])
++
++
++def get_demo_data():
++    adata, _ = sc_io.load_repo_demo_data('pbmc3k_processed')
+     return adata
+ 
+ 
+ def main():
+-    parser = argparse.ArgumentParser(description="Single-Cell Marker Gene Identification")
+-    parser.add_argument("--input", dest="input_path", help="Input AnnData file (.h5ad)")
+-    parser.add_argument("--output", dest="output_dir", required=True, help="Output directory")
+-    parser.add_argument("--demo", action="store_true", help="Run with demo data")
+-    parser.add_argument("--groupby", default="leiden", help="Grouping column (default: leiden)")
+-    parser.add_argument("--method", default="wilcoxon", choices=list(METHOD_REGISTRY.keys()),
+-                        help="Statistical test method")
+-    parser.add_argument("--n-genes", type=int, default=None, help="Number of genes per cluster")
+-    parser.add_argument("--n-top", type=int, default=10, help="Top N markers per cluster for visualization")
++    parser = argparse.ArgumentParser(description='Single-Cell Marker Discovery')
++    parser.add_argument('--input', dest='input_path')
++    parser.add_argument('--output', dest='output_dir', required=True)
++    parser.add_argument('--demo', action='store_true')
++    parser.add_argument('--groupby', default=None)
++    parser.add_argument('--method', choices=list(METHOD_REGISTRY.keys()), default='wilcoxon')
++    parser.add_argument('--n-genes', type=int, default=None)
++    parser.add_argument('--n-top', type=int, default=10)
++    parser.add_argument('--min-in-group-fraction', type=float, default=0.25)
++    parser.add_argument('--min-fold-change', type=float, default=0.25)
++    parser.add_argument('--max-out-group-fraction', type=float, default=0.5)
+     args = parser.parse_args()
+ 
+     output_dir = Path(args.output_dir)
+     output_dir.mkdir(parents=True, exist_ok=True)
+ 
+-    # Load data
+     if args.demo:
+-        adata = generate_demo_data()
++        adata = get_demo_data()
+         input_file = None
+     else:
+         if not args.input_path:
+-            parser.error("--input required when not using --demo")
+-        input_path = Path(args.input_path)
+-        if not input_path.exists():
+-            raise FileNotFoundError(f"Input file not found: {input_path}")
+-        logger.info(f"Loading: {input_path}")
+-        adata = sc_io.smart_load(input_path, skill_name=SKILL_NAME)
+-        input_file = str(input_path)
+-
+-    logger.info(f"Input: {adata.n_obs} cells x {adata.n_vars} genes")
++            raise ValueError('--input required when not using --demo')
++        adata = sc_io.smart_load(args.input_path, skill_name=SKILL_NAME)
++        input_file = str(Path(args.input_path))
++
++    method = validate_method_choice(args.method, METHOD_REGISTRY)
+     apply_preflight(
+         preflight_sc_markers(
+             adata,
+             groupby=args.groupby,
++            method=method,
++            n_genes=args.n_genes,
++            n_top=args.n_top,
++            min_in_group_fraction=args.min_in_group_fraction,
++            min_fold_change=args.min_fold_change,
++            max_out_group_fraction=args.max_out_group_fraction,
+             source_path=input_file,
+         ),
+         logger,
+     )
+ 
+-    # Check grouping exists
+-    if args.groupby not in adata.obs.columns:
+-        logger.error(f"Grouping column '{args.groupby}' not found in adata.obs")
+-        logger.info(f"Available columns: {list(adata.obs.columns)}")
+-        raise ValueError(f"Column '{args.groupby}' not found")
+-
+-    # Validate method & check dependencies
+-    method = validate_method_choice(args.method, METHOD_REGISTRY)
+-
+-    use_raw_markers = adata.raw is not None and adata.raw.shape == adata.shape
+-
+-    # Parameters
+-    params = {
+-        "groupby": args.groupby,
+-        "method": method,
+-        "n_genes": args.n_genes,
+-        "n_top": args.n_top,
+-        "use_raw": use_raw_markers,
+-        "expression_source": "adata.raw" if use_raw_markers else "adata.X",
+-    }
+-
+-    # Find markers
+-    logger.info(f"Finding marker genes using {method}...")
++    resolved_groupby = _resolve_groupby(adata, args.groupby)
+     markers = sc_markers_utils.find_all_cluster_markers(
+         adata,
+-        cluster_key=args.groupby,
++        cluster_key=resolved_groupby,
+         method=method,
+         n_genes=args.n_genes,
+-        use_raw=use_raw_markers,
++        min_in_group_fraction=args.min_in_group_fraction,
++        min_fold_change=args.min_fold_change,
++        max_out_group_fraction=args.max_out_group_fraction,
++        use_raw=False,
+     )
+ 
+-    n_clusters = markers['group'].nunique()
+-    n_total_markers = len(markers)
+-
+-    logger.info(f"Found {n_total_markers} markers for {n_clusters} clusters")
+-
+-    # Organize top markers per cluster
+-    top_markers = {}
+-    for cluster in markers['group'].unique():
+-        cluster_markers = markers[markers['group'] == cluster]
+-        sort_col = 'pvals_adj' if 'pvals_adj' in cluster_markers.columns else 'scores'
+-        top_markers[str(cluster)] = cluster_markers.sort_values(sort_col)
+-
+-    # Generate figures
+-    logger.info("Generating figures...")
+-    figures = generate_marker_figures(adata, markers, output_dir, n_top=args.n_top)
++    cluster_summary_df, top_markers_df = _build_cluster_summary(markers, n_top=args.n_top)
++    summary = {
++        'method': method,
++        'groupby': resolved_groupby,
++        'n_clusters': int(markers['group'].nunique()) if not markers.empty else 0,
++        'n_markers': int(len(markers)),
++    }
++    params = {
++        'groupby': resolved_groupby,
++        'method': method,
++        'n_genes': args.n_genes,
++        'n_top': args.n_top,
++        'min_in_group_fraction': args.min_in_group_fraction,
++        'min_fold_change': args.min_fold_change,
++        'max_out_group_fraction': args.max_out_group_fraction,
++        'expression_source': 'adata.X',
++    }
+ 
+-    # Export tables
+-    tables_dir = output_dir / "tables"
+-    tables_dir.mkdir(exist_ok=True)
++    generate_marker_figures(adata, markers, output_dir, groupby=resolved_groupby, n_top=args.n_top, cluster_summary_df=cluster_summary_df)
++    tables_dir = output_dir / 'tables'
++    tables_dir.mkdir(parents=True, exist_ok=True)
++    markers.to_csv(tables_dir / 'markers_all.csv', index=False)
++    top_markers_df.to_csv(tables_dir / 'markers_top.csv', index=False)
++    cluster_summary_df.to_csv(tables_dir / 'cluster_summary.csv', index=False)
++    figure_data_files = _write_figure_data(output_dir, markers=markers, top_markers=top_markers_df, cluster_summary=cluster_summary_df)
+ 
+-    # All markers
+-    markers.to_csv(tables_dir / "cluster_markers_all.csv", index=False)
+-    logger.info(f"  Saved: tables/cluster_markers_all.csv")
++    write_report(output_dir, summary, params, input_file, cluster_summary_df=cluster_summary_df)
++    write_reproducibility(output_dir, params, input_file, demo_mode=args.demo)
+ 
+-    # Top N per cluster
+-    top_n_markers = markers.groupby('group').head(args.n_top)
+-    top_n_markers.to_csv(tables_dir / f"cluster_markers_top{args.n_top}.csv", index=False)
+-    logger.info(f"  Saved: tables/cluster_markers_top{args.n_top}.csv")
++    for key in ('rank_genes_groups', 'rank_genes_groups_filtered'):
++        if key in adata.uns:
++            del adata.uns[key]
+ 
+-    # Summary
+-    summary = {
+-        "n_clusters": int(n_clusters),
+-        "n_markers": int(n_total_markers),
+-        "clusters": {str(k): len(v) for k, v in top_markers.items()},
+-    }
+-
+-    # Write report
+-    logger.info("Writing report...")
+-    write_marker_report(output_dir, summary, params, input_file, top_markers)
+-
+-    # Save data with markers
+-    # Note: Remove rank_genes_groups results to avoid h5py serialization issues
+-    if 'rank_genes_groups' in adata.uns:
+-        del adata.uns['rank_genes_groups']
+-    if 'rank_genes_groups_filtered' in adata.uns:
+-        del adata.uns['rank_genes_groups_filtered']
+-
+-    output_h5ad = output_dir / "adata_with_markers.h5ad"
+-    from skills.singlecell._lib.adata_utils import store_analysis_metadata
+-    store_analysis_metadata(adata, SKILL_NAME, args.method, params)
+-    adata.write_h5ad(output_h5ad)
+-    logger.info(f"Saved: {output_h5ad}")
+-
+-    # Reproducibility
+-    repro_dir = output_dir / "reproducibility"
+-    repro_dir.mkdir(exist_ok=True)
+-
+-    cmd = f"python sc_markers.py --output {output_dir} --groupby {args.groupby} --method {args.method}"
+-    if input_file:
+-        cmd += f" --input {input_file}"
+-    (repro_dir / "commands.sh").write_text(f"#!/bin/bash\n{cmd}\n")
+-    _write_repro_requirements(
+-        repro_dir,
+-        ["scanpy", "anndata", "numpy", "pandas", "matplotlib", "seaborn"],
++    input_contract, matrix_contract = propagate_singlecell_contracts(
++        adata,
++        adata,
++        producer_skill=SKILL_NAME,
++        x_kind='normalized_expression',
++        raw_kind=get_matrix_contract(adata).get('raw'),
++        primary_cluster_key=get_matrix_contract(adata).get('primary_cluster_key') or resolved_groupby,
+     )
+-
+-    # Result.json
+-    checksum = sha256_file(input_file) if input_file and Path(input_file).exists() else ""
+-    result_data = {"params": params}
+-    write_result_json(output_dir, SKILL_NAME, SKILL_VERSION, summary, result_data, checksum)
+-    result_payload = load_result_json(output_dir) or {
+-        "skill": SKILL_NAME,
+-        "summary": summary,
+-        "data": result_data,
++    store_analysis_metadata(adata, SKILL_NAME, method, params)
++    output_h5ad = output_dir / 'processed.h5ad'
++    save_h5ad(adata, output_h5ad)
++
++    checksum = sha256_file(input_file) if input_file and Path(input_file).exists() else ''
++    result_data = {
++        'params': params,
++        'input_contract': input_contract,
++        'matrix_contract': matrix_contract,
++        'visualization': {'available_figure_data': figure_data_files},
+     }
++    write_result_json(output_dir, SKILL_NAME, SKILL_VERSION, summary, result_data, checksum)
++    result_payload = load_result_json(output_dir) or {'skill': SKILL_NAME, 'summary': summary, 'data': result_data}
+     write_standard_run_artifacts(output_dir, result_payload, summary)
+ 
+-    # Summary
+-    print(f"\n{'='*60}")
+-    print(f"Success: {SKILL_NAME} v{SKILL_VERSION}")
+-    print(f"{'='*60}")
+-    print(f"  Clusters: {n_clusters}")
+-    print(f"  Total markers: {n_total_markers}")
+-    print(f"  Method: {args.method}")
++    print(f"Success: {SKILL_NAME}")
+     print(f"  Output: {output_dir}")
++    print(f"Marker discovery complete: {summary['n_markers']} rows across {summary['n_clusters']} groups using {method}")
+ 
+ 
+-if __name__ == "__main__":
++if __name__ == '__main__':
+     main()
+diff --git a/skills/singlecell/scrna/sc-markers/tests/test_sc_markers.py b/skills/singlecell/scrna/sc-markers/tests/test_sc_markers.py
+new file mode 100644
+index 00000000..6690bfff
+--- /dev/null
++++ b/skills/singlecell/scrna/sc-markers/tests/test_sc_markers.py
+@@ -0,0 +1,49 @@
++"""Tests for the sc-markers skill."""
++
++from __future__ import annotations
++
++import json
++import subprocess
++import sys
++from pathlib import Path
++
++import pytest
++
++SKILL_SCRIPT = Path(__file__).resolve().parent.parent / 'sc_markers.py'
++
++
++@pytest.fixture
++def tmp_output(tmp_path):
++    return tmp_path / 'sc_markers_out'
++
++
++def test_demo_mode(tmp_output):
++    result = subprocess.run(
++        [sys.executable, str(SKILL_SCRIPT), '--demo', '--output', str(tmp_output)],
++        capture_output=True,
++        text=True,
++        timeout=300,
++        cwd=str(SKILL_SCRIPT.parent),
++    )
++    assert result.returncode == 0, result.stderr
++    assert (tmp_output / 'processed.h5ad').exists()
++    assert (tmp_output / 'report.md').exists()
++    assert (tmp_output / 'result.json').exists()
++    assert (tmp_output / 'tables' / 'markers_all.csv').exists()
++    assert (tmp_output / 'figure_data' / 'manifest.json').exists()
++
++
++def test_demo_result_json(tmp_output):
++    subprocess.run(
++        [sys.executable, str(SKILL_SCRIPT), '--demo', '--output', str(tmp_output)],
++        capture_output=True,
++        text=True,
++        timeout=300,
++        cwd=str(SKILL_SCRIPT.parent),
++        check=True,
++    )
++    data = json.loads((tmp_output / 'result.json').read_text())
++    assert data['skill'] == 'sc-markers'
++    assert data['summary']['n_clusters'] >= 1
++    assert 'visualization' in data['data']
++    assert 'matrix_contract' in data['data']
+diff --git a/tests/test_sc_preflight.py b/tests/test_sc_preflight.py
+index 979d3e8c..bf75679b 100644
+--- a/tests/test_sc_preflight.py
++++ b/tests/test_sc_preflight.py
+@@ -344,6 +344,12 @@ def test_preflight_sc_markers_requires_groupby_confirmation():
+     decision = preflight_sc_markers(
+         adata,
+         groupby="leiden",
++        method="wilcoxon",
++        n_genes=None,
++        n_top=10,
++        min_in_group_fraction=0.25,
++        min_fold_change=0.25,
++        max_out_group_fraction=0.5,
+     )
+ 
+     assert decision.status == "needs_user_input"
+@@ -365,12 +371,47 @@ def test_preflight_sc_markers_requires_confirmation_on_qc_style_count_contract()
+     decision = preflight_sc_markers(
+         adata,
+         groupby="leiden",
++        method="wilcoxon",
++        n_genes=None,
++        n_top=10,
++        min_in_group_fraction=0.25,
++        min_fold_change=0.25,
++        max_out_group_fraction=0.5,
+     )
+ 
+     assert decision.status == "needs_user_input"
+     assert any("expects normalized expression" in line for line in decision.confirmations)
+ 
+ 
++def test_preflight_sc_markers_can_auto_use_single_primary_cluster_key():
++    adata = _adata(
++        x=np.array([[0.1, 0.2], [0.4, 0.5]], dtype=float),
++        obs={"louvain": ["0", "1"]},
++    )
++    record_matrix_contract(
++        adata,
++        x_kind="normalized_expression",
++        raw_kind="raw_counts_snapshot",
++        layers={"counts": "raw_counts"},
++        producer_skill="sc-clustering",
++        primary_cluster_key="louvain",
++    )
++
++    decision = preflight_sc_markers(
++        adata,
++        groupby=None,
++        method="wilcoxon",
++        n_genes=None,
++        n_top=10,
++        min_in_group_fraction=0.25,
++        min_fold_change=0.25,
++        max_out_group_fraction=0.5,
++    )
++
++    assert decision.status == "proceed_with_guidance"
++    assert any("will use `louvain`" in line for line in decision.guidance)
++
++
+ def test_preflight_sc_grn_requires_full_db_bundle_confirmation():
+     adata = _adata(x=np.array([[10, 1], [8, 2]], dtype=float))
+ 

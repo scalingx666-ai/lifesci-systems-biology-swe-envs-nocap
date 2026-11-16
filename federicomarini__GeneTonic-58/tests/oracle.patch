@@ -1,0 +1,224 @@
+diff --git a/DESCRIPTION b/DESCRIPTION
+index b9c20eed..e23efce1 100644
+--- a/DESCRIPTION
++++ b/DESCRIPTION
+@@ -1,8 +1,8 @@
+ Package: GeneTonic
+ Title: Enjoy Analyzing And Integrating The Results From Differential Expression 
+     Analysis And Functional Enrichment Analysis
+-Version: 2.7.1
+-Date: 2024-01-10
++Version: 2.7.2
++Date: 2024-02-16
+ Authors@R: 
+     c(
+         person(
+@@ -84,7 +84,7 @@ Encoding: UTF-8
+ VignetteBuilder: knitr
+ URL: https://github.com/federicomarini/GeneTonic
+ BugReports: https://github.com/federicomarini/GeneTonic/issues
+-RoxygenNote: 7.2.3
++RoxygenNote: 7.3.1
+ Roxygen: list(markdown = TRUE)
+ biocViews:
+     GUI, GeneExpression, Software, Transcription, Transcriptomics, Visualization,
+diff --git a/NAMESPACE b/NAMESPACE
+index 7c0dc8b1..b35c7443 100644
+--- a/NAMESPACE
++++ b/NAMESPACE
+@@ -140,14 +140,14 @@ importFrom(igraph,V)
+ importFrom(igraph,add_edges)
+ importFrom(igraph,as_adjacency_matrix)
+ importFrom(igraph,as_biadjacency_matrix)
++importFrom(igraph,as_edgelist)
+ importFrom(igraph,degree)
+-importFrom(igraph,delete.edges)
++importFrom(igraph,delete_edges)
+ importFrom(igraph,delete_vertices)
+-importFrom(igraph,get.edgelist)
+-importFrom(igraph,graph.data.frame)
++importFrom(igraph,graph_from_data_frame)
+ importFrom(igraph,induced_subgraph)
+ importFrom(igraph,make_full_graph)
+-importFrom(igraph,permute.vertices)
++importFrom(igraph,permute)
+ importFrom(igraph,strength)
+ importFrom(igraph,vcount)
+ importFrom(matrixStats,rowSds)
+diff --git a/NEWS.md b/NEWS.md
+index e1c3bd55..5f91cde9 100644
+--- a/NEWS.md
++++ b/NEWS.md
+@@ -3,6 +3,8 @@
+ ## Other notes
+ 
+ * Updated functions used from other packages to reflect changes in their API/nomenclature
++* Adapted the internal code of functions to the latest version of `igraph` - no changes happening 
++for the end user
+ 
+ # GeneTonic 2.6.0
+ 
+diff --git a/R/GeneTonic-extras.R b/R/GeneTonic-extras.R
+index 5bec128b..eb753c93 100644
+--- a/R/GeneTonic-extras.R
++++ b/R/GeneTonic-extras.R
+@@ -683,7 +683,7 @@ export_to_sif <- function(g, sif_file = "", edge_label = "relates_to") {
+   sif_file <- normalizePath(sif_file, mustWork = FALSE)
+   stopifnot(is.character(edge_label) && length(edge_label) == 1)
+ 
+-  el <- get.edgelist(g)
++  el <- as_edgelist(g)
+   sif_df <- data.frame(
+     n1 = el[, 1],
+     edge_label = edge_label,
+diff --git a/R/GeneTonic-pkg.R b/R/GeneTonic-pkg.R
+index f014c7c3..cf120df0 100644
+--- a/R/GeneTonic-pkg.R
++++ b/R/GeneTonic-pkg.R
+@@ -12,8 +12,6 @@
+ #' the live session, and creating an HTML report as an artifact where text,
+ #' code, and output coexist.
+ #'
+-#' @author Federico Marini \email{marinif@@uni-mainz.de}
+-#'
+ #' @importFrom AnnotationDbi Definition GOID Ontology Secondary Synonym Term
+ #' @importFrom backbone backbone.extract fdsm fixedrow sdsm
+ #' @importFrom bs4Dash bs4Card bs4DashBody bs4DashControlbar
+@@ -43,8 +41,8 @@
+ #' @importFrom grDevices colorRampPalette rgb col2rgb
+ #' @importFrom grid gpar
+ #' @importFrom igraph add_edges as_adjacency_matrix as_biadjacency_matrix degree
+-#' delete.edges delete_vertices "%du%" E "E<-" graph.data.frame induced_subgraph
+-#' make_full_graph permute.vertices strength V "V<-" vcount get.edgelist
++#' delete_edges delete_vertices "%du%" E "E<-" graph_from_data_frame induced_subgraph
++#' make_full_graph permute strength V "V<-" vcount as_edgelist
+ #' @importFrom matrixStats rowSds
+ #' @importFrom methods is
+ #' @importFrom plotly ggplotly plotlyOutput renderPlotly plot_ly layout add_trace
+@@ -71,5 +69,5 @@
+ #' @importFrom viridis viridis
+ #'
+ #' @name GeneTonic-pkg
+-#' @docType package
+-NULL
++#' @keywords internal
++"_PACKAGE"
+diff --git a/R/GeneTonic.R b/R/GeneTonic.R
+index 1e1ec4fa..a3cb72ff 100644
+--- a/R/GeneTonic.R
++++ b/R/GeneTonic.R
+@@ -930,7 +930,7 @@ GeneTonic <- function(dds = NULL,
+       # rank_gs <- rank(V(g)$name[V(g)$nodetype == "GeneSet"])
+       # rank_feats <- rank(V(g)$name[V(g)$nodetype == "Feature"]) +
+       #   length(rank_gs) # to keep the GeneSets first
+-      # g <- permute.vertices(g, c(rank_gs, rank_feats))
++      # g <- permute(g, c(rank_gs, rank_feats))
+       # return(g)
+     })
+ 
+@@ -1288,7 +1288,7 @@ GeneTonic <- function(dds = NULL,
+         color_by = input$emap_colorby
+       )
+       # rank_gs <- rank(V(emg)$name)
+-      # emg <- permute.vertices(emg, rank_gs)
++      # emg <- permute(emg, rank_gs)
+       return(emg)
+     })
+ 
+diff --git a/R/enrichment_map.R b/R/enrichment_map.R
+index 5a6d39fa..717c710f 100644
+--- a/R/enrichment_map.R
++++ b/R/enrichment_map.R
+@@ -144,10 +144,10 @@ enrichment_map <- function(res_enrich,
+   # omm <- omm[!is.na(omm$value), ]
+ 
+   # use this to construct the graph
+-  emg <- graph.data.frame(omm[, c(1, 2)], directed = FALSE)
++  emg <- graph_from_data_frame(omm[, c(1, 2)], directed = FALSE)
+ 
+   E(emg)$width <- sqrt(omm$value * scale_edges_width)
+-  emg <- delete.edges(emg, E(emg)[omm$value < overlap_threshold])
++  emg <- delete_edges(emg, E(emg)[omm$value < overlap_threshold])
+ 
+   idx <- match(V(emg)$name, res_enrich$gs_description)
+ 
+@@ -237,7 +237,7 @@ enrichment_map <- function(res_enrich,
+ 
+   # re-sorting the vertices alphabetically
+   rank_gs <- rank(V(emg)$name)
+-  emg <- permute.vertices(emg, rank_gs)
++  emg <- permute(emg, rank_gs)
+ 
+   return(emg)
+ }
+diff --git a/R/ggs_graph.R b/R/ggs_graph.R
+index 732c2641..18cc86ed 100644
+--- a/R/ggs_graph.R
++++ b/R/ggs_graph.R
+@@ -157,7 +157,7 @@ ggs_graph <- function(res_enrich,
+   })
+   list2df <- do.call("rbind", list2df)
+ 
+-  g <- graph.data.frame(list2df, directed = FALSE)
++  g <- graph_from_data_frame(list2df, directed = FALSE)
+ 
+   nodeIDs_gs <- which(names(V(g)) %in% enriched_gsnames)
+   nodeIDs_genes <- which(!(names(V(g)) %in% enriched_gsnames))
+@@ -212,7 +212,7 @@ ggs_graph <- function(res_enrich,
+   rank_gs <- rank(V(g)$name[V(g)$nodetype == "GeneSet"])
+   rank_feats <- rank(V(g)$name[V(g)$nodetype == "Feature"]) +
+     length(rank_gs) # to keep the GeneSets first
+-  g <- permute.vertices(g, c(rank_gs, rank_feats))
++  g <- permute(g, c(rank_gs, rank_feats))
+ 
+   return(g)
+ }
+diff --git a/man/GeneTonic-pkg.Rd b/man/GeneTonic-pkg.Rd
+index 8ae6d6ee..21c12ee8 100644
+--- a/man/GeneTonic-pkg.Rd
++++ b/man/GeneTonic-pkg.Rd
+@@ -2,6 +2,7 @@
+ % Please edit documentation in R/GeneTonic-pkg.R
+ \docType{package}
+ \name{GeneTonic-pkg}
++\alias{GeneTonic-package}
+ \alias{GeneTonic-pkg}
+ \title{GeneTonic}
+ \description{
+@@ -17,7 +18,22 @@ and hypothesis - combining the benefits of interactivity and reproducibility,
+ e.g. by capturing the features and gene sets of interest highlighted during
+ the live session, and creating an HTML report as an artifact where text,
+ code, and output coexist.
++}
++\seealso{
++Useful links:
++\itemize{
++  \item \url{https://github.com/federicomarini/GeneTonic}
++  \item Report bugs at \url{https://github.com/federicomarini/GeneTonic/issues}
++}
++
+ }
+ \author{
+-Federico Marini \email{marinif@uni-mainz.de}
++\strong{Maintainer}: Federico Marini \email{marinif@uni-mainz.de} (\href{https://orcid.org/0000-0003-3252-7758}{ORCID})
++
++Authors:
++\itemize{
++  \item Annekathrin Ludt \email{anneludt@uni-mainz.de} (\href{https://orcid.org/0000-0002-2475-4945}{ORCID})
++}
++
+ }
++\keyword{internal}
+diff --git a/tests/testthat/test-gs_dendro.R b/tests/testthat/test-gs_dendro.R
+index bff15168..698cd662 100644
+--- a/tests/testthat/test-gs_dendro.R
++++ b/tests/testthat/test-gs_dendro.R
+@@ -30,7 +30,7 @@ test_that("Gene set dendrogram is created", {
+   expect_is(my_dend_pval, "dendrogram")
+   
+   re_subset <- res_enrich_withscores[res_enrich_withscores[1:12, ]$z_score >= 0, ]
+-  my_dend_subset <- gs_dendro(re_subset, n_gs = 12, color_leaves_by = "z_score")
++  my_dend_subset <- gs_dendro(re_subset, n_gs = 18, color_leaves_by = "z_score")
+   expect_is(my_dend_subset, "dendrogram")
+ 
+   expect_warning(gs_dendro(res_enrich_withscores,

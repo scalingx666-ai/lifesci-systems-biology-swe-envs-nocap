@@ -1,0 +1,115 @@
+diff --git a/src/app/translations/files/translated/ar.json b/src/app/translations/files/translated/ar.json
+index ae553174..5dc7d211 100644
+--- a/src/app/translations/files/translated/ar.json
++++ b/src/app/translations/files/translated/ar.json
+@@ -8,11 +8,15 @@
+   "components.GenularBottom.buttons.help": "تساعدنا مع الترجمات",
+   "components.GenularBottom.buttons.about": "عن genular",
+   "components.GenularBottom.dialog.title": "عنا",
+-  "components.GenularBottom.dialog.intro": "نحن المصدر المفتوح تأسست المنظمة إلى تشجيع العلم والبحث. ونحن نعتقد أن الجميع يجب أن يكون حق بناء دقيقة للغاية النماذج التنبؤية حتى إذا كانوا عادة لا يكون لديك المهارات اللازمة.",
++  "components.GenularBottom.dialog.intro": "We are open source community existing to promote science and research. We believe that everyone should have right to build highly accurate predictive models even if they would not usually have necessary skills.",
+   "components.GenularBottom.dialog.citation.author": "ألبرت أينشتاين",
+   "components.GenularBottom.dialog.citation.text": "ونحن لا يمكن أن تحل مشاكلنا مع نفس المستوى من التفكير الذي خلقهم",
+-  "components.GenularBottom.dialog.ending": "بدلا من التخمين النموذج الذي سوف تعمل بشكل أفضل على البيانات الخاصة بك, نظامنا تلقائيا العمليات بالتوازي مع العديد من مختلف خوارزميات تعلم الآلة ، واختبار الملايين من النماذج المحتملة في الثانية ، ويشير إلى أدق تلك التي تناسبها البيانات الخاصة بك.",
+-  "components.GenularBottom.dialog.footer": "سيمون يتم الاحتفاظ من قبل genular المجتمع العمل معا للحفاظ على العلم عامة ومفتوحة ومتاحة للجميع.",
++  "components.GenularBottom.dialog.ending": "To work towards a better future, we all need to understand how and why complex mechanisms are changing and whats impacting that change",
++  "components.GenularBottom.dialog.footer": "SIMON is made and maintained by @genular, a community working together to keep science a public good accessible to everyone. We are welcoming participation from organizations and individuals committed to advancing open tools for science. Visit our <a href='https://genular.org' target='_blank'>website</a> for instructions on how you and/or your project/organization can join us.",
++  "components.GenularBottom.dialog.links.title": "Other resources",
++  "components.GenularBottom.dialog.links.tooltip.forums": "Discuss with our community possible bugs & feature requests, or just write a usage tutorial",
++  "components.GenularBottom.dialog.links.tooltip.github": "Take part in development progress or report bugs you discovered",
++  "components.GenularBottom.dialog.links.tooltip.translation": "Join our Translation Community, add new or correct existing translations",
+   "components.LangSelect.language_changed": "اللغة تحولت بنجاح",
+   "components.LangSelect.language.de": "الألمانية",
+   "components.LangSelect.language.en": "اللغة الإنجليزية",
+diff --git a/src/app/translations/files/translated/de.json b/src/app/translations/files/translated/de.json
+index 1aa67024..5c3dd2e5 100644
+--- a/src/app/translations/files/translated/de.json
++++ b/src/app/translations/files/translated/de.json
+@@ -8,11 +8,15 @@
+   "components.GenularBottom.buttons.help": "Hilf uns mit Übersetzungen",
+   "components.GenularBottom.buttons.about": "Über Echtheit",
+   "components.GenularBottom.dialog.title": "über uns",
+-  "components.GenularBottom.dialog.intro": "Wir sind open-source-Organisation gegründet, um die Förderung von Wissenschaft und Forschung. Wir glauben, dass jeder sollte das Recht haben, bauen sehr genaue Vorhersagemodelle auch wenn Sie es nicht haben in der Regel die erforderlichen Fachkenntnisse verfügen.",
++  "components.GenularBottom.dialog.intro": "We are open source community existing to promote science and research. We believe that everyone should have right to build highly accurate predictive models even if they would not usually have necessary skills.",
+   "components.GenularBottom.dialog.citation.author": "Albert Einstein",
+   "components.GenularBottom.dialog.citation.text": "Wir können unsere Probleme nicht mit dem gleichen Maß an Denken lösen, das sie geschaffen hat",
+-  "components.GenularBottom.dialog.ending": "Anstatt zu erraten, welches Modell am besten für Ihre Daten funktioniert, verarbeitet unser System automatisch parallel viele verschiedene Algorithmen zum maschinellen Lernen, testet Millionen von potenziellen Modellen pro Sekunde und schlägt genaueste Modelle vor, die zu Ihren Daten passen.",
+-  "components.GenularBottom.dialog.footer": "SIMON wird erstellt und gepflegt von genular, einer Gemeinschaft arbeiten zusammen, um die Wissenschaft offen, öffentlich und für alle zugänglich.",
++  "components.GenularBottom.dialog.ending": "To work towards a better future, we all need to understand how and why complex mechanisms are changing and whats impacting that change",
++  "components.GenularBottom.dialog.footer": "SIMON is made and maintained by @genular, a community working together to keep science a public good accessible to everyone. We are welcoming participation from organizations and individuals committed to advancing open tools for science. Visit our <a href='https://genular.org' target='_blank'>website</a> for instructions on how you and/or your project/organization can join us.",
++  "components.GenularBottom.dialog.links.title": "Other resources",
++  "components.GenularBottom.dialog.links.tooltip.forums": "Discuss with our community possible bugs & feature requests, or just write a usage tutorial",
++  "components.GenularBottom.dialog.links.tooltip.github": "Take part in development progress or report bugs you discovered",
++  "components.GenularBottom.dialog.links.tooltip.translation": "Join our Translation Community, add new or correct existing translations",
+   "components.LangSelect.language_changed": "Sprache erfolgreich gewechselt",
+   "components.LangSelect.language.de": "Deutsch",
+   "components.LangSelect.language.en": "Englisch",
+diff --git a/src/app/translations/files/translated/en.json b/src/app/translations/files/translated/en.json
+index 2824e50b..005a918f 100644
+--- a/src/app/translations/files/translated/en.json
++++ b/src/app/translations/files/translated/en.json
+@@ -8,11 +8,15 @@
+   "components.GenularBottom.buttons.help": "Help us with translations",
+   "components.GenularBottom.buttons.about": "About genular",
+   "components.GenularBottom.dialog.title": "about us",
+-  "components.GenularBottom.dialog.intro": "We are open source organization founded to promote science and research. We believe that everyone should have right to build highly accurate predictive models even if they would not usually have necessary skills.",
++  "components.GenularBottom.dialog.intro": "We are open source community existing to promote science and research. We believe that everyone should have right to build highly accurate predictive models even if they would not usually have necessary skills.",
+   "components.GenularBottom.dialog.citation.author": "Albert Einstein",
+   "components.GenularBottom.dialog.citation.text": "We can not solve our problems with the same level of thinking that created them",
+-  "components.GenularBottom.dialog.ending": "Instead of guessing which model will work the best for your data, our system automatically processes in parallel many different machine learning algorithms, testing millions of potential models per second, and suggests most accurate ones that fits your data.",
+-  "components.GenularBottom.dialog.footer": "SIMON is made and maintained by genular, a community working together to keep Science open, public and accessible to all.",
++  "components.GenularBottom.dialog.ending": "To work towards a better future, we all need to understand how and why complex mechanisms are changing and whats impacting that change",
++  "components.GenularBottom.dialog.footer": "SIMON is made and maintained by @genular, a community working together to keep science a public good accessible to everyone. We are welcoming participation from organizations and individuals committed to advancing open tools for science. Visit our <a href='https://genular.org' target='_blank'>website</a> for instructions on how you and/or your project/organization can join us.",
++  "components.GenularBottom.dialog.links.title": "Other resources",
++  "components.GenularBottom.dialog.links.tooltip.forums": "Discuss with our community possible bugs & feature requests, or just write a usage tutorial",
++  "components.GenularBottom.dialog.links.tooltip.github": "Take part in development progress or report bugs you discovered",
++  "components.GenularBottom.dialog.links.tooltip.translation": "Join our Translation Community, add new or correct existing translations",
+   "components.LangSelect.language_changed": "Language successfully switched",
+   "components.LangSelect.language.de": "German",
+   "components.LangSelect.language.en": "English",
+diff --git a/src/app/translations/files/translated/fr.json b/src/app/translations/files/translated/fr.json
+index e6d39e2a..aa6926da 100644
+--- a/src/app/translations/files/translated/fr.json
++++ b/src/app/translations/files/translated/fr.json
+@@ -8,11 +8,15 @@
+   "components.GenularBottom.buttons.help": "Nous aider avec les traductions",
+   "components.GenularBottom.buttons.about": "Sur genular",
+   "components.GenularBottom.dialog.title": "à propos de nous",
+-  "components.GenularBottom.dialog.intro": "Nous sommes open source organisation fondée pour promouvoir la science et la recherche. Nous croyons que chacun devrait avoir le droit de construire très précis des modèles de prévision même s'ils n'ont généralement pas les compétences nécessaires.",
++  "components.GenularBottom.dialog.intro": "We are open source community existing to promote science and research. We believe that everyone should have right to build highly accurate predictive models even if they would not usually have necessary skills.",
+   "components.GenularBottom.dialog.citation.author": "Albert Einstein",
+   "components.GenularBottom.dialog.citation.text": "Nous ne pouvons pas résoudre nos problèmes avec le même niveau de pensée qui les a créés",
+-  "components.GenularBottom.dialog.ending": "Au lieu de deviner quel modèle sera le meilleur travail de vos données, notre système automatiquement les processus en parallèle beaucoup de différents algorithmes d'apprentissage automatique, des essais, des millions de modèles potentiels par seconde, et suggère plus précise de celles qui s'adapte à vos données.",
+-  "components.GenularBottom.dialog.footer": "SIMON est réalisé et maintenu par genular, une communauté à travailler ensemble pour maintenir la Science publique ouverte et accessible à tous.",
++  "components.GenularBottom.dialog.ending": "To work towards a better future, we all need to understand how and why complex mechanisms are changing and whats impacting that change",
++  "components.GenularBottom.dialog.footer": "SIMON is made and maintained by @genular, a community working together to keep science a public good accessible to everyone. We are welcoming participation from organizations and individuals committed to advancing open tools for science. Visit our <a href='https://genular.org' target='_blank'>website</a> for instructions on how you and/or your project/organization can join us.",
++  "components.GenularBottom.dialog.links.title": "Other resources",
++  "components.GenularBottom.dialog.links.tooltip.forums": "Discuss with our community possible bugs & feature requests, or just write a usage tutorial",
++  "components.GenularBottom.dialog.links.tooltip.github": "Take part in development progress or report bugs you discovered",
++  "components.GenularBottom.dialog.links.tooltip.translation": "Join our Translation Community, add new or correct existing translations",
+   "components.LangSelect.language_changed": "Langue réussi à passer",
+   "components.LangSelect.language.de": "Allemand",
+   "components.LangSelect.language.en": "Anglais",
+diff --git a/src/app/translations/files/translated/zh.json b/src/app/translations/files/translated/zh.json
+index 8676480b..a976057d 100644
+--- a/src/app/translations/files/translated/zh.json
++++ b/src/app/translations/files/translated/zh.json
+@@ -8,11 +8,15 @@
+   "components.GenularBottom.buttons.help": "帮我们翻译",
+   "components.GenularBottom.buttons.about": "关于genular",
+   "components.GenularBottom.dialog.title": "关于我们",
+-  "components.GenularBottom.dialog.intro": "我们是开放源的组织建立促进科学和研究。 我们认为，每个人都应该有权建立高度准确的预测模型，即使他们通常不具有必要的技能。",
++  "components.GenularBottom.dialog.intro": "We are open source community existing to promote science and research. We believe that everyone should have right to build highly accurate predictive models even if they would not usually have necessary skills.",
+   "components.GenularBottom.dialog.citation.author": "阿尔伯特*爱因斯坦",
+   "components.GenularBottom.dialog.citation.text": "我们不能解决我们的问题与同一级别的思想，创造了他们",
+-  "components.GenularBottom.dialog.ending": "而不是猜测该模型将工作最好你的数据，我们的系统会自动进程并行的许多不同的计算机学习、测试数以百万计的潜力模型，并建议最准确的，适合你的数据。",
+-  "components.GenularBottom.dialog.footer": "西蒙是制作和维持通过genular，一个社区一起工作，以保持科学的开放的、公开的，对所有人开放。",
++  "components.GenularBottom.dialog.ending": "To work towards a better future, we all need to understand how and why complex mechanisms are changing and whats impacting that change",
++  "components.GenularBottom.dialog.footer": "SIMON is made and maintained by @genular, a community working together to keep science a public good accessible to everyone. We are welcoming participation from organizations and individuals committed to advancing open tools for science. Visit our <a href='https://genular.org' target='_blank'>website</a> for instructions on how you and/or your project/organization can join us.",
++  "components.GenularBottom.dialog.links.title": "Other resources",
++  "components.GenularBottom.dialog.links.tooltip.forums": "Discuss with our community possible bugs & feature requests, or just write a usage tutorial",
++  "components.GenularBottom.dialog.links.tooltip.github": "Take part in development progress or report bugs you discovered",
++  "components.GenularBottom.dialog.links.tooltip.translation": "Join our Translation Community, add new or correct existing translations",
+   "components.LangSelect.language_changed": "语言的成功交换",
+   "components.LangSelect.language.de": "德",
+   "components.LangSelect.language.en": "英语",

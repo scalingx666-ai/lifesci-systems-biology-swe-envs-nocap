@@ -1,0 +1,628 @@
+diff --git a/opt/scopeserver/dataserver/modules/gserver/GServer.py b/opt/scopeserver/dataserver/modules/gserver/GServer.py
+index 4d01aaa8..4fdb0b7a 100644
+--- a/opt/scopeserver/dataserver/modules/gserver/GServer.py
++++ b/opt/scopeserver/dataserver/modules/gserver/GServer.py
+@@ -163,7 +163,7 @@ def getVmax(self, request, context):
+                 for loomFilePath in request.loomFilePath:
+                     l_v_max = 0
+                     l_max_v_max = 0
+-                    loom = self.lfh.get_loom(loom_file_path=loomFilePath)
++                    loom = self.lfh.get_loom(loom_file_path=Path(loomFilePath))
+                     if request.featureType[n] == "gene":
+                         vals, _ = loom.get_gene_expression(
+                             gene_symbol=feature,
+@@ -192,7 +192,7 @@ def getVmax(self, request, context):
+     def getCellColorByFeatures(self, request, context):
+         start_time = time.time()
+         try:
+-            loom = self.lfh.get_loom(loom_file_path=request.loomFilePath)
++            loom = self.lfh.get_loom(loom_file_path=Path(request.loomFilePath))
+         except ValueError:
+             return
+ 
+@@ -228,12 +228,12 @@ def getCellColorByFeatures(self, request, context):
+         )
+ 
+     def getCellAUCValuesByFeatures(self, request, context):
+-        loom = self.lfh.get_loom(loom_file_path=request.loomFilePath)
++        loom = self.lfh.get_loom(loom_file_path=Path(request.loomFilePath))
+         vals, _ = loom.get_auc_values(regulon=request.feature[0])
+         return s_pb2.CellAUCValuesByFeaturesReply(value=vals)
+ 
+     def getNextCluster(self, request, context):
+-        loom = self.lfh.get_loom(loom_file_path=request.loomFilePath)
++        loom = self.lfh.get_loom(loom_file_path=Path(request.loomFilePath))
+         clustering_meta = loom.get_meta_data_clustering_by_id(
+             request.clusteringID, secret=self.config["dataHashSecret"]
+         )
+@@ -273,7 +273,7 @@ def getNextCluster(self, request, context):
+         )
+ 
+     def getCellMetaData(self, request, context):
+-        loom = self.lfh.get_loom(loom_file_path=request.loomFilePath)
++        loom = self.lfh.get_loom(loom_file_path=Path(request.loomFilePath))
+         cell_indices = request.cellIndices
+         if len(cell_indices) == 0:
+             cell_indices = list(range(loom.get_nb_cells()))
+@@ -307,7 +307,7 @@ def getCellMetaData(self, request, context):
+         )
+ 
+     def getFeatures(self, request, context):
+-        loom = self.lfh.get_loom(loom_file_path=request.loomFilePath)
++        loom = self.lfh.get_loom(loom_file_path=Path(request.loomFilePath))
+         f = self.get_features(loom=loom, query=request.query)
+         return s_pb2.FeatureReply(
+             feature=f["feature"], featureType=f["featureType"], featureDescription=f["featureDescription"]
+@@ -315,45 +315,45 @@ def getFeatures(self, request, context):
+ 
+     def getCoordinates(self, request, context):
+         # request content
+-        loom = self.lfh.get_loom(loom_file_path=request.loomFilePath)
++        loom = self.lfh.get_loom(loom_file_path=Path(request.loomFilePath))
+         c = loom.get_coordinates(
+             coordinatesID=request.coordinatesID, annotation=request.annotation, logic=request.logic
+         )
+         return s_pb2.CoordinatesReply(x=c["x"], y=c["y"], cellIndices=c["cellIndices"])
+ 
+     def setAnnotationName(self, request, context):
+-        loom = self.lfh.get_loom(loom_file_path=request.loomFilePath)
++        loom = self.lfh.get_loom(loom_file_path=Path(request.loomFilePath))
+         success = loom.rename_annotation(request.clusteringID, request.clusterID, request.newAnnoName)
+         return s_pb2.SetAnnotationNameReply(success=success)
+ 
+     def setLoomHierarchy(self, request, context):
+-        loom = self.lfh.get_loom(loom_file_path=request.loomFilePath)
++        loom = self.lfh.get_loom(loom_file_path=Path(request.loomFilePath))
+         success = loom.set_hierarchy(request.newHierarchy_L1, request.newHierarchy_L2, request.newHierarchy_L3)
+         return s_pb2.SetLoomHierarchyReply(success=success)
+ 
+     def setColabAnnotationData(self, request, context):
+-        loom = self.lfh.get_loom(loom_file_path=request.loomFilePath)
++        loom = self.lfh.get_loom(loom_file_path=Path(request.loomFilePath))
+         if not self.dfh.confirm_orcid_uuid(request.orcidInfo.orcidID, request.orcidInfo.orcidUUID):
+             return s_pb2.setColabAnnotationDataReply(success=False, message="Could not confirm user!")
+         success, message = loom.add_collab_annotation(request, self.config["dataHashSecret"])
+         return s_pb2.setColabAnnotationDataReply(success=success, message=message)
+ 
+     def addNewClustering(self, request, context):
+-        loom = self.lfh.get_loom(loom_file_path=request.loomFilePath)
++        loom = self.lfh.get_loom(loom_file_path=Path(request.loomFilePath))
+         if not self.dfh.confirm_orcid_uuid(request.orcidInfo.orcidID, request.orcidInfo.orcidUUID):
+             return s_pb2.AddNewClusteringReply(success=False, message="Could not confirm user!")
+         success, message = loom.add_user_clustering(request)
+         return s_pb2.AddNewClusteringReply(success=success, message=message)
+ 
+     def voteAnnotation(self, request, context):
+-        loom = self.lfh.get_loom(loom_file_path=request.loomFilePath)
++        loom = self.lfh.get_loom(loom_file_path=Path(request.loomFilePath))
+         if not self.dfh.confirm_orcid_uuid(request.orcidInfo.orcidID, request.orcidInfo.orcidUUID):
+             return s_pb2.voteAnnotationReply(success=False, message="Could not confirm user!")
+         success, message = loom.annotation_vote(request, self.config["dataHashSecret"])
+         return s_pb2.voteAnnotationReply(success=success, message=message)
+ 
+     def getRegulonMetaData(self, request, context):
+-        loom = self.lfh.get_loom(loom_file_path=request.loomFilePath)
++        loom = self.lfh.get_loom(loom_file_path=Path(request.loomFilePath))
+         regulon_genes = None
+         autoThresholds = None
+         defaultThreshold = None
+@@ -429,7 +429,7 @@ def get_regulon_marker_metric(regulon_metric):
+         return s_pb2.RegulonMetaDataReply(regulonMeta=regulon)
+ 
+     def getMarkerGenes(self, request, context):
+-        loom = self.lfh.get_loom(loom_file_path=request.loomFilePath)
++        loom = self.lfh.get_loom(loom_file_path=Path(request.loomFilePath))
+         # Check if cluster markers for the given clustering are present in the loom
+         if not loom.has_cluster_markers(clustering_id=request.clusteringID):
+             logger.info("No markers for clustering {0} present in active loom.".format(request.clusteringID))
+@@ -515,7 +515,7 @@ def getMyLooms(self, request, context):
+                 if f.endswith(".loom"):
+                     with open(self.lfh.get_loom_absolute_file_path(f), "r") as fh:
+                         loomSize = os.fstat(fh.fileno())[6]
+-                    loom = self.lfh.get_loom(loom_file_path=f)
++                    loom = self.lfh.get_loom(loom_file_path=Path(f))
+                     if loom is None:
+                         continue
+                     file_meta = loom.get_file_metadata()
+@@ -639,8 +639,8 @@ def getRemainingUUIDTime(
+         )
+ 
+     def translateLassoSelection(self, request, context):
+-        src_loom = self.lfh.get_loom(loom_file_path=request.srcLoomFilePath)
+-        dest_loom = self.lfh.get_loom(loom_file_path=request.destLoomFilePath)
++        src_loom = self.lfh.get_loom(loom_file_path=Path(request.srcLoomFilePath))
++        dest_loom = self.lfh.get_loom(loom_file_path=Path(request.destLoomFilePath))
+         src_cell_ids = [src_loom.get_cell_ids()[i] for i in request.cellIndices]
+         src_fast_index = set(src_cell_ids)
+         dest_mask = [x in src_fast_index for x in dest_loom.get_cell_ids()]
+@@ -648,7 +648,7 @@ def translateLassoSelection(self, request, context):
+         return s_pb2.TranslateLassoSelectionReply(cellIndices=dest_cell_indices)
+ 
+     def getCellIDs(self, request, context):
+-        loom = self.lfh.get_loom(loom_file_path=request.loomFilePath)
++        loom = self.lfh.get_loom(loom_file_path=Path(request.loomFilePath))
+         cell_ids = loom.get_cell_ids()
+         slctd_cell_ids = [cell_ids[i] for i in request.cellIndices]
+         return s_pb2.CellIDsReply(cellIds=slctd_cell_ids)
+@@ -664,8 +664,8 @@ def deleteUserFile(self, request, context):
+                     if basename.endswith(".loom"):
+                         abs_file_path = self.lfh.drop_loom(request.filePath)
+                         try:
+-                            partial_md5_hash = self.lfh.get_partial_md5_hash(abs_file_path, 10000)
+-                            os.remove(os.path.join(os.path.dirname(abs_file_path), partial_md5_hash + ".ss_pkl"))
++                            os.remove(abs_file_path.with_suffix(".ss_pkl"))
++
+                         except OSError as err:
+                             logger.error(f"Could not delete search space pickle from {request.filePath}. {err}")
+                     try:
+@@ -685,7 +685,7 @@ def deleteUserFile(self, request, context):
+     def downloadSubLoom(self, request, context):
+         start_time = time.time()
+ 
+-        loom = self.lfh.get_loom(loom_file_path=request.loomFilePath)
++        loom = self.lfh.get_loom(loom_file_path=Path(request.loomFilePath))
+         loom_connection = loom.get_connection()
+         meta_data = loom.get_meta_data()
+ 
+@@ -767,7 +767,7 @@ def downloadSubLoom(self, request, context):
+     #
+     def doGeneSetEnrichment(self, request, context):
+         gene_set_file_path = os.path.join(self.dfh.get_gene_sets_dir(), request.geneSetFilePath)
+-        loom = self.lfh.get_loom(loom_file_path=request.loomFilePath)
++        loom = self.lfh.get_loom(loom_file_path=Path(request.loomFilePath))
+         gse = _gse.GeneSetEnrichment(
+             scope=self, method="AUCell", loom=loom, gene_set_file_path=gene_set_file_path, annotation=""
+         )
+@@ -788,7 +788,7 @@ def doGeneSetEnrichment(self, request, context):
+         if not gse.has_AUCell_rankings():
+             # Creating the matrix as DataFrame...
+             yield gse.update_state(step=1, status_code=200, status_message="Creating the matrix...", values=None)
+-            loom = self.lfh.get_loom(loom_file_path=request.loomFilePath)
++            loom = self.lfh.get_loom(loom_file_path=Path(request.loomFilePath))
+             dgem = np.transpose(loom.get_connection()[:, :])
+             ex_mtx = pd.DataFrame(data=dgem, index=loom.get_ca_attr_by_name("CellID"), columns=loom.get_genes())
+             # Creating the rankings...
+diff --git a/opt/scopeserver/dataserver/utils/loom.py b/opt/scopeserver/dataserver/utils/loom.py
+index dfdee675..86de588c 100644
+--- a/opt/scopeserver/dataserver/utils/loom.py
++++ b/opt/scopeserver/dataserver/utils/loom.py
+@@ -6,9 +6,9 @@
+ import pandas as pd
+ import time
+ import hashlib
+-import os
+-import pickle
++from pathlib import Path
+ from typing import Tuple, Dict, Any, Union, List, Set
++from loompy.loompy import LoomConnection
+ from typing_extensions import TypedDict
+ from google.protobuf.internal.containers import RepeatedScalarFieldContainer
+ 
+@@ -31,9 +31,10 @@
+ 
+ 
+ class Loom:
+-    def __init__(self, partial_md5_hash, file_path, abs_file_path, loom_connection, loom_file_handler):
++    def __init__(
++        self, file_path: Path, abs_file_path: Path, loom_connection: LoomConnection, loom_file_handler,
++    ):
+         self.lfh = loom_file_handler
+-        self.partial_md5_hash = partial_md5_hash
+         self.file_path = file_path
+         self.abs_file_path = abs_file_path
+         self.loom_connection = loom_connection
+@@ -43,36 +44,16 @@ def __init__(self, partial_md5_hash, file_path, abs_file_path, loom_connection,
+         # Metrics
+         self.nUMI = None
+         self.species, self.gene_mappings = self.infer_species()
+-        self.ss_pickle_name = os.path.join(os.path.dirname(self.abs_file_path), partial_md5_hash + ".ss_pkl")
+-
+-        try:
+-            with open(self.ss_pickle_name, "rb") as fh:
+-                logger.debug(f"Loading prebuilt SS for {file_path} from {self.ss_pickle_name}")
+-                self.ss = pickle.load(fh)
+-                if self.ss.search_space_version < ss.CURRENT_SS_VERISON:
+-                    raise AttributeError(
+-                        f"Cached search space is an old version or does not exist, upgrading to {ss.CURRENT_SS_VERISON}"
+-                    )
+-                self.ss.loom = self
+-                self.ss.dfh = dfh.DataFileHandler()
+-
+-        except (EOFError, FileNotFoundError, AttributeError, TypeError):
+-            logger.debug(f"Building Search Space for {file_path}")
+-            self.ss = ss.SearchSpace(loom=self).build()
+-            self.ss.loom = None  # Remove loom connection to enable pickling
+-            self.ss.dfh = None
+-            logger.debug(f"Built Search Space for {file_path}")
+-            with open(self.ss_pickle_name, "wb") as fh:
+-                logger.debug(f"Writing prebuilt SS for {file_path} to {self.ss_pickle_name}")
+-                pickle.dump(self.ss, fh)
++        self.ss_pickle_name = self.abs_file_path.with_suffix(".ss_pkl")
++        self.ss = ss.load_ss(self)
+ 
+     def get_connection(self):
+         return self.loom_connection
+ 
+-    def get_file_path(self) -> str:
++    def get_file_path(self) -> Path:
+         return self.file_path
+ 
+-    def get_abs_file_path(self) -> str:
++    def get_abs_file_path(self) -> Path:
+         return self.abs_file_path
+ 
+     def get_global_attribute_by_name(self, name):
+@@ -113,15 +94,11 @@ def decompress_meta(meta):
+         except AttributeError:
+             return json.loads(zlib.decompress(base64.b64decode(meta.encode("ascii"))).decode("ascii"))
+ 
+-    def update_metadata(self, meta, keep_ss: bool = False):
+-        self.loom_connection = self.lfh.change_loom_mode(
+-            self.file_path, mode="r+", partial_md5_hash=self.partial_md5_hash
+-        )
++    def update_metadata(self, meta):
++        self.loom_connection = self.lfh.change_loom_mode(self.file_path, mode="r+")
+         orig_metaJson = self.get_meta_data()
+         self.loom_connection.attrs["MetaData"] = json.dumps(meta)
+-        self.loom_connection = self.lfh.change_loom_mode(
+-            self.file_path, mode="r", partial_md5_hash=self.partial_md5_hash, keep_ss=keep_ss
+-        )
++        self.loom_connection = self.lfh.change_loom_mode(self.file_path, mode="r")
+         new_metaJson = self.get_meta_data()
+         return orig_metaJson != new_metaJson
+ 
+@@ -140,6 +117,8 @@ def rename_annotation(self, clustering_id: int, cluster_id: int, new_annotation_
+         metaJson["clusterings"][clustering_n]["clusters"][cluster_n]["description"] = new_annotation_name
+         self.update_metadata(metaJson)
+ 
++        self.ss = ss.update(self, update="clusterings")
++
+         if (
+             self.get_meta_data()["clusterings"][clustering_n]["clusters"][cluster_n]["description"]
+             == new_annotation_name
+@@ -220,6 +199,8 @@ def add_collab_annotation(self, request, secret: str) -> Tuple[bool, str]:
+ 
+         self.update_metadata(metaJson)
+ 
++        self.ss = ss.update(self, update="cluster_annotations")
++
+         if (
+             cell_type_annotation
+             in self.get_meta_data()["clusterings"][clustering_n]["clusters"][cluster_n]["cell_type_annotation"]
+@@ -303,8 +284,9 @@ def annotation_vote(self, request, secret: str) -> Tuple[bool, str]:
+             return (False, "Could not find cell type annotation to change vote")
+ 
+         try:
+-            self.update_metadata(metaJson, keep_ss=True)
+-        except OSError:
++            self.update_metadata(metaJson)
++        except OSError as e:
++            logger.error(e)
+             return (False, "Couldn't write metadata!")
+ 
+         if check_data == self.get_meta_data():
+@@ -396,31 +378,25 @@ def add_user_clustering(self, request) -> Tuple[bool, str]:
+ 
+         new_clusterings = Loom.dfToNamedMatrix(clusterings)
+ 
+-        self.loom_connection = self.lfh.change_loom_mode(
+-            self.file_path, mode="r+", partial_md5_hash=self.partial_md5_hash
+-        )
++        self.loom_connection = self.lfh.change_loom_mode(self.file_path, mode="r+")
+         loom = self.loom_connection
+         loom.ca.Clusterings = new_clusterings
+         loom.attrs["MetaData"] = json.dumps(metaJson)
+-        self.loom_connection = self.lfh.change_loom_mode(
+-            self.file_path, mode="r", partial_md5_hash=self.partial_md5_hash
+-        )
+-        loom = self.loom_connection
++        self.loom_connection = self.lfh.change_loom_mode(self.file_path, mode="r")
+ 
+-        try:
+-            new_clustering_data = self.get_clustering_by_id(new_clustering_meta["id"])
++        self.ss = ss.update(self, update="clusterings")
++
++        if new_clustering_meta["id"] in self.loom_connection.ca.Clusterings.dtype.names:
+             logger.debug("Success")
+             return (True, "Success")
+-        except IndexError:
++        else:
+             logger.debug("Failure")
+             return (False, "Updated clusterings do not exist in file. Write error.")
+ 
+     def set_hierarchy(self, L1: str, L2: str, L3: str) -> bool:
+         logger.info("Changing hierarchy name for {0}".format(self.get_abs_file_path()))
+ 
+-        self.loom_connection = self.lfh.change_loom_mode(
+-            self.file_path, mode="r+", partial_md5_hash=self.partial_md5_hash
+-        )
++        self.loom_connection = self.lfh.change_loom_mode(self.file_path, mode="r+")
+         loom = self.loom_connection
+         attrs = self.loom_connection.attrs
+ 
+@@ -429,9 +405,7 @@ def set_hierarchy(self, L1: str, L2: str, L3: str) -> bool:
+         attrs["SCopeTreeL3"] = L3
+ 
+         loom.attrs = attrs
+-        self.loom_connection = self.lfh.change_loom_mode(
+-            self.file_path, mode="r", partial_md5_hash=self.partial_md5_hash
+-        )
++        self.loom_connection = self.lfh.change_loom_mode(self.file_path, mode="r")
+         loom = self.loom_connection
+         newAttrs = self.loom_connection.attrs
+ 
+@@ -510,6 +484,7 @@ def generate_meta_data(self) -> None:
+ 
+         loom.attrs["MetaData"] = json.dumps(metaJson)
+         self.loom_connection = self.lfh.change_loom_mode(self.file_path, mode="r")
++        self.ss = ss.build(self)
+ 
+     def get_file_metadata(self):
+         """Summarize in a dict what feature data the loom file contains.
+diff --git a/opt/scopeserver/dataserver/utils/loom_file_handler.py b/opt/scopeserver/dataserver/utils/loom_file_handler.py
+index 9d7eddb5..c695c19d 100644
+--- a/opt/scopeserver/dataserver/utils/loom_file_handler.py
++++ b/opt/scopeserver/dataserver/utils/loom_file_handler.py
+@@ -1,6 +1,10 @@
+ import os
+-import hashlib
+ import loompy as lp
++from loompy import LoomConnection
++import threading
++from collections import defaultdict
++from pathlib import Path
++from typing import Optional
+ 
+ from scopeserver.dataserver.utils import data_file_handler as dfh
+ from scopeserver.dataserver.utils.loom import Loom
+@@ -12,65 +16,37 @@
+ class LoomFileHandler:
+     def __init__(self):
+         self.active_looms = {}
+-        self.loom_dir = dfh.DataFileHandler.get_data_dir_path_by_file_type(file_type="Loom")
++        self.file_locks = defaultdict(lambda: threading.Lock())
++        self.loom_dir = Path(dfh.DataFileHandler.get_data_dir_path_by_file_type(file_type="Loom"))
+ 
+-    def add_loom(self, partial_md5_hash: str, file_path: str, abs_file_path: str, loom_connection):
++    def add_loom(self, file_path: Path, abs_file_path: Path, loom_connection) -> Loom:
+         loom = Loom(
+-            partial_md5_hash=partial_md5_hash,
+-            file_path=file_path,
+-            abs_file_path=abs_file_path,
+-            loom_connection=loom_connection,
+-            loom_file_handler=self,
++            file_path=file_path, abs_file_path=abs_file_path, loom_connection=loom_connection, loom_file_handler=self,
+         )
+         self.active_looms[abs_file_path] = loom
+         return loom
+ 
+-    def load_loom_file(self, partial_md5_hash: str, file_path: str, abs_file_path: str, mode: str = "r"):
++    def load_loom_file(self, file_path: Path, abs_file_path: Path, mode: str = "r") -> Optional[Loom]:
+         try:
+-            loom_connection = lp.connect(abs_file_path, mode=mode, validate=False)
++            loom_connection = lp.connect(abs_file_path.as_posix(), mode=mode, validate=False)
++            return self.add_loom(file_path=file_path, abs_file_path=abs_file_path, loom_connection=loom_connection,)
+         except KeyError as e:
+             logger.error(e)
+             os.remove(file_path)
+             logger.warning(f"Deleting malformed loom {file_path}")
+             return None
+-        return self.add_loom(
+-            partial_md5_hash=partial_md5_hash,
+-            file_path=file_path,
+-            abs_file_path=abs_file_path,
+-            loom_connection=loom_connection,
+-        )
+-
+-    @staticmethod
+-    def get_partial_md5_hash(file_path: str, last_n_kb: int):
+-        with open(file_path, "rb") as f:
+-            file_size = os.fstat(f.fileno()).st_size
+-            if file_size < last_n_kb * 1024:
+-                f.seek(-file_size, 2)
+-            else:
+-                f.seek(-last_n_kb * 1024, 2)
+-            data = f.read()
+-        return hashlib.md5(data + file_path.encode("ASCII")).hexdigest()
+ 
+-    def drop_loom(self, loom_file_path: str) -> str:
+-        loom = self.get_loom(loom_file_path=loom_file_path).get_connection().close()
++    def drop_loom(self, loom_file_path: Path) -> Path:
+         abs_file_path = self.get_loom_absolute_file_path(loom_file_path)
+         del self.active_looms[abs_file_path]
+         return abs_file_path
+ 
+-    def change_loom_mode(
+-        self, loom_file_path: str, mode: str = "r", partial_md5_hash: str = None, keep_ss: bool = False
+-    ):
++    def change_loom_mode(self, loom_file_path: Path, mode: str = "r", keep_ss: bool = False) -> LoomConnection:
+         abs_file_path = self.get_loom_absolute_file_path(loom_file_path)
+-        if partial_md5_hash is None:
+-            partial_md5_hash = LoomFileHandler.get_partial_md5_hash(abs_file_path, 10000)
+         if not os.path.exists(abs_file_path):
+-            raise ValueError("The file located at " + abs_file_path + " does not exist.")
+-        logger.info("{0} md5 is {1}".format(abs_file_path, partial_md5_hash))
++            raise ValueError(f"The file located at {abs_file_path} does not exist.")
+ 
+         if abs_file_path in self.active_looms:
+-            logger.debug(
+-                f"Found file with hash: {partial_md5_hash}. Current mode is {self.active_looms[abs_file_path].get_connection().mode}. Closing."
+-            )
+             self.active_looms[abs_file_path].get_connection().close()
+ 
+         if mode == "r+":
+@@ -80,35 +56,13 @@ def change_loom_mode(
+ 
+         else:
+             logger.debug(f"Reopening file as r")
+-            if keep_ss:
+-                new_partial_md5_hash = LoomFileHandler.get_partial_md5_hash(abs_file_path, 10000)
+-                logger.debug(
+-                    f'Keeping old SS, moving {os.path.join(os.path.dirname(abs_file_path), partial_md5_hash + ".ss_pkl")} \
+-                        to {os.path.join(os.path.dirname(abs_file_path), new_partial_md5_hash + ".ss_pkl")}'
+-                )
+-                os.rename(
+-                    os.path.join(os.path.dirname(abs_file_path), partial_md5_hash + ".ss_pkl"),
+-                    os.path.join(os.path.dirname(abs_file_path), new_partial_md5_hash + ".ss_pkl"),
+-                )
+             self.active_looms[abs_file_path] = self.get_loom(loom_file_path=loom_file_path)
+             logger.info(f"{loom_file_path} now {self.active_looms[abs_file_path].get_connection().mode}")
+ 
+-        logger.debug(f"Checking MD5")
+-        new_partial_md5_hash = LoomFileHandler.get_partial_md5_hash(abs_file_path, 10000)
+-        logger.debug(f"Old MD5 is: {partial_md5_hash} New MD5 is: {new_partial_md5_hash}")
+-
+-        if (partial_md5_hash != new_partial_md5_hash) and not keep_ss:
+-            try:
+-                logger.debug("Removing old SS")
+-                os.remove(os.path.join(os.path.dirname(abs_file_path), partial_md5_hash + ".ss_pkl"))
+-            except Exception as e:
+-                logger.debug("Couldn't remove pickle SS")
+-                logger.debug(e)
+-                pass
+         return self.active_looms[abs_file_path].get_connection()
+ 
+-    def get_loom_absolute_file_path(self, loom_file_path: str) -> str:
+-        return os.path.join(self.loom_dir, loom_file_path)
++    def get_loom_absolute_file_path(self, loom_file_path: Path) -> Path:
++        return (self.loom_dir / loom_file_path).resolve()
+ 
+     def get_global_looms(self) -> list:
+         return self.global_looms
+@@ -116,35 +70,37 @@ def get_global_looms(self) -> list:
+     def set_global_data(self) -> None:
+         self.global_looms = [x for x in os.listdir(self.loom_dir) if not os.path.isdir(os.path.join(self.loom_dir, x))]
+ 
+-    def get_loom_connection(self, loom_file_path: str, mode: str = "r"):
++    def get_loom_connection(self, loom_file_path: Path, mode: str = "r") -> LoomConnection:
+         logger.debug(f"Getting connection for {loom_file_path} in mode {mode}")
+         return self.get_loom(loom_file_path=loom_file_path, mode=mode).get_connection()
+ 
+-    def get_loom(self, loom_file_path: str, mode: str = "r"):
++    def get_loom(self, loom_file_path: Path, mode: str = "r") -> Loom:
+         abs_loom_file_path = self.get_loom_absolute_file_path(loom_file_path)
+-        if not os.path.exists(abs_loom_file_path):
+-            logger.error(f"The file {loom_file_path} does not exists.")
+-            raise ValueError("The file located at " + abs_loom_file_path + " does not exist.")
+-        # To check if the given file path is given specified url!
+-        partial_md5_hash = LoomFileHandler.get_partial_md5_hash(abs_loom_file_path, 10000)
+-        if abs_loom_file_path in self.active_looms:
+-            logger.debug("Should be preloaded")
+-            try:
+-                logger.debug(
+-                    f"Current mode: {self.active_looms[abs_loom_file_path].get_connection().mode}, wanted mode {mode}"
+-                )
+-
+-                if self.active_looms[abs_loom_file_path].get_connection().mode == mode:
+-                    loom = self.active_looms[abs_loom_file_path]
++        with self.file_locks[abs_loom_file_path]:
++            if not abs_loom_file_path.exists():
++                logger.error(f"The file {loom_file_path} does not exists.")
++                raise ValueError(f"The file located at {abs_loom_file_path} does not exist.")
++            if abs_loom_file_path in self.active_looms:
++                logger.debug("Should be preloaded")
++                loom = self.active_looms[abs_loom_file_path]
++                try:
+                     logger.debug(
+-                        f"Returning pre-loaded loom file {loom_file_path}. Hash {partial_md5_hash}, object {id(loom)}"
++                        f"Current mode: {self.active_looms[abs_loom_file_path].get_connection().mode}, wanted mode {mode}"
+                     )
+-                    return loom
+-            except AttributeError:
+-                logger.error("Loom was previously closed")
++                    if self.active_looms[abs_loom_file_path].get_connection().mode == mode:
++                        logger.debug(f"Returning pre-loaded loom file {loom_file_path}. Object {id(loom)}")
++                        return loom
++                    else:
++                        logger.error(
++                            f"Mode {mode} was requested for {loom_file_path}, but mode is currently {self.active_looms[abs_loom_file_path].get_connection().mode}"
++                        )
++                except AttributeError:
++                    logger.error("Loom was previously closed")
++                    loom.loom_connection = lp.connect(abs_loom_file_path.as_posix(), mode=mode, validate=False)
+ 
+-        loom = self.load_loom_file(
+-            partial_md5_hash=partial_md5_hash, mode=mode, file_path=loom_file_path, abs_file_path=abs_loom_file_path
+-        )
+-        logger.debug(f"Returning newly loaded loom file {loom_file_path}. Hash {partial_md5_hash}, object {id(loom)}")
++            else:
++                loom = self.load_loom_file(mode=mode, file_path=loom_file_path, abs_file_path=abs_loom_file_path)
++                logger.debug(
++                    f"Returning newly loaded loom file {loom_file_path}. Object {id(loom)}, mode {loom.get_connection().mode}"
++                )
+         return loom
+diff --git a/opt/scopeserver/dataserver/utils/search_space.py b/opt/scopeserver/dataserver/utils/search_space.py
+index c2852afc..8ae97876 100644
+--- a/opt/scopeserver/dataserver/utils/search_space.py
++++ b/opt/scopeserver/dataserver/utils/search_space.py
+@@ -1,4 +1,6 @@
+-import functools
++from copy import deepcopy
++from pathlib import Path
++import pickle
+ import re
+ from typing import Any, Dict, NamedTuple, Optional, List
+ 
+@@ -7,7 +9,7 @@
+ 
+ logger = logging.getLogger(__name__)
+ 
+-CURRENT_SS_VERISON = 0
++CURRENT_SS_VERISON = 1
+ 
+ 
+ class SSKey(NamedTuple):
+@@ -182,3 +184,53 @@ def add_metrics(self) -> None:
+         for metric in self.meta_data["metrics"]:
+             metrics.append(metric["name"])
+         self.add_elements(elements=metrics, element_type="metric")
++
++
++def load_ss(loom) -> SearchSpace:
++    ss_pickle_name: Path = loom.ss_pickle_name
++    try:
++        with open(ss_pickle_name, "rb") as fh:
++            logger.debug(f"Loading prebuilt SS for {loom.file_path} from {ss_pickle_name}")
++            ss = pickle.load(fh)
++            ss.loom = loom
++            ss.dfh = dfh.DataFileHandler()
++            if not hasattr(ss, "search_space_version"):
++                logger.error(f"Search space has no version key and is likely legacy. Rebuilding search space...")
++                ss = build(loom)
++            elif ss.search_space_version != CURRENT_SS_VERISON:
++                logger.error(
++                    f"Cached search space version {ss.search_space_version} is not {CURRENT_SS_VERISON}. Rebuilding search space..."
++                )
++                ss = build(loom)
++    except (EOFError, FileNotFoundError):
++        ss = build(loom)
++    return ss
++
++
++def build(loom) -> SearchSpace:
++    logger.debug(f"Building Search Spaces for {loom.file_path}")
++    ss = SearchSpace(loom=loom).build()
++    logger.debug(f"Built Search Space for {loom.file_path}")
++    write(loom, ss)
++    return ss
++
++
++def write(loom, ss: SearchSpace) -> None:
++    ss.loom = None  # Remove loom connection to enable pickling
++    ss.dfh = None
++    cur_ss = deepcopy(ss)
++    with open(loom.ss_pickle_name, "wb") as fh:
++        logger.debug(f"Writing SS for {loom.file_path} to {loom.ss_pickle_name}")
++        pickle.dump(cur_ss, fh)
++
++
++def update(loom, update: str) -> SearchSpace:
++    ss = loom.ss
++    ss.loom = loom
++    ss.meta_data = loom.get_meta_data()
++    if update == "clusterings":
++        ss.add_clusterings()
++    elif update == "cluster_annotations":
++        ss.add_cluster_annotations()
++    write(loom, ss)
++    return ss

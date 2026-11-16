@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/aertslab__SCope-401"
+description = "Fix for replacing old SearchSpace objects"
+
+[metadata]
+difficulty = "easy"
+category = "bugfix"
+keywords = [
+    "SCope",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aertslab/SCope"
+ref = "3295dabb90db4a69842aa691594e519eac592bd3"
+reference = "https://github.com/aertslab/SCope/pull/401"
+source_access = "auto"
+built_at = "2026-11-15T19:38:03.829587+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:add3b59c7d8e63a983d414c3939ed1414485ae12605b45fee233e73bc315fe11"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2020-11-27T15:49:06Z"
+diff_format = "unified"
+context_files = [
+    "opt/scopeserver/dataserver/utils/search_space.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 2
+difficulty = "trivial"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

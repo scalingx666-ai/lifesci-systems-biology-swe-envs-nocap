@@ -1,0 +1,227 @@
+diff --git a/opt/scopeserver/dataserver/modules/gserver/GServer.py b/opt/scopeserver/dataserver/modules/gserver/GServer.py
+index b4980481..c53ecf9d 100644
+--- a/opt/scopeserver/dataserver/modules/gserver/GServer.py
++++ b/opt/scopeserver/dataserver/modules/gserver/GServer.py
+@@ -324,6 +324,8 @@ def getCoordinates(self, request, context):
+     def setAnnotationName(self, request, context):
+         loom = self.lfh.get_loom(loom_file_path=Path(request.loomFilePath))
+         success = loom.rename_annotation(request.clusteringID, request.clusterID, request.newAnnoName)
++        if success:
++            self.get_features.cache_clear()
+         return s_pb2.SetAnnotationNameReply(success=success)
+ 
+     def setLoomHierarchy(self, request, context):
+@@ -336,6 +338,8 @@ def setColabAnnotationData(self, request, context):
+         if not self.dfh.confirm_orcid_uuid(request.orcidInfo.orcidID, request.orcidInfo.orcidUUID):
+             return s_pb2.setColabAnnotationDataReply(success=False, message="Could not confirm user!")
+         success, message = loom.add_collab_annotation(request, self.config["dataHashSecret"])
++        if success:
++            self.get_features.cache_clear()
+         return s_pb2.setColabAnnotationDataReply(success=success, message=message)
+ 
+     def addNewClustering(self, request, context):
+@@ -343,6 +347,8 @@ def addNewClustering(self, request, context):
+         if not self.dfh.confirm_orcid_uuid(request.orcidInfo.orcidID, request.orcidInfo.orcidUUID):
+             return s_pb2.AddNewClusteringReply(success=False, message="Could not confirm user!")
+         success, message = loom.add_user_clustering(request)
++        if success:
++            self.get_features.cache_clear()
+         return s_pb2.AddNewClusteringReply(success=success, message=message)
+ 
+     def voteAnnotation(self, request, context):
+diff --git a/opt/scopeserver/dataserver/utils/search.py b/opt/scopeserver/dataserver/utils/search.py
+index 20c0948c..ad94629c 100644
+--- a/opt/scopeserver/dataserver/utils/search.py
++++ b/opt/scopeserver/dataserver/utils/search.py
+@@ -1,7 +1,7 @@
+ import logging
+ 
+ from typing import Dict, NamedTuple, Tuple, List, Optional, Type, Union
+-from collections import OrderedDict
++from collections import OrderedDict, defaultdict
+ from contextlib import suppress
+ from scopeserver.dataserver.utils import data_file_handler
+ from scopeserver.dataserver.utils.constant import Species
+@@ -24,6 +24,11 @@ class MatchResult(NamedTuple):
+     result: str
+ 
+ 
++class ResultTypePair(NamedTuple):
++    result: str
++    feature_type: str
++
++
+ DEFINED_SEARCH_TYPES = {
+     "region_gene_link": {
+         "final_category": "gene",
+@@ -103,7 +108,7 @@ def find_matches(search_term: str, search_space: SearchSpaceDict) -> List[MatchR
+     return sort_results(search_term, match_results)
+ 
+ 
+-def aggregate_matches(matches: List[MatchResult]) -> Dict[Tuple[str, str], List[str]]:
++def aggregate_matches(matches: List[MatchResult]) -> Dict[ResultTypePair, List[str]]:
+     """
+     Collapse matches based on returned element.
+ 
+@@ -116,12 +121,12 @@ def aggregate_matches(matches: List[MatchResult]) -> Dict[Tuple[str, str], List[
+         search_space (SearchSpace): The appropriate search space
+ 
+     Returns:
+-        Dict[Tuple[str, str], List[str]]: Search matches aggregated by feature and feature type
++        Dict[ResultTypePair, List[str]]: Search matches aggregated by feature and feature type
+     """
+ 
+-    aggregated_matches: Dict[Tuple[str, str], List[str]] = OrderedDict()
++    aggregated_matches: Dict[ResultTypePair, List[str]] = OrderedDict()
+     for match in matches:
+-        key = (match.result, match.search_space_match.element_type)
++        key = ResultTypePair(match.result, match.search_space_match.element_type)
+         if key not in aggregated_matches.keys():
+             aggregated_matches[key] = [match.search_space_match.element]
+         else:
+@@ -131,9 +136,10 @@ def aggregate_matches(matches: List[MatchResult]) -> Dict[Tuple[str, str], List[
+ 
+ 
+ def create_feature_description(
+-    aggregated_matches: Dict[Tuple[str, str], List[str]],
+-    features: Dict[Tuple[str, str], str],
+-) -> Dict[Tuple[str, str], str]:
++    aggregated_matches: Dict[ResultTypePair, List[str]],
++    features: Dict[ResultTypePair, str],
++    feature_types: Dict[ResultTypePair, str],
++) -> Tuple[Dict[ResultTypePair, str], Dict[ResultTypePair, str], Dict[ResultTypePair, str]]:
+     """
+     Generate descriptions for final results.
+ 
+@@ -142,25 +148,32 @@ def create_feature_description(
+     being translated into the name of the cluster that it is a marker of.
+ 
+     Args:
+-        aggregated_matches (Dict[Tuple[str, str], List[str]]): Results aggregated by final term
+-        features (Dict[Tuple[str, str], str]): A list of features corresponding to the aggregated matches
++        aggregated_matches (Dict[ResultTypePair, List[str]]): Results aggregated by final term
++        features (Dict[ResultTypePair, str]): A list of features corresponding to the aggregated matches
+ 
+     Returns:
+-        Dict[Tuple[str, str], str]: The final descriptions to send to the user
++        final_descriptions: The final descriptions to send to the user
++        features: Updated features
++        feature_types: Updated feature types
+     """
+ 
+-    descriptions: Dict[Tuple[str, str], str] = {}
++    descriptions: Dict[ResultTypePair, List[str]] = defaultdict(lambda: [])
+ 
+     for k, v in aggregated_matches.items():
++        desc_key = k
+         synonyms = v.copy()
+         with suppress(ValueError):
+             synonyms.remove(k[0])
+         if k[1] == "gene" and len(synonyms) > 0:
+-            descriptions[k] = f"Synonyms: {', '.join(synonyms)}"
++            descriptions[k].append(f"Synonyms: {', '.join(synonyms)}")
+         elif k[1] in DEFINED_SEARCH_TYPES:
+             if DEFINED_SEARCH_TYPES[k[1]]["final_category"] == "cluster_category":
+                 is_cluster = True
+                 category_name = features[k]
++                category_type = feature_types[k]
++                desc_key = ResultTypePair(category_name, category_type)
++                features[desc_key] = features[k]
++                feature_types[desc_key] = feature_types[k]
+             else:
+                 is_cluster = False
+                 category_name = k[0]
+@@ -169,20 +182,25 @@ def create_feature_description(
+                     category_name += "es"
+                 elif not is_cluster:
+                     category_name += "s"
+-                descriptions[
+-                    k
+-                ] = f"{','.join(v[:-1])} and {v[-1]} {DEFINED_SEARCH_TYPES[k[1]]['join_text_multiple']} {category_name}"
++                descriptions[desc_key].append(
++                    f"{','.join(v[:-1])} and {v[-1]} {DEFINED_SEARCH_TYPES[k[1]]['join_text_multiple']} {category_name}"
++                )
+             elif len(v) == 1:
+-                descriptions[k] = f"{v[0]} {DEFINED_SEARCH_TYPES[k[1]]['join_text_single']} {category_name}"
++                descriptions[desc_key].append(
++                    f"{v[0]} {DEFINED_SEARCH_TYPES[k[1]]['join_text_single']} {category_name}"
++                )
+         else:
+-            descriptions[k] = ""
++            if len(descriptions[desc_key]) == 0:
++                descriptions[desc_key] = [""]
++
++    final_descriptions = {k: ", ".join(v) for (k, v) in descriptions.items()}
+ 
+-    return descriptions
++    return final_descriptions, features, feature_types
+ 
+ 
+ def get_final_feature_and_type(
+-    loom: Loom, aggregated_matches: Dict[Tuple[str, str], List[str]], data_hash_secret: str
+-) -> Tuple[Dict[Tuple[str, str], str], Dict[Tuple[str, str], str]]:
++    loom: Loom, aggregated_matches: Dict[ResultTypePair, List[str]], data_hash_secret: str
++) -> Tuple[Dict[ResultTypePair, str], Dict[ResultTypePair, str]]:
+     """
+     Determine final features and types.
+ 
+@@ -190,15 +208,15 @@ def get_final_feature_and_type(
+ 
+     Args:
+         loom (Loom): Loom object
+-        aggregated_matches (Dict[Tuple[str, str], List[str]]): Aggregated matches from aggregate_matches
++        aggregated_matches (Dict[ResultTypePair, List[str]]): Aggregated matches from aggregate_matches
+         data_hash_secret (str): Secret used to hash annotations on clusters
+ 
+     Returns:
+-        Tuple[Dict[Tuple[str, str], str], Dict[Tuple[str, str], str]]: Features and Feature types
++        Tuple[Dict[ResultTypePair, str], Dict[ResultTypePair, str]]: Features and Feature types
+     """
+ 
+-    features: Dict[Tuple[str, str], str] = {}
+-    feature_types: Dict[Tuple[str, str], str] = {}
++    features: Dict[ResultTypePair, str] = {}
++    feature_types: Dict[ResultTypePair, str] = {}
+ 
+     for k in aggregated_matches:
+         try:
+@@ -238,12 +256,12 @@ def get_search_results(search_term: str, loom: Loom, data_hash_secret: str) -> D
+     matches = find_matches(search_term, loom.ss.search_space_dict)
+     aggregated_matches = aggregate_matches(matches)
+     features, feature_types = get_final_feature_and_type(loom, aggregated_matches, data_hash_secret)
+-    descriptions = create_feature_description(aggregated_matches, features)
++    descriptions, features, feature_types = create_feature_description(aggregated_matches, features, feature_types)
+ 
+     final_res = {
+-        "feature": [features[k] for k in aggregated_matches],
+-        "featureType": [feature_types[k] for k in aggregated_matches],
+-        "featureDescription": [descriptions[k] for k in aggregated_matches],
++        "feature": [features[k] for k in descriptions],
++        "featureType": [feature_types[k] for k in descriptions],
++        "featureDescription": [descriptions[k] for k in descriptions],
+     }
+ 
+     return final_res
+diff --git a/opt/scopeserver/dataserver/utils/search_space.py b/opt/scopeserver/dataserver/utils/search_space.py
+index 8ae97876..bab2ccb8 100644
+--- a/opt/scopeserver/dataserver/utils/search_space.py
++++ b/opt/scopeserver/dataserver/utils/search_space.py
+@@ -9,7 +9,7 @@
+ 
+ logger = logging.getLogger(__name__)
+ 
+-CURRENT_SS_VERISON = 1
++CURRENT_SS_VERISON = 2
+ 
+ 
+ class SSKey(NamedTuple):
+@@ -109,7 +109,8 @@ def add_cluster_annotations(self) -> None:
+                 for annotation in annotations:
+                     key = SSKey(annotation, element_type)
+                     if (annotation, element_type) in self.search_space_dict.keys():
+-                        self.search_space_dict[key].append(f"{clusteringID}_{clusterID}")
++                        if f"{clusteringID}_{clusterID}" not in self.search_space_dict[key]:
++                            self.search_space_dict[key].append(f"{clusteringID}_{clusterID}")
+                     else:
+                         self.search_space_dict[key] = [f"{clusteringID}_{clusterID}"]
+ 

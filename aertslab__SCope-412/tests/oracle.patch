@@ -1,0 +1,13 @@
+diff --git a/opt/scopeserver/dataserver/utils/loom.py b/opt/scopeserver/dataserver/utils/loom.py
+index 5826a92a..d20dda4f 100644
+--- a/opt/scopeserver/dataserver/utils/loom.py
++++ b/opt/scopeserver/dataserver/utils/loom.py
+@@ -936,7 +936,7 @@ def get_coordinates(
+             cellIndices = self.get_anno_cells(annotations=annotation, logic=logic)
+             x = x[cellIndices]
+             y = y[cellIndices]
+-        if cluster_info is not None:
++        elif cluster_info is not None:
+             clustering_id, cluster_id = cluster_info
+             cellIndices = set()
+             for c in np.where(loom.ca.Clusterings[str(clustering_id)].astype(str) == str(cluster_id))[0]:

@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-180"
+description = "fix(cli): restore subcommand help for oc run/mcp/etc (OMI-10)"
+
+[metadata]
+difficulty = "small"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "0f7125b889bfb587955978de9d2e13e4d3f8b9ae"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/180"
+source_access = "auto"
+built_at = "2026-11-15T18:17:08.205160+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:721539813da00d594b617839e910ef5dfde36696e9773a0a118ac240057f6fea"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-05-12T09:04:55Z"
+diff_format = "unified"
+context_files = [
+    "omicsclaw.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 16
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

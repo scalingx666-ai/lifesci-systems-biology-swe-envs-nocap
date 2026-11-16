@@ -1,0 +1,67 @@
+version = "1.0"
+
+[task]
+name = "default/earmingol__scCellFie-7"
+description = "Update to phenylalanine-associated tasks"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "scCellFie",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "earmingol/scCellFie"
+ref = "c36c8b8e457d1e16de83a2aab118fb2c14db4d43"
+reference = "https://github.com/earmingol/scCellFie/pull/7"
+source_access = "auto"
+built_at = "2026-11-15T19:42:34.943235+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:2d5933e6e4cdf610c1de981f691bb07ab05724e6931e463dae5808fb14f9be70"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2025-02-18T11:12:30Z"
+diff_format = "unified"
+context_files = [
+    "task_data/homo_sapiens/Task-Info.csv",
+    "task_data/homo_sapiens/Task_by_Gene.csv",
+    "task_data/homo_sapiens/Task_by_Rxn.csv",
+    "task_data/mus_musculus/Task-Info.csv",
+    "task_data/mus_musculus/Task_by_Gene.csv",
+    "task_data/mus_musculus/Task_by_Rxn.csv",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 2532
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

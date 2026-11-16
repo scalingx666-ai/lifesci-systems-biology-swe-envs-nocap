@@ -1,0 +1,65 @@
+version = "1.0"
+
+[task]
+name = "default/aertslab__SCope-293"
+description = "Change deprecated use of react-file-downloader to js-file-downloader"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "SCope",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aertslab/SCope"
+ref = "0a185d337f360bcca85d9dd0a931e2a3f3e97fa4"
+reference = "https://github.com/aertslab/SCope/pull/293"
+source_access = "auto"
+built_at = "2026-11-15T19:39:04.300869+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:5cf5debeecc1872c00b2f597038acc07bc8bbc7df0791d6ca99c4c614b4982fb"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2020-04-14T12:42:45Z"
+diff_format = "unified"
+context_files = [
+    "opt/pyproject.toml",
+    "package.json",
+    "src/components/common/Metadata.jsx",
+    "src/components/common/ViewerSidebar.jsx",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 36
+difficulty = "medium"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

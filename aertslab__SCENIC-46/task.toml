@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/aertslab__SCENIC-46"
+description = "Minor fixes to step 4"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "SCENIC",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aertslab/SCENIC"
+ref = "08220565f09e8b56bdafc3430c85a5ebb57d4d54"
+reference = "https://github.com/aertslab/SCENIC/pull/46"
+source_access = "auto"
+built_at = "2026-11-15T11:57:50.679892+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:4d7ec235c132f13615739c5c0a54a181bca32b00f05e48f68430df6c6f5c91a2"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2018-10-24T14:32:40Z"
+diff_format = "unified"
+context_files = [
+    "R/runSCENIC_4_aucell_binarize.R",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 35
+difficulty = "medium"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

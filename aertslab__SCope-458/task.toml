@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/aertslab__SCope-458"
+description = "Simplify the Compare page select all annotations function"
+
+[metadata]
+difficulty = "small"
+category = "bugfix"
+keywords = [
+    "SCope",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aertslab/SCope"
+ref = "f49217a656505ca7acd1a2c3b9676dc55836ec3b"
+reference = "https://github.com/aertslab/SCope/pull/458"
+source_access = "auto"
+built_at = "2026-11-15T19:37:29.155477+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:5983b040b7f6ab28bdcf263701dc3d3aa5157dbf2c50041949d6e196c09a7801"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2021-07-02T14:10:10Z"
+diff_format = "unified"
+context_files = [
+    "client/src/components/pages/Compare.jsx",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 8
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

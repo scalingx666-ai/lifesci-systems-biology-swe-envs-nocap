@@ -1,0 +1,233 @@
+diff --git a/omicsclaw/core/dependency_manager.py b/omicsclaw/core/dependency_manager.py
+index f5819cb4..be24cdd0 100644
+--- a/omicsclaw/core/dependency_manager.py
++++ b/omicsclaw/core/dependency_manager.py
+@@ -1,5 +1,6 @@
+ import importlib
+ import importlib.util
++import os
+ import subprocess
+ import sys
+ 
+@@ -132,15 +133,29 @@ def get_installed_tiers() -> dict[str, bool]:
+ 
+ def _check_r_available() -> bool:
+     """Check if Rscript is on PATH (cached)."""
++    candidates = []
++    conda_prefix = os.environ.get("CONDA_PREFIX", "").strip()
++    if conda_prefix:
++        candidates.append(os.path.join(conda_prefix, "bin", "Rscript"))
++    if sys.prefix:
++        candidates.append(os.path.join(sys.prefix, "bin", "Rscript"))
++    candidates.append("Rscript")
++
+     try:
+-        result = subprocess.run(
+-            ["Rscript", "--version"],
+-            capture_output=True,
+-            text=True,
+-            timeout=10,
+-        )
+-        return result.returncode == 0
+-    except (FileNotFoundError, subprocess.TimeoutExpired):
++        for rscript in dict.fromkeys(candidates):
++            try:
++                result = subprocess.run(
++                    [rscript, "--version"],
++                    capture_output=True,
++                    text=True,
++                    timeout=10,
++                )
++            except FileNotFoundError:
++                continue
++            if result.returncode == 0:
++                return True
++        return False
++    except subprocess.TimeoutExpired:
+         return False
+ 
+ 
+diff --git a/omicsclaw/core/r_script_runner.py b/omicsclaw/core/r_script_runner.py
+index 2d9ba09c..6196bd27 100644
+--- a/omicsclaw/core/r_script_runner.py
++++ b/omicsclaw/core/r_script_runner.py
+@@ -23,6 +23,21 @@
+ _SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "r_scripts"
+ 
+ 
++def _preferred_rscript_executable(default: str = "Rscript") -> str:
++    """Prefer the active conda environment's Rscript when available."""
++    candidates: list[Path] = []
++    conda_prefix = os.environ.get("CONDA_PREFIX", "").strip()
++    if conda_prefix:
++        candidates.append(Path(conda_prefix) / "bin" / "Rscript")
++    if sys.prefix:
++        candidates.append(Path(sys.prefix) / "bin" / "Rscript")
++
++    for candidate in candidates:
++        if candidate.exists():
++            return str(candidate)
++    return default
++
++
+ class RScriptError(Exception):
+     """An R subprocess call failed."""
+ 
+@@ -97,7 +112,11 @@ def __init__(
+     ):
+         self.scripts_dir = Path(scripts_dir) if scripts_dir else _SCRIPTS_DIR
+         self.timeout = timeout
+-        self.r_executable = r_executable
++        self.r_executable = (
++            _preferred_rscript_executable(r_executable)
++            if r_executable == "Rscript"
++            else r_executable
++        )
+         self.verbose = verbose
+ 
+     # ------------------------------------------------------------------
+@@ -316,7 +335,27 @@ def _build_r_env(self) -> dict[str, str]:
+             r_libs_user = Path(conda_prefix) / "lib" / "R" / "omicsclaw-library"
+             r_libs_user.mkdir(parents=True, exist_ok=True)
+             env.setdefault("OMICSCLAW_R_LIBS", str(r_libs_user))
+-            env.setdefault("R_LIBS_USER", str(r_libs_user))
++            # Prefer the active conda environment's private R library first so
++            # skill-specific packages shadow any user/system-wide installs.
++            lib_paths: list[str] = [str(r_libs_user)]
++            existing_r_libs_user = env.get("R_LIBS_USER", "").strip()
++            if existing_r_libs_user:
++                lib_paths.append(existing_r_libs_user)
++            else:
++                try:
++                    probe = subprocess.run(
++                        [self.r_executable, "-e", 'cat(path.expand(Sys.getenv("R_LIBS_USER")))'],
++                        capture_output=True,
++                        text=True,
++                        timeout=10,
++                        env={k: v for k, v in env.items() if k != "R_LIBS_USER"},
++                    )
++                    default_r_libs_user = probe.stdout.strip()
++                    if probe.returncode == 0 and default_r_libs_user:
++                        lib_paths.append(default_r_libs_user)
++                except (FileNotFoundError, subprocess.TimeoutExpired):
++                    pass
++            env["R_LIBS_USER"] = os.pathsep.join(dict.fromkeys(p for p in lib_paths if p))
+ 
+         # Disable reticulate's managed ephemeral Python selection when possible.
+         env.setdefault("RETICULATE_USE_MANAGED_VENV", "no")
+diff --git a/omicsclaw/r_scripts/sc_seurat_preprocess.R b/omicsclaw/r_scripts/sc_seurat_preprocess.R
+index c5e7841c..9ded74e0 100644
+--- a/omicsclaw/r_scripts/sc_seurat_preprocess.R
++++ b/omicsclaw/r_scripts/sc_seurat_preprocess.R
+@@ -45,7 +45,7 @@ if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
+ cat(sprintf("Loading data from %s...\n", h5ad_file))
+ 
+ tryCatch({
+-    sce <- readH5AD(h5ad_file)
++    sce <- readH5AD(h5ad_file, reader = "R")
+     counts <- SummarizedExperiment::assay(sce, "X")
+     meta   <- as.data.frame(SummarizedExperiment::colData(sce))
+ 
+@@ -80,17 +80,11 @@ tryCatch({
+         seurat_obj <- ScaleData(seurat_obj, verbose = FALSE)
+     }
+ 
+-    # Dimensionality reduction + clustering
++    # Dimensionality reduction (base preprocessing stops at PCA)
+     seurat_obj <- RunPCA(seurat_obj, npcs = n_pcs, verbose = FALSE)
+-    effective_pcs <- min(n_pcs, ncol(Embeddings(seurat_obj, "pca")))
+-    seurat_obj <- FindNeighbors(seurat_obj,
+-        dims = seq_len(effective_pcs), k.param = n_neighbors, verbose = FALSE)
+-    seurat_obj <- FindClusters(seurat_obj, resolution = resolution, verbose = FALSE)
+-    seurat_obj <- RunUMAP(seurat_obj, dims = seq_len(effective_pcs), verbose = FALSE)
+ 
+     # Extract results
+     meta_out <- seurat_obj@meta.data
+-    meta_out$seurat_clusters <- as.character(Idents(seurat_obj))
+     assay_name <- DefaultAssay(seurat_obj)
+ 
+     # Write outputs
+@@ -101,9 +95,6 @@ tryCatch({
+     pca_emb <- Embeddings(seurat_obj, "pca")
+     write.csv(pca_emb, file.path(output_dir, "pca.csv"), quote = FALSE)
+ 
+-    umap_emb <- Embeddings(seurat_obj, "umap")
+-    write.csv(umap_emb, file.path(output_dir, "umap.csv"), quote = FALSE)
+-
+     hvg <- VariableFeatures(seurat_obj)
+     write.csv(data.frame(gene = hvg), file.path(output_dir, "hvg.csv"),
+         row.names = FALSE, quote = FALSE)
+diff --git a/skills/singlecell/_lib/preprocessing.py b/skills/singlecell/_lib/preprocessing.py
+index 6a8f7f08..e2766f42 100644
+--- a/skills/singlecell/_lib/preprocessing.py
++++ b/skills/singlecell/_lib/preprocessing.py
+@@ -468,6 +468,40 @@ def plot_variable_genes(
+     save_figure(fig, output_dir, "highly_variable_genes.png")
+ 
+ 
++def plot_variable_genes_fallback(
++    adata: AnnData,
++    output_dir: Union[str, Path],
++    *,
++    top_n: int = 30,
++    figsize: Tuple[int, int] = (9, 8),
++) -> None:
++    """Render a simple HVG rank plot when Scanpy's summary columns are absent."""
++    import matplotlib.pyplot as plt
++    from .viz_utils import save_figure
++
++    output_dir = Path(output_dir)
++    if "highly_variable" not in adata.var.columns:
++        logger.warning("HVG annotations not found. Run find_highly_variable_genes() first.")
++        return
++
++    hvg_names = adata.var.index[adata.var["highly_variable"]].astype(str).tolist()
++    if not hvg_names:
++        logger.warning("No highly variable genes available for fallback plotting.")
++        return
++
++    top_genes = hvg_names[:top_n]
++    ranks = list(range(len(top_genes), 0, -1))
++
++    fig, ax = plt.subplots(figsize=figsize)
++    ax.barh(top_genes[::-1], ranks[::-1], color="#4C72B0", edgecolor="white", linewidth=0.8)
++    ax.set_xlabel("HVG rank")
++    ax.set_ylabel("Gene")
++    ax.set_title(f"Top {len(top_genes)} highly variable genes")
++    ax.grid(axis="x", alpha=0.2, linestyle="--")
++    plt.tight_layout()
++    save_figure(fig, output_dir, "highly_variable_genes.png")
++
++
+ # ---------------------------------------------------------------------------
+ # HVG filtering
+ # ---------------------------------------------------------------------------
+diff --git a/skills/singlecell/scrna/sc-preprocessing/sc_preprocess.py b/skills/singlecell/scrna/sc-preprocessing/sc_preprocess.py
+index 50af25c1..d4800181 100644
+--- a/skills/singlecell/scrna/sc-preprocessing/sc_preprocess.py
++++ b/skills/singlecell/scrna/sc-preprocessing/sc_preprocess.py
+@@ -546,7 +546,10 @@ def _render_qc_violin(adata, spec: PlotSpec, context: dict) -> object:
+ 
+ def _render_hvg_plot(adata, spec: PlotSpec, context: dict) -> object:
+     output_dir = Path(context["output_dir"])
+-    sc_preproc_utils.plot_variable_genes(adata, output_dir)
++    try:
++        sc_preproc_utils.plot_variable_genes(adata, output_dir)
++    except Exception:
++        sc_preproc_utils.plot_variable_genes_fallback(adata, output_dir)
+     path = _gallery_figure_path(output_dir, spec.filename)
+     return path if path.exists() else None
+ 
+@@ -795,6 +798,12 @@ def write_standard_run_artifacts(output_dir: Path, result_payload: dict, summary
+ def get_demo_data():
+     logger.info("Generating demo single-cell data")
+     adata, demo_path = sc_io.load_repo_demo_data("pbmc3k_raw")
++    adata, _, _ = canonicalize_singlecell_adata(
++        adata,
++        species=infer_qc_species(adata),
++        preferred_layer="counts",
++        standardizer_skill=SKILL_NAME,
++    )
+     return adata, demo_path
+ 
+ 

@@ -1,0 +1,75 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-184"
+description = "refactor(skill-runner): run_skill returns SkillRunResult natively (OMI-12 P1.6)"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "fe4cf5bf37bbf7c6591cc87db6101b0cc76abd61"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/184"
+source_access = "auto"
+built_at = "2026-11-15T18:17:02.962673+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:a1e629f4982f1d7aef0a31e942481dd2724dc7277659cbc7903ebb0a5114ed16"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-05-12T12:09:45Z"
+diff_format = "unified"
+context_files = [
+    "bot/skill_orchestration.py",
+    "omicsclaw.py",
+    "omicsclaw/agents/tools.py",
+    "omicsclaw/core/runtime/pipeline_runner.py",
+    "omicsclaw/core/skill_result.py",
+    "omicsclaw/core/skill_runner.py",
+    "omicsclaw/execution/executors/default.py",
+    "omicsclaw/interactive/_omicsclaw_actions.py",
+    "tests/test_autoagent_cli.py",
+    "tests/test_bot_runner_contract.py",
+    "tests/test_execution_default_executor.py",
+    "tests/test_interactive_omicsclaw_actions.py",
+    "tests/test_output_ux.py",
+    "tests/test_skill_runner_contract.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 301
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

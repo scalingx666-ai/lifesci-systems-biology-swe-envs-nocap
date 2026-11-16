@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/federicomarini__GeneTonic-31"
+description = "handling the check of having data uploaded in the current format, via…"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "GeneTonic",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "federicomarini/GeneTonic"
+ref = "6849b32341c305ef39ee24960c4f3be3e396a241"
+reference = "https://github.com/federicomarini/GeneTonic/pull/31"
+source_access = "auto"
+built_at = "2026-11-15T19:34:25.920408+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:bad1a278a8d9a8c3473b73cb6e4c123fab7729bb0b6c1a2a1dcbd76461faa251"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2022-03-26T00:23:54Z"
+diff_format = "unified"
+context_files = [
+    "R/GeneTonic.R",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 128
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

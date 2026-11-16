@@ -1,0 +1,767 @@
+diff --git a/.env.example b/.env.example
+index 862a0e71..f637832a 100644
+--- a/.env.example
++++ b/.env.example
+@@ -91,10 +91,6 @@ LLM_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+ # Database path (default: bot/data/memory.db)
+ # OMICSCLAW_MEMORY_DB_PATH=bot/data/memory.db
+ #
+-# Encryption key (32 bytes, auto-generated if not set)
+-# Generate with: python -c "import secrets; print(secrets.token_urlsafe(32)[:32])"
+-# OMICSCLAW_MEMORY_ENCRYPTION_KEY=your-32-character-encryption-key
+-#
+ # Session TTL in days (default: 30)
+ # OMICSCLAW_MEMORY_TTL_DAYS=30
+ 
+@@ -108,3 +104,10 @@ LLM_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+ # Maximum tool call iterations per message (default: 20)
+ # Prevents infinite loops while supporting complex multi-step workflows
+ # OMICSCLAW_MAX_TOOL_ITERATIONS=20
++#
++# Encryption key for securing sensitive memory fields (e.g. file paths, dataset
++# metadata). Must be a 32-byte hex string. If not set, a temporary random key
++# is generated at startup (memories will be unreadable after restart).
++# Generate a permanent key:  python -c "import secrets; print(secrets.token_hex(32))"
++# NOTE: bot/core.py reads OMICSCLAW_MEMORY_ENCRYPTION_KEY — rename if needed.
++# ENCRYPTION_KEY=
+diff --git a/README.md b/README.md
+index 7925ce2a..74be6170 100644
+--- a/README.md
++++ b/README.md
+@@ -16,6 +16,13 @@
+ [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+ [![CI](https://img.shields.io/badge/CI-passing-brightgreen.svg)](https://github.com/zhou-1314/OmicsClaw/actions)
+ 
++> [!WARNING]
++> **🚧 项目开发中 / Under Active Development**
++>
++> OmicsClaw 目前正处于积极开发和完善阶段，部分功能可能存在 bug 或尚未完全稳定。我们正在持续改进代码质量、修复已知问题并增加新功能。如果您在使用过程中遇到任何问题，欢迎通过 [GitHub Issues](https://github.com/zhou-1314/OmicsClaw/issues) 反馈，我们会尽力修复和完善。感谢您的理解与支持！
++>
++> OmicsClaw is currently under active development. Some features may contain bugs or may not be fully stable yet. We are continuously improving code quality, fixing known issues, and adding new features. If you encounter any problems, please report them via [GitHub Issues](https://github.com/zhou-1314/OmicsClaw/issues). Thank you for your understanding and support!
++
+ ## Why OmicsClaw?
+ 
+ **Traditional tools make you repeat yourself.** Every session starts from zero: re-upload data, re-explain context, re-run preprocessing. OmicsClaw remembers.
+@@ -593,6 +600,13 @@ If you use OmicsClaw in your research, please cite:
+ }
+ ```
+ 
++## Acknowledgments
++
++OmicsClaw is built upon the inspiration and contributions of the following outstanding open-source projects:
++
++- **[ClawBio](https://github.com/ClawBio/ClawBio)** — The first bioinformatics-native AI agent skill library. OmicsClaw's skill architecture, local-first philosophy, reproducibility design, and bot integration patterns are deeply inspired by ClawBio. Thank you to the ClawBio team for their pioneering work!
++- **[Nocturne Memory](https://github.com/Dataojitori/nocturne_memory)** — A lightweight, rollbackable long-term memory server for MCP agents. OmicsClaw's persistent memory system draws on Nocturne Memory's graph-structured memory architecture and MCP protocol integration, enabling the bot to remember datasets, analysis history, and user preferences across sessions.
++
+ ## Contact
+ 
+ - **Luyi Tian** (Principal Investigator) — [tian_luyi@gzlab.ac.cn](mailto:tian_luyi@gzlab.ac.cn)
+diff --git a/bot/core.py b/bot/core.py
+index 949ae7ea..21509216 100644
+--- a/bot/core.py
++++ b/bot/core.py
+@@ -270,17 +270,18 @@ async def _auto_capture_analysis(session_id: str, skill: str, args: dict, output
+         method = args.get("method", "default")
+         input_path = args.get("file_path", "")
+ 
+-        # Link to most recent dataset memory for lineage
++        # Link to most recent dataset memory for lineage (optional, don't fail if missing)
+         source_dataset_id = ""
+         try:
+             datasets = await memory_store.get_memories(session_id, "dataset", limit=1)
+             if datasets:
+                 source_dataset_id = datasets[0].memory_id
+         except Exception:
++            # Dataset not found is OK, just skip the linkage
+             pass
+ 
+         memory = AnalysisMemory(
+-            source_dataset_id=source_dataset_id,
++            source_dataset_id=source_dataset_id if source_dataset_id else "",
+             skill=skill,
+             method=method,
+             parameters={"input": input_path} if input_path else {},
+@@ -291,7 +292,8 @@ async def _auto_capture_analysis(session_id: str, skill: str, args: dict, output
+         await memory_store.save_memory(session_id, memory)
+         logger.debug(f"Auto-captured analysis: {skill} ({method})")
+     except Exception as e:
+-        logger.error(f"Auto-capture failed: {e}")
++        # Log but don't fail the main workflow
++        logger.warning(f"Auto-capture failed: {e}")
+ 
+ 
+ # ---------------------------------------------------------------------------
+@@ -318,11 +320,37 @@ async def load_context(self, session_id: str) -> str:
+         """Load recent memories and format for LLM context."""
+         try:
+             # Get recent memories (limit to keep context small)
+-            datasets = await self.store.get_memories(session_id, "dataset", limit=2)
+-            analyses = await self.store.get_memories(session_id, "analysis", limit=3)
+-            prefs = await self.store.get_memories(session_id, "preference", limit=5)
+-            insights = await self.store.get_memories(session_id, "insight", limit=3)
+-            project_ctx = await self.store.get_memories(session_id, "project_context", limit=1)
++            # Wrap each get_memories call in try-except to handle decryption errors
++            datasets = []
++            analyses = []
++            prefs = []
++            insights = []
++            project_ctx = []
++
++            try:
++                datasets = await self.store.get_memories(session_id, "dataset", limit=2)
++            except Exception as e:
++                logger.warning(f"Failed to load dataset memories: {e}")
++
++            try:
++                analyses = await self.store.get_memories(session_id, "analysis", limit=3)
++            except Exception as e:
++                logger.warning(f"Failed to load analysis memories: {e}")
++
++            try:
++                prefs = await self.store.get_memories(session_id, "preference", limit=5)
++            except Exception as e:
++                logger.warning(f"Failed to load preference memories: {e}")
++
++            try:
++                insights = await self.store.get_memories(session_id, "insight", limit=3)
++            except Exception as e:
++                logger.warning(f"Failed to load insight memories: {e}")
++
++            try:
++                project_ctx = await self.store.get_memories(session_id, "project_context", limit=1)
++            except Exception as e:
++                logger.warning(f"Failed to load project context memories: {e}")
+ 
+             parts = []
+ 
+@@ -367,7 +395,7 @@ async def load_context(self, session_id: str) -> str:
+ 
+             return "\n".join(parts) if parts else ""
+         except Exception as e:
+-            logger.error(f"Failed to load memory context: {e}")
++            logger.error(f"Failed to load memory context: {e}", exc_info=True)
+             return ""
+ 
+ 
+@@ -466,6 +494,12 @@ def get_role_guardrails() -> str:
+    via messaging. When the user mentions a file path or filename, use mode='path'
+    and set file_path to the path or filename they provided. The system will automatically search
+    trusted directories.
++   **CRITICAL FILE USAGE RULES**:
++   - When the user specifies a file path, use EXACTLY that file for the requested operation.
++   - Do NOT automatically run preprocessing or other preparatory steps unless explicitly asked.
++   - Do NOT explore directories to find "better" or "preprocessed" versions of the file.
++   - Do NOT use list_directory to search for alternative files after the user specifies one.
++   - If the operation fails because the file needs preprocessing, tell the user - don't auto-fix it.
+    Examples:
+    - User: "分析 data/brain_visium.h5ad" → mode='path', file_path='data/brain_visium.h5ad'
+    - User: "run preprocess on my_data.h5ad" → mode='path', file_path='my_data.h5ad'
+@@ -917,6 +951,14 @@ def discover_file(filename_or_pattern: str) -> list[Path]:
+     Returns a list of matching paths, sorted by modification time (newest first).
+     """
+     _ensure_trusted_dirs()
++
++    # Handle absolute paths directly
++    if filename_or_pattern.startswith('/'):
++        p = Path(filename_or_pattern)
++        if p.is_file():
++            return [p]
++        return []
++
+     matches: list[Path] = []
+     for d in TRUSTED_DATA_DIRS:
+         if not d.exists():
+@@ -1029,11 +1071,11 @@ async def execute_omicsclaw(args: dict, session_id: str = None, chat_id: int | s
+     input_path = str(resolved_path) if resolved_path else None
+     session_path = None
+ 
+-    if not input_path:
+-        for _cid, info in received_files.items():
+-            input_path = info.get("path")
+-            session_path = info.get("session_path")
+-            break
++    if not input_path and session_id:
++        file_info = received_files.get(session_id)
++        if file_info:
++            input_path = file_info.get("path")
++            session_path = file_info.get("session_path")
+ 
+     if mode in ("file", "path") and not input_path and not session_path:
+         _ensure_trusted_dirs()
+@@ -1047,8 +1089,9 @@ async def execute_omicsclaw(args: dict, session_id: str = None, chat_id: int | s
+         )
+ 
+     # Output directory
++    import uuid
+     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+-    out_dir = OUTPUT_DIR / f"{skill_key}_{ts}"
++    out_dir = OUTPUT_DIR / f"{skill_key}_{ts}_{uuid.uuid4().hex[:8]}"
+ 
+     # Build command
+     cmd = [PYTHON, str(OMICSCLAW_PY), "run"]
+@@ -1071,7 +1114,20 @@ async def execute_omicsclaw(args: dict, session_id: str = None, chat_id: int | s
+ 
+     extra_args = args.get("extra_args")
+     if extra_args and isinstance(extra_args, list):
+-        cmd.extend(extra_args)
++        # Filter out --output to prevent overriding bot-managed output directory
++        filtered = []
++        skip_next = False
++        for arg in extra_args:
++            if skip_next:
++                skip_next = False
++                continue
++            if arg == "--output":
++                skip_next = True
++                continue
++            if arg.startswith("--output="):
++                continue
++            filtered.append(arg)
++        cmd.extend(filtered)
+ 
+     try:
+         proc = await asyncio.create_subprocess_exec(
+@@ -1090,13 +1146,22 @@ async def execute_omicsclaw(args: dict, session_id: str = None, chat_id: int | s
+             await proc.wait()
+         except Exception:
+             pass
++        # Clean up empty output directory on timeout
++        if out_dir.exists():
++            shutil.rmtree(out_dir, ignore_errors=True)
+         return f"{skill_key} timed out after 300 seconds."
+     except Exception as e:
+         import traceback as _tb
++        # Clean up empty output directory on crash
++        if out_dir.exists():
++            shutil.rmtree(out_dir, ignore_errors=True)
+         return f"{skill_key} crashed:\n{_tb.format_exc()[-1500:]}"
+ 
+     if proc.returncode != 0:
+         err = stderr_str[-1500:] if stderr_str else stdout_str[-1500:] if stdout_str else "unknown error"
++        # Clean up empty output directory on failure
++        if out_dir.exists():
++            shutil.rmtree(out_dir, ignore_errors=True)
+         return f"{skill_key} failed (exit {proc.returncode}):\n{err}"
+ 
+     # Collect report + figures from output directory
+@@ -1128,7 +1193,7 @@ async def execute_omicsclaw(args: dict, session_id: str = None, chat_id: int | s
+                     if any(kw in Path(item["path"]).stem.lower() for kw in keywords)
+                 ]
+             if filtered:
+-                pending_media[0] = pending_media.get(0, []) + filtered
++                pending_media[session_id] = pending_media.get(session_id, []) + filtered
+                 sent_names = [Path(item["path"]).name for item in filtered]
+                 logger.info(f"return_media='{return_media}': sending {len(filtered)}/{len(media_items)} items")
+ 
+@@ -1954,6 +2019,8 @@ async def llm_tool_loop(chat_id: int | str, user_content: str | list, user_id: s
+     # Load memory context if session manager available
+     memory_context = ""
+     if session_manager and user_id and platform:
++        # Ensure session exists (create if first time)
++        await session_manager.get_or_create(user_id, platform, str(chat_id))
+         session_id = f"{platform}:{user_id}:{chat_id}"
+         memory_context = await session_manager.load_context(session_id)
+ 
+diff --git a/bot/data/memory.db b/bot/data/memory.db
+new file mode 100644
+index 00000000..9a472209
+Binary files /dev/null and b/bot/data/memory.db differ
+diff --git a/bot/data/memory.db-shm b/bot/data/memory.db-shm
+new file mode 100644
+index 00000000..9a9022e3
+Binary files /dev/null and b/bot/data/memory.db-shm differ
+diff --git a/bot/data/memory.db-wal b/bot/data/memory.db-wal
+new file mode 100644
+index 00000000..af0174ad
+Binary files /dev/null and b/bot/data/memory.db-wal differ
+diff --git a/bot/feishu_bot.py b/bot/feishu_bot.py
+index 8084aa68..64473de4 100644
+--- a/bot/feishu_bot.py
++++ b/bot/feishu_bot.py
+@@ -97,6 +97,9 @@
+     .log_level(lark.LogLevel.DEBUG if DEBUG else lark.LogLevel.INFO) \
+     .build()
+ 
++# Bot startup time (to filter old cached messages)
++_BOT_START_TIME = time.time()
++
+ # ---------------------------------------------------------------------------
+ # Async event loop (runs in a background thread)
+ # ---------------------------------------------------------------------------
+@@ -635,7 +638,7 @@ def _send_media_items(chat_id: str, items: list[dict]):
+ 
+ async def _process_message_async(
+     chat_id: str,
+-    session_key: str,
++    pure_chat_id: str,  # Pure chat_id without platform prefix
+     text: str,
+     attachments: list[dict],
+     user_id: str = None,
+@@ -675,6 +678,8 @@ async def _process_message_async(
+         user_content = content_blocks
+     else:
+         # Check if message contains a file path -> register as received file
++        # Use session_key for received_files (needs platform prefix)
++        session_key = f"feishu:{pure_chat_id}"
+         local_path_match = re.search(r"\[local path\]\s*(\S+)", text)
+         if local_path_match:
+             fpath = local_path_match.group(1)
+@@ -685,7 +690,7 @@ async def _process_message_async(
+         user_content = text
+ 
+     reply = await core.llm_tool_loop(
+-        session_key,
++        pure_chat_id,  # Pass pure chat_id, llm_tool_loop will construct session_id
+         user_content,
+         user_id=user_id,
+         platform="feishu"
+@@ -695,14 +700,9 @@ async def _process_message_async(
+         reply = "\n\n".join(core.pending_text)
+         core.pending_text.clear()
+ 
+-    # Capture media items atomically here (same async context as the tool execution)
+-    # to prevent race conditions when multiple messages are processed concurrently
+-    media_items = core.pending_media.pop(0, [])
+-    if media_items:
+-        logger.info(f"Captured {len(media_items)} pending media items: "
+-                     f"{[item.get('path', '?') for item in media_items]}")
+-
+-    return reply, media_items
++    # Don't pop pending_media here - let the outer handler do it
++    # This prevents race conditions when timeout occurs
++    return reply
+ 
+ 
+ def _handle_feishu_event(data: lark.im.v1.P2ImMessageReceiveV1):
+@@ -724,6 +724,14 @@ def _handle_feishu_event(data: lark.im.v1.P2ImMessageReceiveV1):
+         if not message.content:
+             return
+ 
++        # Ignore messages sent before bot startup (cached messages)
++        if hasattr(message, 'create_time') and message.create_time:
++            # create_time is in milliseconds
++            msg_time = int(message.create_time) / 1000.0
++            if msg_time < _BOT_START_TIME:
++                logger.info(f"Ignoring cached message from before bot startup: {message_id}")
++                return
++
+         # Rate limiting (after dedup to avoid counting retries)
+         if not _check_rate_limit(sender_id):
+             _send_text(chat_id, f"Rate limit reached ({RATE_LIMIT_PER_HOUR} messages/hour). Please try again later.")
+@@ -744,7 +752,7 @@ def _handle_feishu_event(data: lark.im.v1.P2ImMessageReceiveV1):
+             has_attachment = len(attachments) > 0
+             mentioned = len(mentions) > 0
+ 
+-            # Check if it's a 2-person group (bot + user)
++            # Check if it's a 2-person group (1 user + 1 bot)
+             member_count = _get_group_member_count(chat_id)
+             is_two_person_group = member_count == 2
+ 
+@@ -752,10 +760,8 @@ def _handle_feishu_event(data: lark.im.v1.P2ImMessageReceiveV1):
+             if is_two_person_group:
+                 text = cleaned
+             else:
+-                # Normal group: apply filters
+-                if has_attachment and not mentioned and cleaned in ("[image]", "[attachment]", ""):
+-                    return
+-                if not has_attachment and not _should_respond_in_group(cleaned, mentions):
++                # Normal group (3+ members): only respond when @mentioned
++                if not mentioned:
+                     return
+                 text = cleaned
+ 
+@@ -785,18 +791,33 @@ def _send_thinking():
+             timer.start()
+ 
+         try:
+-            reply, media_items = _run_async(
+-                _process_message_async(chat_id, session_key, text, attachments, sender_id),
++            # Pass pure chat_id (not session_key) to llm_tool_loop
++            # llm_tool_loop will construct session_id internally as f"{platform}:{user_id}:{chat_id}"
++            reply = _run_async(
++                _process_message_async(chat_id, sender_id if chat_type == 'p2p' else chat_id, text, attachments, sender_id),
+                 timeout=300,
+             )
+         except Exception as e:
+-            reply = f"(system error) {e}"
+-            media_items = []
++            logger.error(f"Message processing error: {e}", exc_info=True)
++            reply = f"抱歉，处理消息时出错了。错误已记录，请稍后重试。"
+         finally:
+             done_event.set()
+             if timer:
+                 timer.cancel()
+ 
++        # Always try to retrieve media items, even after timeout/error
++        # This must be done AFTER the async call completes or times out
++        pure_chat_id = sender_id if chat_type == 'p2p' else chat_id
++        if sender_id:
++            session_id = f"feishu:{sender_id}:{pure_chat_id}"
++        else:
++            session_id = f"feishu::{pure_chat_id}"
++
++        media_items = core.pending_media.pop(session_id, [])
++        if media_items:
++            logger.info(f"Captured {len(media_items)} pending media items: "
++                         f"{[item.get('path', '?') for item in media_items]}")
++
+         reply_text = core.strip_markup(reply or "")
+ 
+         if not reply_text.strip():
+diff --git a/pyproject.toml b/pyproject.toml
+index 6bdf4200..0da38f1d 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -82,6 +82,9 @@ dependencies = [
+ spatial-domains = [
+     "SpaGCN>=1.2.5,<2.0",
+     "torch>=2.0.0,<3.0",
++    "torch_geometric",                # STAGATE dependency
++    "GraphST>=1.1.0",                 # GraphST method
++    "POT>=0.9.0",                     # GraphST requires `ot` (Python Optimal Transport)
+ ]
+ 
+ # --------------------------------------------------------------------------- #
+@@ -137,7 +140,7 @@ bulkrna = [
+ # Tier 4: full — all optional analysis methods across all domains             #
+ # --------------------------------------------------------------------------- #
+ full = [
+-    "omicsclaw[spatial,spatial-domains,spatial-velocity,spatial-cnv,spatial-enrichment,spatial-communication,spatial-integration,spatial-registration,spatial-r-bridge,singlecell,genomics,proteomics,metabolomics,bulkrna]"
++    "omicsclaw[spatial,spatial-domains,spatial-annotate,spatial-deconv,spatial-trajectory,spatial-genes,spatial-statistics,spatial-condition,spatial-velocity,spatial-cnv,spatial-enrichment,spatial-communication,spatial-integration,spatial-registration,spatial-r-bridge,singlecell,genomics,proteomics,metabolomics,bulkrna]"
+ ]
+ 
+ # --------------------------------------------------------------------------- #
+@@ -146,6 +149,7 @@ full = [
+ # --------------------------------------------------------------------------- #
+ spatial-velocity = [
+     "scvelo>=0.2.5",                  # RNA velocity (scVelo)
++    "scvi-tools>=1.0.0,<2.0",        # VeloVI method
+ ]
+ 
+ spatial-cnv = [
+@@ -173,10 +177,42 @@ spatial-registration = [
+     "paste-bio>=1.0.0",               # PASTE spatial registration
+ ]
+ 
++spatial-annotate = [
++    "tangram-sc>=1.0.0",              # Tangram cell type annotation
++    "scvi-tools>=1.0.0,<2.0",        # scANVI, CellAssign methods
++    "torch>=2.0.0,<3.0",             # PyTorch (required by scvi-tools)
++]
++
++spatial-deconv = [
++    "flashdeconv>=0.1.0",            # FlashDeconv method
++    "cell2location>=0.1.4",          # Cell2Location method
++    "scvi-tools>=1.0.0,<2.0",        # DestVI, Stereoscope methods
++    "tangram-sc>=1.0.0",              # Tangram method
++    "torch>=2.0.0,<3.0",             # PyTorch (required by scvi-tools)
++]
++
++spatial-trajectory = [
++    "cellrank>=2.0.0,<3.0",          # CellRank trajectory inference
++    "palantir>=1.0.0",                # Palantir trajectory inference
++]
++
++spatial-genes = [
++    "SpatialDE>=1.1.3",              # SpatialDE spatially variable genes
++]
++
++spatial-statistics = [
++    "esda>=2.4.0",                    # Local Moran's I, Geary's C
++    "libpysal>=4.6.0",                # Spatial weights
++    "pysal>=2.6.0",                   # Extended spatial analysis
++]
++
++spatial-condition = [
++    "pydeseq2>=0.4.0",                # Pseudobulk differential expression
++]
++
+ spatial-r-bridge = [
+     "rpy2>=3.5.0,<3.7",              # R language bridge
+     "anndata2ri>=1.3.0",              # AnnData <-> R sparse matrix bridge
+-    "pydeseq2>=0.4.0",                # PyDESeq2 (Python-native DESeq2)
+ ]
+ 
+ # --------------------------------------------------------------------------- #
+diff --git a/skills/spatial/spatial-domains/SKILL.md b/skills/spatial/spatial-domains/SKILL.md
+index 41743c81..5f1d1653 100644
+--- a/skills/spatial/spatial-domains/SKILL.md
++++ b/skills/spatial/spatial-domains/SKILL.md
+@@ -3,7 +3,7 @@ name: spatial-domains
+ description: >-
+   Identify tissue regions and spatial niches from preprocessed spatial transcriptomics
+   data using Leiden, Louvain, SpaGCN, STAGATE, GraphST, or BANKSY.
+-version: 0.2.0
++version: 0.3.0
+ author: SpatialClaw
+ license: MIT
+ tags: [spatial, domains, niche, tissue-region, clustering, leiden, louvain, spagcn, stagate, graphst, banksy]
+@@ -59,9 +59,28 @@ You are **Spatial Domains**, a specialised OmicsClaw agent for tissue region and
+ 
+ | Format | Extension | Required Fields | Example |
+ |--------|-----------|-----------------|---------|
+-| AnnData (preprocessed) | `.h5ad` | `X`, `obsm["spatial"]`, `obsm["X_pca"]` | `preprocessed.h5ad` |
++| AnnData (preprocessed) | `.h5ad` | `X` (log-norm), `obsm["spatial"]`, `obsm["X_pca"]`, `raw` (counts) | `preprocessed.h5ad` |
+ | AnnData (raw, demo mode) | `.h5ad` | `X`, `obsm["spatial"]` | `demo_visium.h5ad` |
+ 
++### Input Preprocessing Notes
++
++Different methods consume the `preprocessed.h5ad` data differently. The skill
++automatically selects the correct data layer for each method:
++
++| Method | Used from adata | Internal preprocessing |
++|--------|----------------|------------------------|
++| **Leiden / Louvain** | `obsp["connectivities"]` (neighbor graph) | None — uses pre-built graph |
++| **SpaGCN** | `X` (log-normalized) | Internal PCA on expression matrix |
++| **STAGATE** | `X` (log-norm, HVG subset) | Auto-filters to `var["highly_variable"]` before training |
++| **GraphST** | `raw.X` (raw counts) | Internal `log1p → normalize → scale → HVG(3000)` |
++| **BANKSY** | `X` (log-norm + z-scored) | Auto-applies `sc.pp.scale()` before feature construction |
++
++> **Why raw counts for GraphST?** GraphST's `preprocess()` internally does
++> `log1p` + `normalize_total` + `scale` + HVG selection. Passing already
++> log-normalized data would cause a double log-transform (`log(log(x+1)+1)`),
++> which distorts the expression distribution. The skill automatically restores
++> `adata.raw` when available.
++
+ ## Workflow
+ 
+ 1. **Load**: Read preprocessed h5ad; verify spatial coordinates and embeddings exist
+@@ -113,10 +132,11 @@ python omicsclaw.py run spatial-domain-identification --demo
+ 
+ ### Leiden (default)
+ 
+-1. **Input**: Preprocessed AnnData with neighbor graph
++1. **Input**: Preprocessed AnnData with neighbor graph (uses `adata.obsp["connectivities"]`)
+ 2. **Spatial weighting**: Combines expression-based and spatial neighbor graphs with configurable weight
+ 3. **Clustering**: `sc.tl.leiden(resolution=resolution, flavor="igraph")`
+ 4. **Labels**: Stored in `adata.obs["spatial_domain"]`
++5. **Data layer used**: Neighbor graph only — does not touch `adata.X`
+ 
+ **Key parameters**:
+ - `resolution`: Controls granularity (default 1.0; higher = more domains)
+@@ -125,21 +145,23 @@ python omicsclaw.py run spatial-domain-identification --demo
+ 
+ ### Louvain
+ 
+-1. **Input**: Preprocessed AnnData with neighbor graph
++1. **Input**: Preprocessed AnnData with neighbor graph (uses `adata.obsp["connectivities"]`)
+ 2. **Clustering**: `sc.tl.louvain(resolution=resolution)`
+ 3. **Labels**: Stored in `adata.obs["spatial_domain"]`
+ 4. **Requires**: `pip install louvain`
++5. **Data layer used**: Neighbor graph only — does not touch `adata.X`
+ 
+ **Key parameters**:
+ - `resolution`: Controls granularity (default 1.0)
+ 
+ ### SpaGCN
+ 
+-1. **Input**: AnnData with spatial coordinates and expression matrix
+-2. **Spatial graph**: Build adjacency from spatial coordinates
+-3. **GCN clustering**: `SpaGCN.train()` with `n_domains` target clusters
+-4. **Refinement**: Built-in spatial-aware label refinement
+-5. **Labels**: Stored in `adata.obs["spatial_domain"]`
++1. **Input**: AnnData with spatial coordinates and log-normalized expression matrix
++2. **Data layer used**: `adata.X` (log-normalized full gene matrix) — SpaGCN performs internal PCA
++3. **Spatial graph**: Build adjacency from spatial coordinates
++4. **GCN clustering**: `SpaGCN.train()` with `n_domains` target clusters
++5. **Refinement**: Built-in spatial-aware label refinement
++6. **Labels**: Stored in `adata.obs["spatial_domain"]`
+ 
+ **Key parameters**:
+ - `n_domains`: Target number of spatial domains
+@@ -147,11 +169,12 @@ python omicsclaw.py run spatial-domain-identification --demo
+ 
+ ### STAGATE
+ 
+-1. **Input**: AnnData with spatial coordinates
+-2. **Spatial network**: Build graph with radius cutoff
+-3. **Graph attention**: Train attention auto-encoder on PyTorch
+-4. **Clustering**: Gaussian Mixture Model on learned embeddings
+-5. **Labels**: Stored in `adata.obs["spatial_domain"]`
++1. **Input**: AnnData with spatial coordinates (auto-subsets to HVGs)
++2. **HVG filtering**: If `adata.var["highly_variable"]` exists, only HVGs are used for the autoencoder (reduces noise, improves convergence speed)
++3. **Spatial network**: Build graph with radius cutoff
++4. **Graph attention**: Train attention auto-encoder on PyTorch (HVG subset)
++5. **Clustering**: Gaussian Mixture Model on learned embeddings
++6. **Labels**: Stored in `adata.obs["spatial_domain"]`
+ 
+ **Key parameters**:
+ - `n_domains`: Target number of domains
+@@ -160,23 +183,27 @@ python omicsclaw.py run spatial-domain-identification --demo
+ 
+ ### GraphST
+ 
+-1. **Input**: AnnData with spatial coordinates
+-2. **Contrastive learning**: Self-supervised graph neural network
+-3. **Embedding**: PCA on learned representations
+-4. **Clustering**: Gaussian Mixture Model
+-5. **Labels**: Stored in `adata.obs["spatial_domain"]`
++1. **Input**: AnnData with spatial coordinates (**raw counts** from `adata.raw`)
++2. **Raw count restoration**: Automatically restores `adata.raw.X` to avoid double log-transform (GraphST internally does `log1p → normalize → scale → HVG(3000)`)
++3. **Preprocessing**: `GraphST.preprocess()` + `GraphST.construct_interaction()`
++4. **Contrastive learning**: Self-supervised graph neural network
++5. **Embedding**: PCA on learned representations
++6. **Clustering**: Gaussian Mixture Model
++7. **Labels**: Stored in `adata.obs["spatial_domain"]`
+ 
+ **Key parameters**:
+ - `n_domains`: Target number of domains
+ - Source: Long et al., *Nature Communications* 2023
++- ⚠️ Requires `adata.raw` to contain raw counts; if absent, falls back to `adata.X` with a warning
+ 
+ ### BANKSY
+ 
+ 1. **Input**: AnnData with spatial coordinates
+-2. **Feature augmentation**: Neighborhood-averaged expression + azimuthal Gabor filters
+-3. **PCA**: Dimensionality reduction on augmented features
+-4. **Clustering**: Leiden on BANKSY-augmented space
+-5. **Labels**: Stored in `adata.obs["spatial_domain"]`
++2. **Z-score scaling**: Auto-applies `sc.pp.scale(max_value=10)` on working copy to prevent high-expression genes from dominating neighbourhood features
++3. **Feature augmentation**: Neighborhood-averaged expression + azimuthal Gabor filters
++4. **PCA**: Dimensionality reduction on augmented features
++5. **Clustering**: Leiden on BANKSY-augmented space
++6. **Labels**: Stored in `adata.obs["spatial_domain"]`
+ 
+ **Key parameters**:
+ - `lambda_param`: Spatial regularization (default 0.2)
+diff --git a/skills/spatial/spatial-domains/spatial_domains.py b/skills/spatial/spatial-domains/spatial_domains.py
+index a5fb4ed1..797a1e0f 100644
+--- a/skills/spatial/spatial-domains/spatial_domains.py
++++ b/skills/spatial/spatial-domains/spatial_domains.py
+@@ -56,7 +56,7 @@
+ logger = logging.getLogger(__name__)
+ 
+ SKILL_NAME = "spatial-domains"
+-SKILL_VERSION = "0.2.0"
++SKILL_VERSION = "0.3.0"
+ 
+ SUPPORTED_METHODS = ("leiden", "louvain", "spagcn", "stagate", "graphst", "banksy")
+ 
+@@ -278,6 +278,10 @@ def identify_domains_stagate(
+ 
+     Learns embeddings by integrating gene expression with spatial information
+     through a graph attention mechanism. Requires STAGATE_pyG and PyTorch.
++
++    Note: STAGATE trains best on HVG-filtered data. If the input contains a
++    ``highly_variable`` column in ``adata.var``, only HVGs are used for the
++    autoencoder, reducing noise and training time (per Dong & Zhang, 2022).
+     """
+     from omicsclaw.spatial.dependency_manager import require
+ 
+@@ -289,7 +293,19 @@ def identify_domains_stagate(
+ 
+     logger.info("Running STAGATE (rad_cutoff=%.1f, n_domains=%d) ...", rad_cutoff, n_domains)
+ 
+-    adata_work = adata.copy()
++    # STAGATE official tutorial recommends using HVG subset for training.
++    # Using the full gene matrix introduces noise and slows convergence.
++    if "highly_variable" in adata.var.columns:
++        n_hvg = adata.var["highly_variable"].sum()
++        logger.info("Subsetting to %d HVGs for STAGATE autoencoder", n_hvg)
++        adata_work = adata[:, adata.var["highly_variable"]].copy()
++    else:
++        logger.warning(
++            "No 'highly_variable' annotation found; using all %d genes. "
++            "Consider running sc.pp.highly_variable_genes() first for best results.",
++            adata.n_vars,
++        )
++        adata_work = adata.copy()
+ 
+     STAGATE_pyG.Cal_Spatial_Net(adata_work, rad_cutoff=rad_cutoff)
+ 
+@@ -336,6 +352,13 @@ def identify_domains_graphst(
+     Uses graph neural networks with contrastive learning to learn embeddings
+     that preserve both gene expression patterns and spatial relationships.
+     Requires the GraphST package and PyTorch.
++
++    Important: GraphST.preprocess() internally performs log1p + normalize +
++    scale + HVG selection (top 3000). If the input ``adata.X`` is already
++    log-normalized, passing it directly would cause a **double log-transform**.
++    This function therefore restores raw counts from ``adata.raw`` (if
++    available) before calling the GraphST pipeline, following the official
++    tutorial workflow (Long et al., Nature Communications 2023).
+     """
+     from omicsclaw.spatial.dependency_manager import require
+ 
+@@ -343,13 +366,41 @@ def identify_domains_graphst(
+     require("torch", feature="GraphST (PyTorch backend)")
+ 
+     import torch
+-    from GraphST.GraphST import GraphST as GraphSTModel
++    from GraphST import GraphST as GraphSTModule
+ 
+     logger.info("Running GraphST (n_domains=%d) ...", n_domains)
+ 
+-    adata_work = adata.copy()
++    # GraphST.preprocess() does: log1p → normalize_total → scale → HVG(3000).
++    # If adata.X is already log-normalized (from spatial-preprocess), we must
++    # restore raw counts to avoid double log-transform.
++    if adata.raw is not None:
++        logger.info(
++            "Restoring raw counts from adata.raw for GraphST "
++            "(avoids double log-transform)"
++        )
++        adata_work = adata.raw.to_adata().copy()
++        # Carry over spatial coordinates from the processed object
++        spatial_key = get_spatial_key(adata)
++        if spatial_key and spatial_key in adata.obsm:
++            adata_work.obsm[spatial_key] = adata.obsm[spatial_key]
++        if "spatial" not in adata_work.obsm and spatial_key and spatial_key != "spatial":
++            adata_work.obsm["spatial"] = adata.obsm[spatial_key]
++    else:
++        logger.warning(
++            "adata.raw not found — using adata.X directly. If adata.X is "
++            "already log-normalized, GraphST results may be suboptimal due "
++            "to double log-transform in GraphST.preprocess()."
++        )
++        adata_work = adata.copy()
++
+     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+ 
++    # Follow official GraphST API: preprocess → construct_interaction → train
++    GraphSTModule.preprocess(adata_work)
++    GraphSTModule.construct_interaction(adata_work)
++
++    from GraphST.GraphST import GraphST as GraphSTModel
++
+     model = GraphSTModel(adata_work, device=device, random_seed=random_seed)
+     adata_work = model.train()
+ 
+@@ -397,6 +448,11 @@ def identify_domains_banksy(
+     Augments gene expression with neighborhood-averaged expression and
+     azimuthal Gabor filters. Unlike deep learning methods, BANKSY uses
+     explicit mathematical feature construction for interpretability.
++
++    Note: BANKSY official tutorial recommends z-scoring gene expression
++    before neighbourhood feature construction so that high-expression
++    genes do not dominate the neighbourhood average. This function
++    applies ``sc.pp.scale()`` on a working copy before calling BANKSY.
+     """
+     from omicsclaw.spatial.dependency_manager import require
+ 
+@@ -415,6 +471,13 @@ def identify_domains_banksy(
+     if spatial_key != "spatial":
+         adata_work.obsm["spatial"] = adata_work.obsm[spatial_key]
+ 
++    # BANKSY recommends z-scoring gene expression before neighbourhood
++    # feature construction (prabhakarlab/Banksy_py docs).  Without this,
++    # genes with large absolute expression values dominate the
++    # neighbourhood-averaged features and Gabor filter responses.
++    logger.info("Applying z-score scaling before BANKSY feature construction")
++    sc.pp.scale(adata_work, max_value=10)
++
+     coord_keys = ("x", "y", "spatial")
+ 
+     banksy_dict = initialize_banksy(
+@@ -715,8 +778,9 @@ def main():
+         input_file = args.input_path
+         if "X_pca" not in adata.obsm:
+             raise ValueError(
+-                "PCA not found. Run spatial-preprocess first:\n"
+-                "  python omicsclaw.py run preprocess --input data.h5ad --output results/preprocess/"
++                "Input data is missing required preprocessing. "
++                "Expected 'X_pca' in adata.obsm but not found. "
++                "This data appears to be raw/unprocessed."
+             )
+     else:
+         print("ERROR: Provide --input or --demo", file=sys.stderr)

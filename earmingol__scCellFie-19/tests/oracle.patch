@@ -1,0 +1,101 @@
+diff --git a/sccellfie/__init__.py b/sccellfie/__init__.py
+index faa7366..2ebcbda 100644
+--- a/sccellfie/__init__.py
++++ b/sccellfie/__init__.py
+@@ -16,4 +16,4 @@
+ from .reaction_activity import (compute_reaction_activity)
+ from .sccellfie_pipeline import (run_sccellfie_pipeline)
+ 
+-__version__ = "0.4.7"
+\ No newline at end of file
++__version__ = "0.4.8"
+\ No newline at end of file
+diff --git a/sccellfie/external/tests/test_tf_idf.py b/sccellfie/external/tests/test_tf_idf.py
+index de781b8..60c44cd 100644
+--- a/sccellfie/external/tests/test_tf_idf.py
++++ b/sccellfie/external/tests/test_tf_idf.py
+@@ -19,7 +19,7 @@ def test_output_structure():
+ def test_number_of_markers():
+     n_markers = 5
+     adata = create_random_adata()
+-    markers = quick_markers(adata, cluster_key='cluster', n_markers=n_markers, fdr=1.0)
++    markers = quick_markers(adata, cluster_key='cluster', n_markers=n_markers, fdr=1.1)
+ 
+     for cluster in markers['cluster'].unique():
+         assert len(markers[markers['cluster'] == cluster]) == n_markers
+@@ -37,8 +37,8 @@ def test_fdr_filtering():
+ def test_expression_cutoff():
+     express_cut = 10
+     adata = create_random_adata()
+-    markers1 = quick_markers(adata, cluster_key='cluster', fdr=1.0)
+-    markers2 = quick_markers(adata, cluster_key='cluster', express_cut=express_cut, fdr=1.0)
++    markers1 = quick_markers(adata, cluster_key='cluster', fdr=1.1)
++    markers2 = quick_markers(adata, cluster_key='cluster', express_cut=express_cut, fdr=1.1)
+ 
+     assert ~markers1.equals(markers2), "The two marker sets are the same, expression cutoff not making a difference"
+ 
+@@ -55,7 +55,7 @@ def test_quick_markers_r_output_columns():
+ 
+ def test_cell_groups():
+     adata = create_random_adata()
+-    markers = quick_markers(adata, cluster_key='cluster', cell_groups=['cluster1', 'cluster2', 'cluster3'], fdr=1.0)
++    markers = quick_markers(adata, cluster_key='cluster', cell_groups=['cluster1', 'cluster2', 'cluster3'], fdr=1.1)
+ 
+     expected_columns = ['gene', 'cluster', 'tf', 'idf', 'tf_idf', 'gene_frequency_outside_cluster',
+                         'gene_frequency_global', 'second_best_tf', 'second_best_cluster', 'pval', 'qval']
+diff --git a/sccellfie/external/tf_idf.py b/sccellfie/external/tf_idf.py
+index af02081..d628e6b 100644
+--- a/sccellfie/external/tf_idf.py
++++ b/sccellfie/external/tf_idf.py
+@@ -4,6 +4,7 @@
+ from scipy.optimize import curve_fit
+ from scipy.stats import hypergeom
+ from scipy.sparse import issparse, csr_matrix
++from statsmodels.stats.multitest import multipletests
+ 
+ 
+ def quick_markers(adata, cluster_key, cell_groups=None, n_markers=10, fdr=0.01, express_cut=0.9, r_output=False):
+@@ -75,17 +76,22 @@ def quick_markers(adata, cluster_key, cell_groups=None, n_markers=10, fdr=0.01,
+         second_best_tf[:, gene_idx] = tf_scores[second_best_idx]
+         second_best_cluster_idx[gene_idx] = unique_clusters[second_best_idx]
+ 
+-    # P-values and FDR adjustment
++    # P-values
+     p_values = np.array \
+         ([hypergeom.sf(n_obs[i] - 1, len(clusters), n_tot, cl_counts[i]) for i in range(len(unique_clusters))])
+-    q_values = np.array([np.minimum.accumulate(np.sort(p_values[:, i])) for i in range(p_values.shape[1])]).T
++
++    # FDR correction using statsmodels (global across all gene-cluster pairs)
++    p_flat = p_values.flatten()
++    reject, q_flat, _, _ = multipletests(p_flat, alpha=fdr, method='fdr_bh')
++    q_values = q_flat.reshape(p_values.shape)
+ 
+     # Select top N markers by iterating over columns of p-values matrix
+     top_markers = {cl: [] for cl in unique_clusters}
+     for gene_idx in range(tf_idf.shape[1]):
+         for cl in unique_clusters:
+-            # Filter genes by FDR
+-            if q_values[cl, gene_idx] < fdr:
++            # Filter genes by FDR (statsmodels handles NaN automatically)
++            q_val = q_values[cl, gene_idx]
++            if not np.isnan(q_val) and q_val < fdr:
+                 top_markers[cl].append((gene_idx, tf_idf[cl, gene_idx]))
+ 
+     # Sort and select top genes for each cluster
+diff --git a/sccellfie/stats/gam_analysis.py b/sccellfie/stats/gam_analysis.py
+index 6ac3c69..6f9736a 100644
+--- a/sccellfie/stats/gam_analysis.py
++++ b/sccellfie/stats/gam_analysis.py
+@@ -215,6 +215,12 @@ def fit_gam_model(adata, cell_type_key, cell_type_order=None, continuous_key=Non
+         information about the pseudo-bulk assignments and cell type encoder when applicable.
+     """
+     try:
++        # This is a temporary fix for pygam to support newer versions of scipy
++        import scipy.sparse
++        def to_array(self):
++            return self.toarray()
++        scipy.sparse.spmatrix.A = property(to_array)
++
+         from pygam import GAM, s
+     except ImportError:
+         raise ImportError(

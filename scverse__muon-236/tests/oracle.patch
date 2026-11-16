@@ -1,0 +1,113 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 8fc7fcc..1d91869 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -151,7 +151,7 @@ and this project adheres to [Semantic Versioning][].
+ 
+ ### Changed
+ 
+-- `MuData` is now provided [as a separate package](https://mudata.readthedocs.io/) and is a hard dependency of `muon`.
++- `MuData` is now provided [as a separate package](https://mudata.scverse.org/) and is a hard dependency of `muon`.
+ 
+ ### Fixed
+ 
+diff --git a/README.md b/README.md
+index c8c4d55..eaccb4f 100644
+--- a/README.md
++++ b/README.md
+@@ -112,7 +112,7 @@ from muon import prot as pt
+ 
+ Some implementation details are noted in [DESIGN.md](https://github.com/scverse/muon/blob/main/DESIGN.md).
+ 
+-[Contributions](https://muon.readthedocs.io/page/contributing.html) in the form of [issues](https://github.com/scverse/muon/issues), [pull requests](https://github.com/scverse/muon/pulls) or [discussions](https://discourse.scverse.org/) are welcome.
++[Contributions](https://muon.scverse.org/page/contributing.html) in the form of [issues](https://github.com/scverse/muon/issues), [pull requests](https://github.com/scverse/muon/pulls) or [discussions](https://discourse.scverse.org/) are welcome.
+ 
+ ## Citation
+ 
+diff --git a/docs/api.md b/docs/api.md
+index e78ca40..4880092 100644
+--- a/docs/api.md
++++ b/docs/api.md
+@@ -7,7 +7,7 @@ import muon as mu
+ ```
+ 
+ The {class}`~mudata.MuData` container and `.h5mu` reading/writing (`mu.read`, `mu.write`, `mu.read_h5mu`, …)
+-are provided by [mudata](https://mudata.readthedocs.io/) and re-exported here; see its documentation for details.
++are provided by {doc}`mudata <mudata:index>` and re-exported here; see its documentation for details.
+ 
+ ## Input/Output
+ 
+diff --git a/docs/conf.py b/docs/conf.py
+index 4adb4b1..8095705 100644
+--- a/docs/conf.py
++++ b/docs/conf.py
+@@ -89,7 +89,7 @@
+     "python": ("https://docs.python.org/3", None),
+     "anndata": ("https://anndata.scverse.org/en/stable/", None),
+     "scanpy": ("https://scanpy.scverse.org/en/stable/", None),
+-    "mudata": ("https://mudata.readthedocs.io/stable/", None),
++    "mudata": ("https://mudata.scverse.org/stable/", None),
+     "numpy": ("https://numpy.org/doc/stable/", None),
+     "pandas": ("https://pandas.pydata.org/docs/", None),
+     "scipy": ("https://docs.scipy.org/doc/scipy/", None),
+diff --git a/docs/install.md b/docs/install.md
+index 354a4bb..483c5a8 100644
+--- a/docs/install.md
++++ b/docs/install.md
+@@ -18,14 +18,13 @@ pip install git+https://github.com/gtca/muon
+ 
+ ## Troubleshooting
+ 
+-Please see details on installing `scanpy` and its dependencies [here](https://scanpy.readthedocs.io/en/stable/installation.html).
++Please see details on installing `scanpy` and its dependencies {doc}`here <scanpy:installation>`.
+ If there are issues that have not beed described, addressed, or documented, please consider [opening an issue](https://github.com/gtca/muon/issues).
+ 
+ If you encounter the error `Illegal instruction: 4` when installing `muon` on Apple Silicon (e.g. M1 or M2 chips), try [these steps](https://developer.apple.com/metal/tensorflow-plugin/) that were suggested for a similar error when installing TensorFlow.
+ 
+ ## Hacking on muon
+ 
+-For hacking on the package, it is most convenient to do a so-called development-mode install, which symlinks files in your Python package directory to your muon working directory, such that you do not need to reinstall after every change.
+-We use [flit](https://flit.readthedocs.io/en/latest/index.html) as our build system.
+-After installing flit, you can run `flit install -s` from within the muon project directory to perform a development-mode install.
++We use [hatch](https://hatch.pypa.io/) as our build system.
++After installing it, you can run `hatch test` or `hatch run docs:build` from the muon project directory.
+ Happy hacking!
+diff --git a/docs/io/input.md b/docs/io/input.md
+index 99caf22..5ecf72c 100644
+--- a/docs/io/input.md
++++ b/docs/io/input.md
+@@ -49,7 +49,7 @@ import anndata
+ adata = anndata.AnnData(X=matrix, obs=metadata_df, var=features_df)
+ ```
+ 
+-Please see more details on how to operate on AnnData objects [in the anndata documentation](https://anndata.readthedocs.io/).
++Please see more details on how to operate on AnnData objects {doc}`in the anndata documentation <anndata:index>`.
+ 
+ ## Snap files
+ 
+diff --git a/docs/notebooks/quickstart_mudata.ipynb b/docs/notebooks/quickstart_mudata.ipynb
+index 26c68d3..73e7fba 100644
+--- a/docs/notebooks/quickstart_mudata.ipynb
++++ b/docs/notebooks/quickstart_mudata.ipynb
+@@ -22,7 +22,7 @@
+    "source": [
+     "`muon` is a framework for multimodal data analysis with a strong focus on multi-omics. \n",
+     "\n",
+-    "With its multimodal objects built on top of [AnnData](https://anndata.readthedocs.io/en/latest/index.html) and state-of-the-art integration methods built in, `muon` fits naturally into the rich Python ecosystem for data analysis, and its modular design for the analysis of the individual omics assays provides necessary functionality for the common workflows out of the box."
++    "With its multimodal objects built on top of {doc}`AnnData <anndata:index>` and state-of-the-art integration methods built in, `muon` fits naturally into the rich Python ecosystem for data analysis, and its modular design for the analysis of the individual omics assays provides necessary functionality for the common workflows out of the box."
+    ]
+   },
+   {
+diff --git a/pyproject.toml b/pyproject.toml
+index 5bfe233..b96c1ae 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -57,7 +57,7 @@ optional-dependencies.mofa = [
+   "mofapy2",
+ ]
+ optional-dependencies.scopen = [ "scopen" ]
+-urls.Documentation = "https://muon.readthedocs.io/"
++urls.Documentation = "https://muon.scverse.org/"
+ urls.Homepage = "https://github.com/scverse/muon"
+ urls.Source = "https://github.com/scverse/muon"
+ 

@@ -1,0 +1,33 @@
+diff --git a/DESCRIPTION b/DESCRIPTION
+index 4a28b4e0..dc885be8 100644
+--- a/DESCRIPTION
++++ b/DESCRIPTION
+@@ -1,8 +1,8 @@
+ Package: GeneTonic
+ Title: Enjoy Analyzing And Integrating The Results From Differential Expression 
+     Analysis And Functional Enrichment Analysis
+-Version: 1.5.2
+-Date: 2021-05-27
++Version: 1.5.3
++Date: 2021-06-09
+ Authors@R: 
+     c(
+         person(
+diff --git a/R/gene_plot.R b/R/gene_plot.R
+index bc3ea152..83ef2d02 100644
+--- a/R/gene_plot.R
++++ b/R/gene_plot.R
+@@ -139,11 +139,11 @@ gene_plot <- function(dds,
+   } else if (plot_type == "boxplot" || (plot_type == "auto" & (min_by_groups > 3 & min_by_groups < 10))) {
+     p <- p +
+       geom_boxplot(outlier.shape = NA) +
+-      geom_jitter(position = position_jitter(width = 0.2, height = 0))
++      geom_point(aes_string(x = "plotby", y = "exp_value"), position = jit_pos)
+   } else if (plot_type == "violin" || (plot_type == "auto" & (min_by_groups >= 11 & min_by_groups < 40))) {
+     p <- p +
+       geom_violin() +
+-      geom_jitter(position = position_jitter(width = 0.2, height = 0)) +
++      geom_point(aes_string(x = "plotby", y = "exp_value"), position = jit_pos) +
+       stat_summary(
+         fun = median, fun.min = median, fun.max = median,
+         geom = "crossbar", width = 0.3

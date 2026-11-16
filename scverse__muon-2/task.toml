@@ -1,0 +1,64 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__muon-2"
+description = "File backing"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "muon",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/muon"
+ref = "44c62226c950ab10169698ed427bca47d9538cc6"
+reference = "https://github.com/scverse/muon/pull/2"
+source_access = "auto"
+built_at = "2026-11-15T17:00:57.480461+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:798a6c3261d8ce66803426d7e6c69f1e256257b474036f884d83ad49629e5423"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2020-09-15T17:52:38Z"
+diff_format = "unified"
+context_files = [
+    "muon/_core/file_backing.py",
+    "muon/_core/io.py",
+    "muon/_core/mudata.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 185
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

@@ -1,0 +1,180 @@
+diff --git a/bot/skill_orchestration.py b/bot/skill_orchestration.py
+index a2bc6877..312c138b 100644
+--- a/bot/skill_orchestration.py
++++ b/bot/skill_orchestration.py
+@@ -486,10 +486,14 @@ async def _run_skill_via_shared_runner(
+     if batch_key:
+         forwarded_args.extend(["--batch-key", batch_key])
+     if n_epochs is not None:
+-        if canonical_skill == "spatial-domain-identification":
+-            forwarded_args.extend(["--epochs", str(int(n_epochs))])
+-        else:
+-            forwarded_args.extend(["--n-epochs", str(int(n_epochs))])
++        # The legacy alias ``spatial-domain-identification`` was the only skill
++        # that wanted ``--epochs`` instead of ``--n-epochs``, but the registry
++        # now resolves that alias to canonical ``spatial-domains`` before we
++        # land here — the conditional was dead code. ``argv_builder``'s
++        # ``--epochs`` ↔ ``--n-epochs`` rewrite (see
++        # ``omicsclaw/core/runtime/argv_builder.py``) handles whichever flag
++        # each skill's ``allowed_extra_flags`` actually accepts.
++        forwarded_args.extend(["--n-epochs", str(int(n_epochs))])
+     forwarded_args.extend(_normalize_extra_args(extra_args))
+ 
+     def _emit_stdout(line: str) -> None:
+diff --git a/bot/tool_executors.py b/bot/tool_executors.py
+index 9ea2f095..c4342579 100644
+--- a/bot/tool_executors.py
++++ b/bot/tool_executors.py
+@@ -283,10 +283,13 @@ async def execute_omicsclaw(args: dict, session_id: str = None, chat_id: int | s
+     if batch_key:
+         hint_cmd.extend(["--batch-key", batch_key])
+     if n_epochs is not None:
+-        if canonical_skill == "spatial-domain-identification":
+-            hint_cmd.extend(["--epochs", str(int(n_epochs))])
+-        else:
+-            hint_cmd.extend(["--n-epochs", str(int(n_epochs))])
++        # ``argv_builder.filter_forwarded_args`` rewrites ``--n-epochs`` to
++        # ``--epochs`` (or vice versa) per the receiving skill's
++        # ``allowed_extra_flags``; the legacy
++        # ``if canonical_skill == "spatial-domain-identification"`` branch
++        # never fired because the registry resolves that alias to
++        # ``spatial-domains`` before this code runs.
++        hint_cmd.extend(["--n-epochs", str(int(n_epochs))])
+     hint_cmd.extend(_normalize_extra_args(extra_args))
+     param_hint = _build_param_hint(skill_key, method, hint_cmd)
+ 
+diff --git a/omicsclaw/core/capability_resolver.py b/omicsclaw/core/capability_resolver.py
+index 5abb0857..0cf6a2c6 100644
+--- a/omicsclaw/core/capability_resolver.py
++++ b/omicsclaw/core/capability_resolver.py
+@@ -652,7 +652,13 @@ def resolve_capability(
+         if candidate is not None:
+             candidates.append(candidate)
+ 
+-    candidates.sort(key=lambda c: c.score, reverse=True)
++    # Sort by score DESC with a stable alphabetical tie-break on the skill
++    # alias. Without the tie-break, the post-PR audit caught WGCNA flapping
++    # between ``bulkrna-coexpression`` and ``bulkrna-ppi-network`` depending
++    # on the order ``registry.iter_primary_skills`` happened to return them
++    # in — which itself depends on filesystem traversal at registry load
++    # time. Alphabetical order gives a deterministic winner.
++    candidates.sort(key=lambda c: (-c.score, c.skill))
+ 
+     custom_requested = any(h in query_lower for h in _CUSTOM_FALLBACK_HINTS)
+     web_requested = any(h in query_lower for h in _WEB_HINTS)
+diff --git a/tests/test_bot_n_epochs_routing.py b/tests/test_bot_n_epochs_routing.py
+new file mode 100644
+index 00000000..40d7f1ad
+--- /dev/null
++++ b/tests/test_bot_n_epochs_routing.py
+@@ -0,0 +1,78 @@
++"""Regression test for the dead ``spatial-domain-identification`` --epochs
++conditional removal.
++
++The bot used to branch on ``canonical_skill == "spatial-domain-identification"``
++to pick between ``--epochs`` and ``--n-epochs``. The registry resolves that
++alias to canonical ``spatial-domains`` before this code runs, so the branch
++was dead — the bot always emitted ``--n-epochs`` and relied on
++``argv_builder.filter_forwarded_args`` to rewrite ``--n-epochs`` to
++``--epochs`` (or vice versa) per each skill's ``allowed_extra_flags``.
++
++This test pins the simplification so a future "helpful" branch
++re-introduction has to break a test.
++"""
++
++from __future__ import annotations
++
++import re
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parents[1]
++
++
++def test_bot_skill_orchestration_has_no_spatial_domain_identification_special_case():
++    """``bot/skill_orchestration.py`` must not switch on the legacy alias.
++
++    The argv builder owns the ``--epochs`` / ``--n-epochs`` rewrite; the
++    bot adapter is supposed to be ignorant of which skill takes which.
++    """
++    source = (ROOT / "bot" / "skill_orchestration.py").read_text(encoding="utf-8")
++    # Tolerate docstring / comment mentions explaining the removal, but not
++    # an actual code conditional.
++    pattern = re.compile(r'^\s*if\s+canonical_skill\s*==\s*"spatial-domain-identification"', re.M)
++    assert not pattern.search(source), (
++        "dead ``if canonical_skill == 'spatial-domain-identification'`` "
++        "conditional reintroduced in bot/skill_orchestration.py — let "
++        "argv_builder.filter_forwarded_args handle the --epochs rewrite."
++    )
++
++
++def test_bot_tool_executors_has_no_spatial_domain_identification_special_case():
++    """``bot/tool_executors.py`` must not switch on the legacy alias either."""
++    source = (ROOT / "bot" / "tool_executors.py").read_text(encoding="utf-8")
++    pattern = re.compile(r'^\s*if\s+canonical_skill\s*==\s*"spatial-domain-identification"', re.M)
++    assert not pattern.search(source), (
++        "dead ``if canonical_skill == 'spatial-domain-identification'`` "
++        "conditional reintroduced in bot/tool_executors.py — let "
++        "argv_builder.filter_forwarded_args handle the --epochs rewrite."
++    )
++
++
++def test_argv_builder_still_rewrites_n_epochs_for_spatial_domains():
++    """Sanity-check the rewrite the bot now relies on: when a skill only
++    allow-lists ``--epochs``, the bot's ``--n-epochs`` argv is rewritten
++    correctly. If this stops working, the dead-branch deletion would
++    silently strip the flag and skills would run with default epochs."""
++    from omicsclaw.core.runtime.argv_builder import filter_forwarded_args
++
++    out = filter_forwarded_args(
++        ["--n-epochs", "50"], allowed_extra_flags={"--epochs"}
++    )
++    assert out == ["--epochs", "50"]
++
++
++def test_spatial_domains_canonical_alias_makes_branch_unreachable():
++    """The branch was dead because the registry's canonical alias for
++    ``spatial-domain-identification`` is ``spatial-domains``. Pin that so a
++    future SKILL.md edit that renames the canonical alias back to
++    ``spatial-domain-identification`` re-introduces the bug visibly."""
++    from omicsclaw.core.registry import ensure_registry_loaded
++
++    registry = ensure_registry_loaded()
++    legacy_view = registry.skills.get("spatial-domain-identification")
++    assert legacy_view is not None, "legacy alias must remain resolvable"
++    assert legacy_view["alias"] == "spatial-domains", (
++        "If the canonical alias changes back to spatial-domain-identification, "
++        "the bot's dead-branch deletion needs to be revisited — the rewrite "
++        "rule lives in argv_builder now."
++    )
+diff --git a/tests/test_capability_resolver.py b/tests/test_capability_resolver.py
+index 1aae2873..05de92dd 100644
+--- a/tests/test_capability_resolver.py
++++ b/tests/test_capability_resolver.py
+@@ -75,3 +75,27 @@ def test_validate_custom_analysis_code_allows_basic_analysis():
+         "import scanpy as sc\nimport pandas as pd\nprint('ok')\n"
+     )
+     assert issues == []
++
++
++def test_resolve_capability_breaks_score_ties_alphabetically():
++    """The candidate sort must tie-break on the canonical alias so the same
++    query produces the same ``chosen_skill`` regardless of which order
++    ``registry.iter_primary_skills`` happens to return tied skills in.
++
++    Pre-fix this test failed about half the time depending on filesystem
++    traversal at registry load — ``bulkrna-coexpression`` and
++    ``bulkrna-ppi-network`` both score 7.25 for this WGCNA query, and
++    Python's stable sort kept whichever the registry yielded first.
++    """
++    decision = resolve_capability(
++        "Build a WGCNA co-expression network on my bulk RNA-seq counts, return hub genes"
++    )
++    top_two = [c.skill for c in decision.skill_candidates[:2]]
++    if len(top_two) >= 2 and decision.skill_candidates[0].score == decision.skill_candidates[1].score:
++        assert top_two == sorted(top_two), (
++            f"tied top candidates must be sorted alphabetically; got {top_two}"
++        )
++    # And the specific query that originally exposed the flake must produce
++    # ``bulkrna-coexpression`` (alphabetically before ``bulkrna-ppi-network``)
++    # under any registry iteration order.
++    assert decision.chosen_skill == "bulkrna-coexpression"

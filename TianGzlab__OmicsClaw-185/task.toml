@@ -1,0 +1,68 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-185"
+description = "feat(pipelines): YAML-driven pipeline configs + generic chain runner (OMI-12 P2.7)"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "4c7aeb60f4650062562c719203bbbce99102f384"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/185"
+source_access = "auto"
+built_at = "2026-11-15T18:17:01.734187+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:3f439ce87df87aace5862fad1db163b8028b34832ffce8d751aab860b1d16713"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-05-12T12:25:09Z"
+diff_format = "unified"
+context_files = [
+    "omicsclaw.py",
+    "omicsclaw/core/runtime/pipeline_config.py",
+    "omicsclaw/core/runtime/pipeline_runner.py",
+    "omicsclaw/core/skill_runner.py",
+    "pipelines/spatial-pipeline.yaml",
+    "tests/test_runtime_pipeline_config.py",
+    "tests/test_runtime_pipeline_dispatch.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 820
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

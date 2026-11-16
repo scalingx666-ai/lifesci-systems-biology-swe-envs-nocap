@@ -1,0 +1,89 @@
+diff --git a/src/components/GProfiler/link.ts b/src/components/GProfiler/link.ts
+index 760cf7a2c..09700ca37 100644
+--- a/src/components/GProfiler/link.ts
++++ b/src/components/GProfiler/link.ts
+@@ -36,11 +36,11 @@ const createFeatureQuery = (
+         }, '');
+ };
+ 
+-const createGProfilerLink = (organism: string, query: string) => {
++const createGProfilerLink = (organism: string, query: string, ordered: string) => {
+     const gProfilerQueryData = {
+         organism,
+         query,
+-        ordered: 'true',
++        ordered,
+         all_results: 'false',
+         no_iea: 'false',
+         combined: 'true',
+@@ -98,7 +98,7 @@ export const checkCreateGProfilerLink = async ({
+         sortedFeatureMetricTable
+     );
+     const organism = gProfilerToken !== '' ? gProfilerToken : selectedOrganism;
+-    const gProfilerLink = createGProfilerLink(organism, topFeatureQuery);
++    const gProfilerLink = createGProfilerLink(organism, topFeatureQuery, selectedSortBy == 'gene' ? 'false' : 'true' );
+     if (gProfilerLink.length > GPROFILER_LINK_MAX_LENGTH) {
+         return {
+             error:
+diff --git a/src/components/GProfiler/model.ts b/src/components/GProfiler/model.ts
+index cfb661b74..e78cfd33e 100644
+--- a/src/components/GProfiler/model.ts
++++ b/src/components/GProfiler/model.ts
+@@ -61,11 +61,12 @@ export const getAvailableTopGeneListsSizes = (
+ ) => {
+     const numFeatures = getNumFeatures(featureMetadata);
+     return [
+-        numFeatures < 100 ? numFeatures : 100,
++        100,
+         200,
+         300,
+         400,
+         500,
++        numFeatures,
+     ].filter((topNumFeaturesValue) =>
+         topNumFeaturesValue <= numFeatures ? true : false
+     );
+@@ -99,14 +100,24 @@ export const getMetricTable = (
+ 
+ export const getAvailableSortBy = (featureMetadata: FeatureMetadata) => {
+     if (featureMetadata.metrics) {
+-        return featureMetadata.metrics.map((metric, idx: number) => {
++        let metrics = featureMetadata.metrics.map((metric, idx: number) => {
+             return {
+                 key: idx,
+                 text: metric.name,
+                 value: metric.accessor,
+             };
+         });
++        metrics.push({
++            key: metrics.length + 1,
++            text: 'Gene Symbol',
++            value: 'gene',
++        })
++        return metrics
+     }
+ 
+-    return [];
++    return [{
++        key: 1,
++        text: 'Gene Symbol',
++        value: 'gene',
++    }];
+ };
+diff --git a/src/components/common/ViewerSidebar.jsx b/src/components/common/ViewerSidebar.jsx
+index 31a0955e2..0d9fb0dcf 100644
+--- a/src/components/common/ViewerSidebar.jsx
++++ b/src/components/common/ViewerSidebar.jsx
+@@ -1238,9 +1238,10 @@ class ViewerSidebar extends Component {
+                             {markerTable}
+                             {legendTable}
+                             {downloadSubLoomButton()}
+-                            {activeFeatures[i].featureType.startsWith(
++                            {(activeFeatures[i].featureType.startsWith(
+                                 'Clustering'
+-                            ) &&
++                            ) ||
++                                activeFeatures[i].featureType == 'regulon') &&
+                                 md.genes && (
+                                     <GProfilerModal featureMetadata={md} />
+                                 )}

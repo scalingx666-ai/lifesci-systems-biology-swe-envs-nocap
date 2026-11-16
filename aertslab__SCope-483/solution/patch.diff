@@ -1,0 +1,53 @@
+diff --git a/.github/workflows/continuous-integration-client.yml b/.github/workflows/continuous-integration-client.yml
+index d732a5b9..729fa6cc 100644
+--- a/.github/workflows/continuous-integration-client.yml
++++ b/.github/workflows/continuous-integration-client.yml
+@@ -1,10 +1,8 @@
+ name: Client CI
+ on:
+   pull_request:
+-    paths-ignore:
+-    - 'server/**'
+-    - 'grpc-proxy-server/**'
+-    - 'docs/**'
++    paths:
++    - 'client/**'
+ 
+ jobs:
+   client-quality-checks:
+diff --git a/.github/workflows/security.yml b/.github/workflows/security.yml
+new file mode 100644
+index 00000000..314ca0e2
+--- /dev/null
++++ b/.github/workflows/security.yml
+@@ -0,0 +1,30 @@
++name: Security Audit
++
++on:
++  pull_request: {}
++
++jobs:
++  semgrep:
++    name: Scan with SemGrep
++    runs-on: ubuntu-latest
++    if: (github.actor != 'dependabot[bot]')
++    steps:
++      - uses: actions/checkout@v2
++
++      - uses: returntocorp/semgrep-action@v1
++        with:
++          config: >-
++            p/gitlab-bandit
++            p/security-audit
++            p/secrets
++            p/sql-injection
++            p/xss
++            p/javascript
++            p/typescript
++          generateSarif: "1"
++
++      - name: Upload SARIF file for GitHub Advanced Security Dashboard
++        uses: github/codeql-action/upload-sarif@v1
++        with:
++          sarif_file: semgrep.sarif
++        if: always()

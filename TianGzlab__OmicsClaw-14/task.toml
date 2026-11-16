@@ -1,0 +1,71 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-14"
+description = "feat: Enhance bot capabilities and spatial domain analysis"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "045cd4e810dfa762dc7cfa62677aa406504f5b9c"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/14"
+source_access = "auto"
+built_at = "2026-11-15T18:18:39.673302+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:bb86b52329968615f8fef451ed59e05be6b1291c1a19206f22619626def1a845"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-03-16T15:19:25Z"
+diff_format = "unified"
+context_files = [
+    ".env.example",
+    "README.md",
+    "bot/core.py",
+    "bot/data/memory.db",
+    "bot/data/memory.db-shm",
+    "bot/data/memory.db-wal",
+    "bot/feishu_bot.py",
+    "pyproject.toml",
+    "skills/spatial/spatial-domains/SKILL.md",
+    "skills/spatial/spatial-domains/spatial_domains.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 374
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

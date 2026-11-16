@@ -1,0 +1,174 @@
+diff --git a/muon/_atac/tools.py b/muon/_atac/tools.py
+index 246dc4fc..b8e38ba5 100644
+--- a/muon/_atac/tools.py
++++ b/muon/_atac/tools.py
+@@ -6,6 +6,7 @@
+ from pathlib import Path
+ from datetime import datetime
+ from warnings import warn
++from contextlib import suppress
+ 
+ import numpy as np
+ import pandas as pd
+@@ -81,7 +82,7 @@ def lsi(data: Union[AnnData, MuData], scale_embeddings=True, n_comps=50):
+ 
+ def add_peak_annotation(
+     data: Union[AnnData, MuData],
+-    annotation: Union[str, pd.DataFrame],
++    annotation: Union[str, Path, pd.DataFrame],
+     sep: str = "\t",
+     return_annotation: bool = False,
+ ):
+@@ -108,15 +109,12 @@ def add_peak_annotation(
+     else:
+         raise TypeError("Expected AnnData or MuData object with 'atac' modality")
+ 
+-    if isinstance(annotation, str):
+-        pa = pd.read_csv(annotation, sep=sep)
+-    else:
++    if isinstance(annotation, pd.DataFrame):
+         pa = annotation
++    else:
++        pa = pd.read_csv(annotation, sep=sep)
+ 
+-    # Convert null values to empty strings
+-    pa.loc[pa.gene.isnull(), "gene"] = ""
+-    pa.loc[pa.distance.isnull(), "distance"] = ""
+-    pa.loc[pa.peak_type.isnull(), "peak_type"] = ""
++    pa = pa.convert_dtypes()
+ 
+     # If peak name is not in the annotation table, reconstruct it:
+     # peak = chrom:start-end
+@@ -133,38 +131,38 @@ def add_peak_annotation(
+             raise AttributeError(
+                 f"Peak annotation does not in contain neighter peak column nor chrom, start, and end columns."
+             )
++    else:
++        # chrX_NNNNN_NNNNN -> chrX:NNNNN-NNNNN
++        pa["peak"] = pa["peak"].str.replace("_", ":", 1).str.replace("_", "-", 1)
+ 
+     # Split genes, distances, and peaks into individual records
+-    pa_g = pd.DataFrame(pa.gene.str.split(";").tolist(), index=pa.peak).stack()
+-    pa_d = pd.DataFrame(pa.distance.astype(str).str.split(";").tolist(), index=pa.peak).stack()
+-    pa_p = pd.DataFrame(pa.peak_type.str.split(";").tolist(), index=pa.peak).stack()
+ 
+-    # Make a long dataframe indexed by gene
+-    pa_long = pd.concat(
+-        [pa_g.reset_index()[["peak", 0]], pa_d.reset_index()[[0]], pa_p.reset_index()[[0]]], axis=1
+-    )
+-    pa_long.columns = ["peak", "gene", "distance", "peak_type"]
+-    pa_long = pa_long.set_index("gene")
+-
+-    # chrX_NNNNN_NNNNN -> chrX:NNNNN-NNNNN
+-    pa_long.peak = [peak.replace("_", ":", 1).replace("_", "-", 1) for peak in pa_long.peak]
+-
+-    # Make distance values integers with 0 for intergenic peaks
+-    # DEPRECATED: Make distance values nullable integers
+-    # See https://pandas.pydata.org/pandas-docs/stable/user_guide/integer_na.html
+-    null_distance = pa_long.distance == ""
+-    pa_long.loc[null_distance, "distance"] = 0
+-    pa_long.distance = pa_long.distance.astype(float).astype(int)
+-    # DEPRECATED: Int64 is not recognized when saving HDF5 files with scanpy.write
+-    # pa_long.distance = pa_long.distance.astype(int).astype("Int64")
+-    # pa_long.distance[null_distance] = np.nan
++    if pd.api.types.is_string_dtype(pa.distance):
++        pa = pa.set_index("peak")
++        pa_g = pa.gene.str.split(";").explode()
++        pa_d = pa.distance.str.split(";").explode().astype(int)
++        pa_p = pa.peak_type.str.split(";").explode()
++
++        # Make a long dataframe indexed by gene
++        pa = pd.concat((pa_g, pa_d, pa_p), axis=1).reset_index()
++    else:
++        pa = pa[["peak", "gene", "distance", "peak_type"]]
++
++    with suppress(ValueError):  # missing values
++        pa["distance"] = pa["distance"].astype(int)
++
++    # TODO: nullable strings work with anndata >= 0.13
++    for col in ("peak", "gene", "peak_type"):
++        pa[col] = pa[col].fillna("").astype(object)
++
++    pa = pa.set_index("gene")
+ 
+     if "atac" not in adata.uns:
+         adata.uns["atac"] = dict()
+-    adata.uns["atac"]["peak_annotation"] = pa_long
++    adata.uns["atac"]["peak_annotation"] = pa
+ 
+     if return_annotation:
+-        return pa_long
++        return pa
+ 
+ 
+ def add_peak_annotation_gene_names(
+diff --git a/pyproject.toml b/pyproject.toml
+index c59b2916..fc9736c1 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -19,7 +19,7 @@ classifiers = [
+ requires-python = ">= 3.10"
+ requires = [
+     "numpy",
+-    "pandas",
++    "pandas>=1",
+     "matplotlib",
+     "seaborn",
+     "h5py",
+diff --git a/tests/test_atac_tools.py b/tests/test_atac_tools.py
+new file mode 100644
+index 00000000..53eb4ed1
+--- /dev/null
++++ b/tests/test_atac_tools.py
+@@ -0,0 +1,51 @@
++import unittest
++from io import StringIO
++
++import numpy as np
++import pandas as pd
++from anndata import AnnData
++import muon
++
++
++class TestAddPeakAnnotation(unittest.TestCase):
++    """Regression tests for add_peak_annotation with empty distance values (#181)."""
++
++    def test_empty_distance_values(self):
++        """Intergenic peaks with empty distance should not raise."""
++        tsv = StringIO(
++            "chrom\tstart\tend\tgene\tdistance\tpeak_type\n"
++            "chr1\t100\t200\t\t\tintergenic\n"
++            "chr1\t300\t400\tGeneA\t-173268\tdistal\n"
++        )
++        pa = pd.read_csv(tsv, sep="\t")
++        peaks = ["chr1:100-200", "chr1:300-400"]
++        adata = AnnData(np.zeros((2, 2)))
++        adata.var_names = peaks
++
++        result = muon.atac.tl.add_peak_annotation(adata, pa, return_annotation=True)
++
++        assert result.distance.dtype == pd.Int64Dtype()
++        assert result.distance.iloc[0] is pd.NA
++        assert result.distance.iloc[1] == -173268
++        assert (result.peak == peaks).all()
++
++    def test_semicolon_separated_distances(self):
++        """Multi-gene peaks with semicolon-separated distances should work."""
++        tsv = StringIO(
++            "chrom\tstart\tend\tgene\tdistance\tpeak_type\n"
++            "chr1\t100\t200\tGeneA;GeneB\t-100;200\tpromoter;distal\n"
++        )
++        pa = pd.read_csv(tsv, sep="\t")
++        adata = AnnData(np.zeros((1, 1)))
++        adata.var_names = ["chr1:100-200"]
++
++        result = muon.atac.tl.add_peak_annotation(adata, pa, return_annotation=True)
++
++        assert result.distance.dtype == np.int64
++        assert result.distance.iloc[0] == -100
++        assert result.distance.iloc[1] == 200
++        assert (result.peak.iloc[0] == result.peak.iloc[1] == adata.var_names).all()
++
++
++if __name__ == "__main__":
++    unittest.main()

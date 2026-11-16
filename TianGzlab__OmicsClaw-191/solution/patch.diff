@@ -1,0 +1,142 @@
+diff --git a/bot/agent_loop.py b/bot/agent_loop.py
+index 07df0214..be9deb01 100644
+--- a/bot/agent_loop.py
++++ b/bot/agent_loop.py
+@@ -807,7 +807,13 @@ async def llm_tool_loop(
+ 
+     _ensure_system_prompt()
+     if _core.llm is None:
+-        return "Error: LLM client not initialised. Call core.init() first."
++        return (
++            "⚠ LLM is not configured.\n"
++            "\n"
++            "Set LLM_API_KEY (or OPENAI_API_KEY) in your environment or "
++            ".env file, then restart `oc chat`. To configure interactively, "
++            "run `oc onboard`."
++        )
+ 
+     transcript_store.max_history = MAX_HISTORY
+     transcript_store.max_history_chars = MAX_HISTORY_CHARS or None
+diff --git a/omicsclaw/interactive/interactive.py b/omicsclaw/interactive/interactive.py
+index f61bb565..c0e30cf8 100644
+--- a/omicsclaw/interactive/interactive.py
++++ b/omicsclaw/interactive/interactive.py
+@@ -1395,6 +1395,12 @@ def _init_llm(config: dict) -> tuple[str, str]:
+         return core.OMICSCLAW_MODEL, core.LLM_PROVIDER_NAME
+     except Exception as e:
+         logger.warning("LLM init error: %s", e)
++        console.print(
++            f"[yellow]⚠ LLM init failed:[/yellow] {e}\n"
++            "[yellow]Set [bold]LLM_API_KEY[/bold] (or [bold]OPENAI_API_KEY[/bold]) "
++            "in your environment or .env file, then restart `oc chat`.\n"
++            "To configure interactively, run [bold]oc onboard[/bold].[/yellow]"
++        )
+         return os.environ.get("OMICSCLAW_MODEL", "unknown"), os.environ.get("LLM_PROVIDER", "")
+ 
+ 
+diff --git a/tests/bot/test_agent_loop.py b/tests/bot/test_agent_loop.py
+index 25951b40..0f229fbe 100644
+--- a/tests/bot/test_agent_loop.py
++++ b/tests/bot/test_agent_loop.py
+@@ -114,6 +114,41 @@ def test_extract_timeout_seconds_from_text_recognises_timeout_phrases():
+     assert _extract_timeout_seconds_from_text(None) is None
+ 
+ 
++def test_llm_tool_loop_returns_actionable_message_when_llm_uninitialised():
++    """If ``bot.core.llm`` is ``None`` (e.g. ``oc chat`` started without an
++    API key), sending a message must return an actionable hint — naming
++    the env var to set and the onboard command — rather than the cryptic
++    ``Error: LLM client not initialised. Call core.init() first.`` that
++    blames the user for not running a function they cannot reach.
++    """
++    import asyncio
++    import bot.agent_loop as agent_loop
++    import bot.core as core
++
++    saved = core.llm
++    core.llm = None
++    try:
++        result = asyncio.run(
++            agent_loop.llm_tool_loop(
++                chat_id="__test_uninitialised__",
++                user_content="hi",
++            )
++        )
++    finally:
++        core.llm = saved
++
++    lower = result.lower()
++    assert "call core.init" not in lower, (
++        f"message still tells the user to call a private function: {result!r}"
++    )
++    assert "llm_api_key" in lower or "openai_api_key" in lower, (
++        f"message must name the env var to set: {result!r}"
++    )
++    assert "onboard" in lower, (
++        f"message must point at the onboard remediation: {result!r}"
++    )
++
++
+ def test_format_llm_api_error_message_provides_actionable_text_for_common_errors():
+     """When the OpenAI SDK raises, this formatter turns the exception into
+     a user-facing message with hints (rate limit, auth, network). The
+diff --git a/tests/test_interactive_llm_init_diagnostics.py b/tests/test_interactive_llm_init_diagnostics.py
+new file mode 100644
+index 00000000..47a8b93e
+--- /dev/null
++++ b/tests/test_interactive_llm_init_diagnostics.py
+@@ -0,0 +1,54 @@
++"""Tests for ``oc chat`` LLM-init diagnostics.
++
++When ``omicsclaw/interactive/interactive._init_llm`` fails to construct
++the LLM client — typically because the user is running ``oc chat`` before
++configuring an API key — the CLI must surface an actionable diagnostic
++inline. Logging a ``WARNING`` is not enough; the CLI logger config drops
++WARNING-level lines below the banner, so the user sees ``Model: unknown``
++and only learns the real cause after submitting their first prompt.
++
++These tests pin the user-visible contract — they do not constrain how
++the diagnostic is rendered (rich `console.print`, plain `print`, or
++`stderr.write` are all acceptable).
++"""
++
++from __future__ import annotations
++
++import sys
++
++
++def test_init_llm_surfaces_actionable_message_when_core_init_fails(
++    monkeypatch, capsys
++):
++    """If ``bot.core.init`` raises (e.g. ``OpenAIError: Missing credentials``),
++    ``_init_llm`` must print a user-visible diagnostic naming the env var
++    to set and the onboard remediation. The fallback ``(model, provider)``
++    return is still ``("unknown", ...)`` so the banner can keep rendering.
++    """
++    import omicsclaw.interactive.interactive as interactive
++
++    sys.path.insert(0, str(interactive._OMICSCLAW_DIR))
++    import bot.core as core
++
++    def _boom(**_kw):
++        raise core.OpenAIError(
++            "Missing credentials. Please pass an `api_key`, "
++            "`workload_identity`, `admin_api_key`, or set the "
++            "`OPENAI_API_KEY` or `OPENAI_ADMIN_KEY` environment variable."
++        )
++
++    monkeypatch.setattr(core, "init", _boom)
++
++    model, _provider = interactive._init_llm({})
++
++    captured = capsys.readouterr()
++    output = captured.out + captured.err
++
++    assert "LLM_API_KEY" in output or "OPENAI_API_KEY" in output, (
++        f"diagnostic must name the env var to set; got: {output!r}"
++    )
++    assert "onboard" in output.lower(), (
++        f"diagnostic must point at the onboard remediation; got: {output!r}"
++    )
++    # Banner-render fallback contract preserved
++    assert model in ("unknown", "") or isinstance(model, str)

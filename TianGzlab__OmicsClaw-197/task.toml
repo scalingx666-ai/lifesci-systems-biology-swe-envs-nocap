@@ -1,0 +1,63 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-197"
+description = "feat(doctor): add graph memory subsystem health check"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "d09979c5c6a15000da264fa6eb6cc04fadeafa43"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/197"
+source_access = "auto"
+built_at = "2026-11-15T18:16:46.133768+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:dab7bf5dbd342d0f72f709aa9c046a064f6dee7e76df4c5346c8687754665c68"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-05-13T08:17:51Z"
+diff_format = "unified"
+context_files = [
+    "omicsclaw/diagnostics.py",
+    "tests/test_diagnostics.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 418
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

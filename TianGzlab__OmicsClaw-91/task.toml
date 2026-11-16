@@ -1,0 +1,71 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-91"
+description = "feat(bot): two-tier param card for scRNA skills"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "1a7b6799081c101acb7447489441f8cc0bd4c902"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/91"
+source_access = "auto"
+built_at = "2026-11-15T18:18:02.183513+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:9a79fa47e530ecfebb4cf6e902d5d73f0dcedc36efe37dc1723a36649caf909c"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-04-16T05:09:50Z"
+diff_format = "unified"
+context_files = [
+    "bot/core.py",
+    "skills/singlecell/scrna/sc-batch-integration/SKILL.md",
+    "skills/singlecell/scrna/sc-cell-communication/SKILL.md",
+    "skills/singlecell/scrna/sc-clustering/SKILL.md",
+    "skills/singlecell/scrna/sc-de/SKILL.md",
+    "skills/singlecell/scrna/sc-doublet-detection/SKILL.md",
+    "skills/singlecell/scrna/sc-enrichment/SKILL.md",
+    "skills/singlecell/scrna/sc-markers/SKILL.md",
+    "skills/singlecell/scrna/sc-preprocessing/SKILL.md",
+    "skills/singlecell/scrna/sc-pseudotime/SKILL.md",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 190
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

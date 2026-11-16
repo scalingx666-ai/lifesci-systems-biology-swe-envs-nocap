@@ -1,0 +1,1785 @@
+diff --git a/.github/workflows/continuous-integration-server.yml b/.github/workflows/continuous-integration-server.yml
+index 694ca6a6a..ec0e794ad 100644
+--- a/.github/workflows/continuous-integration-server.yml
++++ b/.github/workflows/continuous-integration-server.yml
+@@ -49,12 +49,12 @@ jobs:
+ 
+             - name: Run mypy
+               run: |
+-                  ${HOME}/.poetry/bin/poetry run mypy --config-file pyproject.toml --ignore-missing-imports scopeserver main.py
++                  ${HOME}/.poetry/bin/poetry run mypy --config-file pyproject.toml --ignore-missing-imports scopeserver test main.py
+               working-directory: ${{ env.working-directory }}
+ 
+             - name: Run pytest
+               run: |
+-                  ${HOME}/.poetry/bin/poetry run dotenv -f .test.env run pytest --cov=scopeserver --cov-branch --cov-fail-under=38.5 --doctest-modules --ignore-glob=alembic
++                  ${HOME}/.poetry/bin/poetry run dotenv -f .test.env run pytest --cov=scopeserver --cov-branch --cov-fail-under=40.0 --doctest-modules --ignore-glob=alembic
+               working-directory: ${{ env.working-directory }}
+ 
+             - name: Run safety security checks
+diff --git a/server/poetry.lock b/server/poetry.lock
+index 51e92df8e..c59b6ae52 100644
+--- a/server/poetry.lock
++++ b/server/poetry.lock
+@@ -30,8 +30,6 @@ python-versions = "~=3.6"
+ 
+ [package.dependencies]
+ lazy-object-proxy = ">=1.4.0"
+-typed-ast = {version = ">=1.4.0,<1.5", markers = "implementation_name == \"cpython\" and python_version < \"3.8\""}
+-typing-extensions = {version = ">=3.7.4", markers = "python_version < \"3.8\""}
+ wrapt = ">=1.11,<1.13"
+ 
+ [[package]]
+@@ -71,8 +69,6 @@ mypy-extensions = ">=0.4.3"
+ pathspec = ">=0.8.1,<1"
+ regex = ">=2020.1.8"
+ tomli = ">=0.2.6,<2.0.0"
+-typed-ast = {version = ">=1.4.2", markers = "python_version < \"3.8\""}
+-typing-extensions = {version = ">=3.7.4", markers = "python_version < \"3.8\""}
+ 
+ [package.extras]
+ colorama = ["colorama (>=0.4.3)"]
+@@ -109,7 +105,6 @@ python-versions = ">=3.6"
+ 
+ [package.dependencies]
+ colorama = {version = "*", markers = "platform_system == \"Windows\""}
+-importlib-metadata = {version = "*", markers = "python_version < \"3.8\""}
+ 
+ [[package]]
+ name = "colorama"
+@@ -254,7 +249,6 @@ h11 = "*"
+ h2 = ">=3.1.0"
+ priority = "*"
+ toml = "*"
+-typing-extensions = {version = "*", markers = "python_version < \"3.8\""}
+ wsproto = ">=0.14.0"
+ 
+ [package.extras]
+@@ -273,7 +267,7 @@ python-versions = ">=3.6.1"
+ 
+ [[package]]
+ name = "hypothesis"
+-version = "6.14.3"
++version = "6.14.5"
+ description = "A library for property-based testing"
+ category = "dev"
+ optional = false
+@@ -308,23 +302,6 @@ category = "main"
+ optional = false
+ python-versions = ">=3.5"
+ 
+-[[package]]
+-name = "importlib-metadata"
+-version = "4.6.1"
+-description = "Read metadata from Python packages"
+-category = "main"
+-optional = false
+-python-versions = ">=3.6"
+-
+-[package.dependencies]
+-typing-extensions = {version = ">=3.6.4", markers = "python_version < \"3.8\""}
+-zipp = ">=0.5"
+-
+-[package.extras]
+-docs = ["sphinx", "jaraco.packaging (>=8.2)", "rst.linker (>=1.9)"]
+-perf = ["ipython"]
+-testing = ["pytest (>=4.6)", "pytest-checkdocs (>=2.4)", "pytest-flake8", "pytest-cov", "pytest-enabler (>=1.0.1)", "packaging", "pep517", "pyfakefs", "flufl.flake8", "pytest-perf (>=0.9.2)", "pytest-black (>=0.3.7)", "pytest-mypy", "importlib-resources (>=1.3)"]
+-
+ [[package]]
+ name = "iniconfig"
+ version = "1.1.1"
+@@ -343,7 +320,7 @@ python-versions = "*"
+ 
+ [[package]]
+ name = "isort"
+-version = "5.9.2"
++version = "5.9.3"
+ description = "A Python utility / library to sort Python imports."
+ category = "dev"
+ optional = false
+@@ -445,7 +422,6 @@ python-versions = ">=3.5"
+ [package.dependencies]
+ mypy-extensions = ">=0.4.3,<0.5.0"
+ toml = "*"
+-typed-ast = {version = ">=1.4.0,<1.5.0", markers = "python_version < \"3.8\""}
+ typing-extensions = ">=3.7.4"
+ 
+ [package.extras]
+@@ -512,19 +488,19 @@ pyparsing = ">=2.0.2"
+ 
+ [[package]]
+ name = "pandas"
+-version = "1.1.5"
++version = "1.3.1"
+ description = "Powerful data structures for data analysis, time series, and statistics"
+ category = "main"
+ optional = false
+-python-versions = ">=3.6.1"
++python-versions = ">=3.7.1"
+ 
+ [package.dependencies]
+-numpy = ">=1.15.4"
++numpy = ">=1.17.3"
+ python-dateutil = ">=2.7.3"
+-pytz = ">=2017.2"
++pytz = ">=2017.3"
+ 
+ [package.extras]
+-test = ["pytest (>=4.0.2)", "pytest-xdist", "hypothesis (>=3.58)"]
++test = ["hypothesis (>=3.58)", "pytest (>=6.0)", "pytest-xdist"]
+ 
+ [[package]]
+ name = "pathspec"
+@@ -542,9 +518,6 @@ category = "dev"
+ optional = false
+ python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
+ 
+-[package.dependencies]
+-importlib-metadata = {version = ">=0.12", markers = "python_version < \"3.8\""}
+-
+ [package.extras]
+ dev = ["pre-commit", "tox"]
+ 
+@@ -592,7 +565,7 @@ email = ["email-validator (>=1.0.3)"]
+ 
+ [[package]]
+ name = "pylint"
+-version = "2.9.5"
++version = "2.9.6"
+ description = "python code static checker"
+ category = "dev"
+ optional = false
+@@ -636,7 +609,6 @@ python-versions = ">=3.6"
+ atomicwrites = {version = ">=1.0", markers = "sys_platform == \"win32\""}
+ attrs = ">=19.2.0"
+ colorama = {version = "*", markers = "sys_platform == \"win32\""}
+-importlib-metadata = {version = ">=0.12", markers = "python_version < \"3.8\""}
+ iniconfig = "*"
+ packaging = "*"
+ pluggy = ">=0.12,<1.0.0a1"
+@@ -811,7 +783,6 @@ python-versions = "!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,!=3.4.*,!=3.5.*,>=2.7"
+ 
+ [package.dependencies]
+ greenlet = {version = "!=0.4.17", markers = "python_version >= \"3\""}
+-importlib-metadata = {version = "*", markers = "python_version < \"3.8\""}
+ 
+ [package.extras]
+ aiomysql = ["greenlet (!=0.4.17)", "aiomysql"]
+@@ -854,20 +825,12 @@ python-versions = ">=2.6, !=3.0.*, !=3.1.*, !=3.2.*"
+ 
+ [[package]]
+ name = "tomli"
+-version = "1.1.0"
++version = "1.2.0"
+ description = "A lil' TOML parser"
+ category = "dev"
+ optional = false
+ python-versions = ">=3.6"
+ 
+-[[package]]
+-name = "typed-ast"
+-version = "1.4.3"
+-description = "a fork of Python 2 and 3 ast modules with type comment support"
+-category = "dev"
+-optional = false
+-python-versions = "*"
+-
+ [[package]]
+ name = "types-futures"
+ version = "0.1.6"
+@@ -889,7 +852,7 @@ types-futures = "*"
+ 
+ [[package]]
+ name = "types-requests"
+-version = "2.25.0"
++version = "2.25.1"
+ description = "Typing stubs for requests"
+ category = "dev"
+ optional = false
+@@ -953,22 +916,10 @@ python-versions = ">=3.6.1"
+ [package.dependencies]
+ h11 = ">=0.9.0,<1"
+ 
+-[[package]]
+-name = "zipp"
+-version = "3.5.0"
+-description = "Backport of pathlib-compatible object wrapper for zip files"
+-category = "main"
+-optional = false
+-python-versions = ">=3.6"
+-
+-[package.extras]
+-docs = ["sphinx", "jaraco.packaging (>=8.2)", "rst.linker (>=1.9)"]
+-testing = ["pytest (>=4.6)", "pytest-checkdocs (>=2.4)", "pytest-flake8", "pytest-cov", "pytest-enabler (>=1.0.1)", "jaraco.itertools", "func-timeout", "pytest-black (>=0.3.7)", "pytest-mypy"]
+-
+ [metadata]
+ lock-version = "1.1"
+-python-versions = ">=3.7,<3.10"
+-content-hash = "fe3f5132d8909c9ded1bf2db982c2eb96428ce9e83f1c44b0eaefc0036272fce"
++python-versions = ">=3.8,<3.10"
++content-hash = "fd1ac384daa223753e149465e79b22d43ea32a92e08efff25bbc965b498d452d"
+ 
+ [metadata.files]
+ alembic = [
+@@ -1282,17 +1233,13 @@ hyperframe = [
+     {file = "hyperframe-6.0.1.tar.gz", hash = "sha256:ae510046231dc8e9ecb1a6586f63d2347bf4c8905914aa84ba585ae85f28a914"},
+ ]
+ hypothesis = [
+-    {file = "hypothesis-6.14.3-py3-none-any.whl", hash = "sha256:6071ed0d25d90557f69e6a4d941b221f9b0beedde8ec8e4a136a40cad73d4886"},
+-    {file = "hypothesis-6.14.3.tar.gz", hash = "sha256:1c8776d9fc8c598cf1b93b99bd87976f9d9b589fc58843d85a30090700f14a8a"},
++    {file = "hypothesis-6.14.5-py3-none-any.whl", hash = "sha256:cc4efbce2446fa6f04ce55bb20d53dcfef9cf2187ec51332aac2c30306f537e2"},
++    {file = "hypothesis-6.14.5.tar.gz", hash = "sha256:0563b9711fd9bf478cb591580a575c369d2c396f283efa85d0f9a75b26db65b5"},
+ ]
+ idna = [
+     {file = "idna-3.2-py3-none-any.whl", hash = "sha256:14475042e284991034cb48e06f6851428fb14c4dc953acd9be9a5e95c7b6dd7a"},
+     {file = "idna-3.2.tar.gz", hash = "sha256:467fbad99067910785144ce333826c71fb0e63a425657295239737f7ecd125f3"},
+ ]
+-importlib-metadata = [
+-    {file = "importlib_metadata-4.6.1-py3-none-any.whl", hash = "sha256:9f55f560e116f8643ecf2922d9cd3e1c7e8d52e683178fecd9d08f6aa357e11e"},
+-    {file = "importlib_metadata-4.6.1.tar.gz", hash = "sha256:079ada16b7fc30dfbb5d13399a5113110dab1aa7c2bc62f66af75f0b717c8cac"},
+-]
+ iniconfig = [
+     {file = "iniconfig-1.1.1-py2.py3-none-any.whl", hash = "sha256:011e24c64b7f47f6ebd835bb12a743f2fbe9a26d4cecaa7f53bc4f35ee9da8b3"},
+     {file = "iniconfig-1.1.1.tar.gz", hash = "sha256:bc3af051d7d14b2ee5ef9969666def0cd1a000e121eaea580d4a313df4b37f32"},
+@@ -1302,8 +1249,8 @@ inspect2 = [
+     {file = "inspect2-0.1.2.tar.gz", hash = "sha256:4d27f1d036b2346a6ec7c6abf6b121dd2adab45c796ae45080d7988bed786d5e"},
+ ]
+ isort = [
+-    {file = "isort-5.9.2-py3-none-any.whl", hash = "sha256:eed17b53c3e7912425579853d078a0832820f023191561fcee9d7cae424e0813"},
+-    {file = "isort-5.9.2.tar.gz", hash = "sha256:f65ce5bd4cbc6abdfbe29afc2f0245538ab358c14590912df638033f157d555e"},
++    {file = "isort-5.9.3-py3-none-any.whl", hash = "sha256:e17d6e2b81095c9db0a03a8025a957f334d6ea30b26f9ec70805411e5c7c81f2"},
++    {file = "isort-5.9.3.tar.gz", hash = "sha256:9c2ea1e62d871267b78307fe511c0838ba0da28698c5732d54e2790bf3ba9899"},
+ ]
+ lazy-object-proxy = [
+     {file = "lazy-object-proxy-1.6.0.tar.gz", hash = "sha256:489000d368377571c6f982fba6497f2aa13c6d1facc40660963da62f5c379726"},
+@@ -1496,30 +1443,25 @@ packaging = [
+     {file = "packaging-21.0.tar.gz", hash = "sha256:7dc96269f53a4ccec5c0670940a4281106dd0bb343f47b7471f779df49c2fbe7"},
+ ]
+ pandas = [
+-    {file = "pandas-1.1.5-cp36-cp36m-macosx_10_9_x86_64.whl", hash = "sha256:bf23a3b54d128b50f4f9d4675b3c1857a688cc6731a32f931837d72effb2698d"},
+-    {file = "pandas-1.1.5-cp36-cp36m-manylinux1_i686.whl", hash = "sha256:5a780260afc88268a9d3ac3511d8f494fdcf637eece62fb9eb656a63d53eb7ca"},
+-    {file = "pandas-1.1.5-cp36-cp36m-manylinux1_x86_64.whl", hash = "sha256:b61080750d19a0122469ab59b087380721d6b72a4e7d962e4d7e63e0c4504814"},
+-    {file = "pandas-1.1.5-cp36-cp36m-manylinux2014_aarch64.whl", hash = "sha256:0de3ddb414d30798cbf56e642d82cac30a80223ad6fe484d66c0ce01a84d6f2f"},
+-    {file = "pandas-1.1.5-cp36-cp36m-win32.whl", hash = "sha256:70865f96bb38fec46f7ebd66d4b5cfd0aa6b842073f298d621385ae3898d28b5"},
+-    {file = "pandas-1.1.5-cp36-cp36m-win_amd64.whl", hash = "sha256:19a2148a1d02791352e9fa637899a78e371a3516ac6da5c4edc718f60cbae648"},
+-    {file = "pandas-1.1.5-cp37-cp37m-macosx_10_9_x86_64.whl", hash = "sha256:26fa92d3ac743a149a31b21d6f4337b0594b6302ea5575b37af9ca9611e8981a"},
+-    {file = "pandas-1.1.5-cp37-cp37m-manylinux1_i686.whl", hash = "sha256:c16d59c15d946111d2716856dd5479221c9e4f2f5c7bc2d617f39d870031e086"},
+-    {file = "pandas-1.1.5-cp37-cp37m-manylinux1_x86_64.whl", hash = "sha256:3be7a7a0ca71a2640e81d9276f526bca63505850add10206d0da2e8a0a325dae"},
+-    {file = "pandas-1.1.5-cp37-cp37m-manylinux2014_aarch64.whl", hash = "sha256:573fba5b05bf2c69271a32e52399c8de599e4a15ab7cec47d3b9c904125ab788"},
+-    {file = "pandas-1.1.5-cp37-cp37m-win32.whl", hash = "sha256:21b5a2b033380adbdd36b3116faaf9a4663e375325831dac1b519a44f9e439bb"},
+-    {file = "pandas-1.1.5-cp37-cp37m-win_amd64.whl", hash = "sha256:24c7f8d4aee71bfa6401faeba367dd654f696a77151a8a28bc2013f7ced4af98"},
+-    {file = "pandas-1.1.5-cp38-cp38-macosx_10_9_x86_64.whl", hash = "sha256:2860a97cbb25444ffc0088b457da0a79dc79f9c601238a3e0644312fcc14bf11"},
+-    {file = "pandas-1.1.5-cp38-cp38-manylinux1_i686.whl", hash = "sha256:5008374ebb990dad9ed48b0f5d0038124c73748f5384cc8c46904dace27082d9"},
+-    {file = "pandas-1.1.5-cp38-cp38-manylinux1_x86_64.whl", hash = "sha256:2c2f7c670ea4e60318e4b7e474d56447cf0c7d83b3c2a5405a0dbb2600b9c48e"},
+-    {file = "pandas-1.1.5-cp38-cp38-manylinux2014_aarch64.whl", hash = "sha256:0a643bae4283a37732ddfcecab3f62dd082996021b980f580903f4e8e01b3c5b"},
+-    {file = "pandas-1.1.5-cp38-cp38-win32.whl", hash = "sha256:5447ea7af4005b0daf695a316a423b96374c9c73ffbd4533209c5ddc369e644b"},
+-    {file = "pandas-1.1.5-cp38-cp38-win_amd64.whl", hash = "sha256:4c62e94d5d49db116bef1bd5c2486723a292d79409fc9abd51adf9e05329101d"},
+-    {file = "pandas-1.1.5-cp39-cp39-macosx_10_9_x86_64.whl", hash = "sha256:731568be71fba1e13cae212c362f3d2ca8932e83cb1b85e3f1b4dd77d019254a"},
+-    {file = "pandas-1.1.5-cp39-cp39-manylinux1_i686.whl", hash = "sha256:c61c043aafb69329d0f961b19faa30b1dab709dd34c9388143fc55680059e55a"},
+-    {file = "pandas-1.1.5-cp39-cp39-manylinux1_x86_64.whl", hash = "sha256:2b1c6cd28a0dfda75c7b5957363333f01d370936e4c6276b7b8e696dd500582a"},
+-    {file = "pandas-1.1.5-cp39-cp39-win32.whl", hash = "sha256:c94ff2780a1fd89f190390130d6d36173ca59fcfb3fe0ff596f9a56518191ccb"},
+-    {file = "pandas-1.1.5-cp39-cp39-win_amd64.whl", hash = "sha256:edda9bacc3843dfbeebaf7a701763e68e741b08fccb889c003b0a52f0ee95782"},
+-    {file = "pandas-1.1.5.tar.gz", hash = "sha256:f10fc41ee3c75a474d3bdf68d396f10782d013d7f67db99c0efbfd0acb99701b"},
++    {file = "pandas-1.3.1-cp37-cp37m-macosx_10_9_x86_64.whl", hash = "sha256:1ee8418d0f936ff2216513aa03e199657eceb67690995d427a4a7ecd2e68f442"},
++    {file = "pandas-1.3.1-cp37-cp37m-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:5d9acfca191140a518779d1095036d842d5e5bc8e8ad8b5eaad1aff90fe1870d"},
++    {file = "pandas-1.3.1-cp37-cp37m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:e323028ab192fcfe1e8999c012a0fa96d066453bb354c7e7a4a267b25e73d3c8"},
++    {file = "pandas-1.3.1-cp37-cp37m-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:9d06661c6eb741ae633ee1c57e8c432bb4203024e263fe1a077fa3fda7817fdb"},
++    {file = "pandas-1.3.1-cp37-cp37m-win32.whl", hash = "sha256:23c7452771501254d2ae23e9e9dac88417de7e6eff3ce64ee494bb94dc88c300"},
++    {file = "pandas-1.3.1-cp37-cp37m-win_amd64.whl", hash = "sha256:7150039e78a81eddd9f5a05363a11cadf90a4968aac6f086fd83e66cf1c8d1d6"},
++    {file = "pandas-1.3.1-cp38-cp38-macosx_10_9_x86_64.whl", hash = "sha256:5c09a2538f0fddf3895070579082089ff4ae52b6cb176d8ec7a4dacf7e3676c1"},
++    {file = "pandas-1.3.1-cp38-cp38-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:905fc3e0fcd86b0a9f1f97abee7d36894698d2592b22b859f08ea5a8fe3d3aab"},
++    {file = "pandas-1.3.1-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:5ee927c70794e875a59796fab8047098aa59787b1be680717c141cd7873818ae"},
++    {file = "pandas-1.3.1-cp38-cp38-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:0c976e023ed580e60a82ccebdca8e1cc24d8b1fbb28175eb6521025c127dab66"},
++    {file = "pandas-1.3.1-cp38-cp38-win32.whl", hash = "sha256:22f3fcc129fb482ef44e7df2a594f0bd514ac45aabe50da1a10709de1b0f9d84"},
++    {file = "pandas-1.3.1-cp38-cp38-win_amd64.whl", hash = "sha256:45656cd59ae9745a1a21271a62001df58342b59c66d50754390066db500a8362"},
++    {file = "pandas-1.3.1-cp39-cp39-macosx_10_9_x86_64.whl", hash = "sha256:114c6789d15862508900a25cb4cb51820bfdd8595ea306bab3b53cd19f990b65"},
++    {file = "pandas-1.3.1-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:527c43311894aff131dea99cf418cd723bfd4f0bcf3c3da460f3b57e52a64da5"},
++    {file = "pandas-1.3.1-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:fdb3b33dde260b1766ea4d3c6b8fbf6799cee18d50a2a8bc534cf3550b7c819a"},
++    {file = "pandas-1.3.1-cp39-cp39-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:c28760932283d2c9f6fa5e53d2f77a514163b9e67fd0ee0879081be612567195"},
++    {file = "pandas-1.3.1-cp39-cp39-win32.whl", hash = "sha256:be12d77f7e03c40a2466ed00ccd1a5f20a574d3c622fe1516037faa31aa448aa"},
++    {file = "pandas-1.3.1-cp39-cp39-win_amd64.whl", hash = "sha256:9e1fe6722cbe27eb5891c1977bca62d456c19935352eea64d33956db46139364"},
++    {file = "pandas-1.3.1.tar.gz", hash = "sha256:341935a594db24f3ff07d1b34d1d231786aa9adfa84b76eab10bf42907c8aed3"},
+ ]
+ pathspec = [
+     {file = "pathspec-0.9.0-py2.py3-none-any.whl", hash = "sha256:7d15c4ddb0b5c802d161efc417ec1a2558ea2653c2e8ad9c19098201dc1c993a"},
+@@ -1587,8 +1529,8 @@ pydantic = [
+     {file = "pydantic-1.8.2.tar.gz", hash = "sha256:26464e57ccaafe72b7ad156fdaa4e9b9ef051f69e175dbbb463283000c05ab7b"},
+ ]
+ pylint = [
+-    {file = "pylint-2.9.5-py3-none-any.whl", hash = "sha256:748f81e5776d6273a6619506e08f1b48ff9bcb8198366a56821cf11aac14fc87"},
+-    {file = "pylint-2.9.5.tar.gz", hash = "sha256:1f333dc72ef7f5ea166b3230936ebcfb1f3b722e76c980cb9fe6b9f95e8d3172"},
++    {file = "pylint-2.9.6-py3-none-any.whl", hash = "sha256:2e1a0eb2e8ab41d6b5dbada87f066492bb1557b12b76c47c2ee8aa8a11186594"},
++    {file = "pylint-2.9.6.tar.gz", hash = "sha256:8b838c8983ee1904b2de66cce9d0b96649a91901350e956d78f289c3bc87b48e"},
+ ]
+ pylint-fail-under = [
+     {file = "pylint-fail-under-0.3.0.tar.gz", hash = "sha256:4584c0eb6bf2c3dcf9402c74734a49d3a7a86fbe3590276b517fbcbdcba1333a"},
+@@ -1784,40 +1726,8 @@ toml = [
+     {file = "toml-0.10.2.tar.gz", hash = "sha256:b3bda1d108d5dd99f4a20d24d9c348e91c4db7ab1b749200bded2f839ccbe68f"},
+ ]
+ tomli = [
+-    {file = "tomli-1.1.0-py3-none-any.whl", hash = "sha256:f4a182048010e89cbec0ae4686b21f550a7f2903f665e34a6de58ec15424f919"},
+-    {file = "tomli-1.1.0.tar.gz", hash = "sha256:33d7984738f8bb699c9b0a816eb646a8178a69eaa792d258486776a5d21b8ca5"},
+-]
+-typed-ast = [
+-    {file = "typed_ast-1.4.3-cp35-cp35m-manylinux1_i686.whl", hash = "sha256:2068531575a125b87a41802130fa7e29f26c09a2833fea68d9a40cf33902eba6"},
+-    {file = "typed_ast-1.4.3-cp35-cp35m-manylinux1_x86_64.whl", hash = "sha256:c907f561b1e83e93fad565bac5ba9c22d96a54e7ea0267c708bffe863cbe4075"},
+-    {file = "typed_ast-1.4.3-cp35-cp35m-manylinux2014_aarch64.whl", hash = "sha256:1b3ead4a96c9101bef08f9f7d1217c096f31667617b58de957f690c92378b528"},
+-    {file = "typed_ast-1.4.3-cp35-cp35m-win32.whl", hash = "sha256:dde816ca9dac1d9c01dd504ea5967821606f02e510438120091b84e852367428"},
+-    {file = "typed_ast-1.4.3-cp35-cp35m-win_amd64.whl", hash = "sha256:777a26c84bea6cd934422ac2e3b78863a37017618b6e5c08f92ef69853e765d3"},
+-    {file = "typed_ast-1.4.3-cp36-cp36m-macosx_10_9_x86_64.whl", hash = "sha256:f8afcf15cc511ada719a88e013cec87c11aff7b91f019295eb4530f96fe5ef2f"},
+-    {file = "typed_ast-1.4.3-cp36-cp36m-manylinux1_i686.whl", hash = "sha256:52b1eb8c83f178ab787f3a4283f68258525f8d70f778a2f6dd54d3b5e5fb4341"},
+-    {file = "typed_ast-1.4.3-cp36-cp36m-manylinux1_x86_64.whl", hash = "sha256:01ae5f73431d21eead5015997ab41afa53aa1fbe252f9da060be5dad2c730ace"},
+-    {file = "typed_ast-1.4.3-cp36-cp36m-manylinux2014_aarch64.whl", hash = "sha256:c190f0899e9f9f8b6b7863debfb739abcb21a5c054f911ca3596d12b8a4c4c7f"},
+-    {file = "typed_ast-1.4.3-cp36-cp36m-win32.whl", hash = "sha256:398e44cd480f4d2b7ee8d98385ca104e35c81525dd98c519acff1b79bdaac363"},
+-    {file = "typed_ast-1.4.3-cp36-cp36m-win_amd64.whl", hash = "sha256:bff6ad71c81b3bba8fa35f0f1921fb24ff4476235a6e94a26ada2e54370e6da7"},
+-    {file = "typed_ast-1.4.3-cp37-cp37m-macosx_10_9_x86_64.whl", hash = "sha256:0fb71b8c643187d7492c1f8352f2c15b4c4af3f6338f21681d3681b3dc31a266"},
+-    {file = "typed_ast-1.4.3-cp37-cp37m-manylinux1_i686.whl", hash = "sha256:760ad187b1041a154f0e4d0f6aae3e40fdb51d6de16e5c99aedadd9246450e9e"},
+-    {file = "typed_ast-1.4.3-cp37-cp37m-manylinux1_x86_64.whl", hash = "sha256:5feca99c17af94057417d744607b82dd0a664fd5e4ca98061480fd8b14b18d04"},
+-    {file = "typed_ast-1.4.3-cp37-cp37m-manylinux2014_aarch64.whl", hash = "sha256:95431a26309a21874005845c21118c83991c63ea800dd44843e42a916aec5899"},
+-    {file = "typed_ast-1.4.3-cp37-cp37m-win32.whl", hash = "sha256:aee0c1256be6c07bd3e1263ff920c325b59849dc95392a05f258bb9b259cf39c"},
+-    {file = "typed_ast-1.4.3-cp37-cp37m-win_amd64.whl", hash = "sha256:9ad2c92ec681e02baf81fdfa056fe0d818645efa9af1f1cd5fd6f1bd2bdfd805"},
+-    {file = "typed_ast-1.4.3-cp38-cp38-macosx_10_9_x86_64.whl", hash = "sha256:b36b4f3920103a25e1d5d024d155c504080959582b928e91cb608a65c3a49e1a"},
+-    {file = "typed_ast-1.4.3-cp38-cp38-manylinux1_i686.whl", hash = "sha256:067a74454df670dcaa4e59349a2e5c81e567d8d65458d480a5b3dfecec08c5ff"},
+-    {file = "typed_ast-1.4.3-cp38-cp38-manylinux1_x86_64.whl", hash = "sha256:7538e495704e2ccda9b234b82423a4038f324f3a10c43bc088a1636180f11a41"},
+-    {file = "typed_ast-1.4.3-cp38-cp38-manylinux2014_aarch64.whl", hash = "sha256:af3d4a73793725138d6b334d9d247ce7e5f084d96284ed23f22ee626a7b88e39"},
+-    {file = "typed_ast-1.4.3-cp38-cp38-win32.whl", hash = "sha256:f2362f3cb0f3172c42938946dbc5b7843c2a28aec307c49100c8b38764eb6927"},
+-    {file = "typed_ast-1.4.3-cp38-cp38-win_amd64.whl", hash = "sha256:dd4a21253f42b8d2b48410cb31fe501d32f8b9fbeb1f55063ad102fe9c425e40"},
+-    {file = "typed_ast-1.4.3-cp39-cp39-macosx_10_9_x86_64.whl", hash = "sha256:f328adcfebed9f11301eaedfa48e15bdece9b519fb27e6a8c01aa52a17ec31b3"},
+-    {file = "typed_ast-1.4.3-cp39-cp39-manylinux1_i686.whl", hash = "sha256:2c726c276d09fc5c414693a2de063f521052d9ea7c240ce553316f70656c84d4"},
+-    {file = "typed_ast-1.4.3-cp39-cp39-manylinux1_x86_64.whl", hash = "sha256:cae53c389825d3b46fb37538441f75d6aecc4174f615d048321b716df2757fb0"},
+-    {file = "typed_ast-1.4.3-cp39-cp39-manylinux2014_aarch64.whl", hash = "sha256:b9574c6f03f685070d859e75c7f9eeca02d6933273b5e69572e5ff9d5e3931c3"},
+-    {file = "typed_ast-1.4.3-cp39-cp39-win32.whl", hash = "sha256:209596a4ec71d990d71d5e0d312ac935d86930e6eecff6ccc7007fe54d703808"},
+-    {file = "typed_ast-1.4.3-cp39-cp39-win_amd64.whl", hash = "sha256:9c6d1a54552b5330bc657b7ef0eae25d00ba7ffe85d9ea8ae6540d2197a3788c"},
+-    {file = "typed_ast-1.4.3.tar.gz", hash = "sha256:fb1bbeac803adea29cedd70781399c99138358c26d05fcbd23c13016b7f5ec65"},
++    {file = "tomli-1.2.0-py3-none-any.whl", hash = "sha256:056f0376bf5a6b182c513f9582c1e5b0487265eb6c48842b69aa9ca1cd5f640a"},
++    {file = "tomli-1.2.0.tar.gz", hash = "sha256:d60e681734099207a6add7a10326bc2ddd1fdc36c1b0f547d00ef73ac63739c2"},
+ ]
+ types-futures = [
+     {file = "types-futures-0.1.6.tar.gz", hash = "sha256:da372dd55dc08c257de1e3dfd56273e44af9668e077047b0509adcfc43dd2838"},
+@@ -1828,8 +1738,8 @@ types-protobuf = [
+     {file = "types_protobuf-0.1.14-py3-none-any.whl", hash = "sha256:a92cc61e6e0afdfba51a805932a8814d754bf075e21ff421ddca957c82cb2a48"},
+ ]
+ types-requests = [
+-    {file = "types-requests-2.25.0.tar.gz", hash = "sha256:ee0d0c507210141b7d5b8639cc43eaa726084178775db2a5fb06fbf85c185808"},
+-    {file = "types_requests-2.25.0-py3-none-any.whl", hash = "sha256:fa5c1e5e832ff6193507d8da7e1159281383908ee193a2f4b37bc08140b51844"},
++    {file = "types-requests-2.25.1.tar.gz", hash = "sha256:2d514ee172088a8fc0d554537d6424bd261c18e63195cfe47c410df0de0ed96f"},
++    {file = "types_requests-2.25.1-py3-none-any.whl", hash = "sha256:6e9534281fe5d06ba8116807a8de930b90b6f92dff179f8cbfa2dfdd3bd2c465"},
+ ]
+ typing-extensions = [
+     {file = "typing_extensions-3.10.0.0-py2-none-any.whl", hash = "sha256:0ac0f89795dd19de6b97debb0c6af1c70987fd80a2d62d1958f7e56fcc31b497"},
+@@ -1850,7 +1760,3 @@ wsproto = [
+     {file = "wsproto-1.0.0-py3-none-any.whl", hash = "sha256:d8345d1808dd599b5ffb352c25a367adb6157e664e140dbecba3f9bc007edb9f"},
+     {file = "wsproto-1.0.0.tar.gz", hash = "sha256:868776f8456997ad0d9720f7322b746bbe9193751b5b290b7f924659377c8c38"},
+ ]
+-zipp = [
+-    {file = "zipp-3.5.0-py3-none-any.whl", hash = "sha256:957cfda87797e389580cb8b9e3870841ca991e2125350677b2ca83a0e99390a3"},
+-    {file = "zipp-3.5.0.tar.gz", hash = "sha256:f5812b1e007e48cff63449a5e9f4e7ebea716b4111f9c4f9a645f91d579bf0c4"},
+-]
+diff --git a/server/pyproject.toml b/server/pyproject.toml
+index 55818c73e..b268fd1d6 100644
+--- a/server/pyproject.toml
++++ b/server/pyproject.toml
+@@ -40,7 +40,7 @@ numpy = "^1.18.1"
+ pandas = "^1.0.0"
+ loompy = "^3.0.1"
+ requests = "^2.22.0"
+-fastapi = "^0.66.0"
++fastapi = "^0.66"
+ hypercorn = "^0.11"
+ methodtools = "^0.1.2"
+ sqlalchemy = "^1.4"
+@@ -61,6 +61,7 @@ hypothesis = {extras = ["numpy"], version = "*"}
+ safety = "^1.8.5"
+ types-protobuf = "^0.1.13"
+ types-requests = "^2.25.0"
++typing-extensions = "^3.10.0"
+ 
+ [tool.poetry.scripts]
+ dev-script = 'scopeserver:run'
+diff --git a/server/scopeserver/dataserver/modules/gserver/GServer.py b/server/scopeserver/dataserver/modules/gserver/GServer.py
+index 4d5998e5f..2432eb2da 100644
+--- a/server/scopeserver/dataserver/modules/gserver/GServer.py
++++ b/server/scopeserver/dataserver/modules/gserver/GServer.py
+@@ -136,7 +136,7 @@ def getVmax(self, request, context):
+                     l_max_v_max = 0
+                     loom = self.lfh.get_loom(loom_file_path=Path(loomFilePath))
+                     if request.featureType[n] == "gene":
+-                        vals, _ = loom.get_gene_expression(
++                        vals = loom.get_gene_expression(
+                             gene_symbol=feature,
+                             log_transform=request.hasLogTransform,
+                             cpm_normalise=request.hasCpmTransform,
+@@ -284,7 +284,7 @@ def getCellMetaData(self, request, context):
+         gene_exp = []
+         for gene in request.selectedGenes:
+             if gene != "":
+-                vals, _ = loom.get_gene_expression(
++                vals = loom.get_gene_expression(
+                     gene_symbol=gene, log_transform=request.hasLogTransform, cpm_normalise=request.hasCpmTransform
+                 )
+                 gene_exp.append(vals[cell_indices])
+diff --git a/server/scopeserver/dataserver/modules/pserver/PServer.py b/server/scopeserver/dataserver/modules/pserver/PServer.py
+index c60111022..9b1b804d5 100644
+--- a/server/scopeserver/dataserver/modules/pserver/PServer.py
++++ b/server/scopeserver/dataserver/modules/pserver/PServer.py
+@@ -7,39 +7,21 @@
+ import functools
+ import cgi
+ import tempfile
+-import time
++from pathlib import PurePath
++import threading
++import logging
++
+ from http import server as httpserver
+ import socketserver
+ from urllib import parse as urllibparse
+ import loompy as lp
+-from pathlib import Path, PurePath
+-import threading
++
+ 
+ from scopeserver.dataserver.utils import data_file_handler as dfh
+-from scopeserver.dataserver.modules.gserver import GServer
+ from scopeserver.dataserver.utils import sys_utils as su
+-import logging
+ 
+ logger = logging.getLogger(__name__)
+ 
+-unicode = str
+-
+-
+-def _decode_str_if_py2(inputstr, encoding="utf-8"):
+-    "Will return decoded with given encoding *if* input is a string and it's Py2."
+-    if sys.version_info < (3,) and isinstance(inputstr, str):
+-        return inputstr.decode(encoding)
+-    else:
+-        return inputstr
+-
+-
+-def _encode_str_if_py2(inputstr, encoding="utf-8"):
+-    "Will return encoded with given encoding *if* input is a string and it's Py2"
+-    if sys.version_info < (3,) and isinstance(inputstr, str):
+-        return inputstr.encode(encoding)
+-    else:
+-        return inputstr
+-
+ 
+ def fullpath(path):
+     "Shortcut for os.path abspath(expanduser())"
+@@ -57,10 +39,8 @@ def check_auth(method):
+     def decorated(self, *pargs):
+         "Reject if auth fails."
+         if self.auth:
+-            # TODO: Between minor versions this handles str/bytes differently
+             received = self.get_case_insensitive_header("Authorization", None)
+             expected = "Basic " + base64.b64encode(self.auth).decode()
+-            # TODO: Timing attack?
+             if received != expected:
+                 self.send_response(401)
+                 self.send_header("WWW-Authenticate", 'Basic realm="Droopy"')
+@@ -214,12 +194,9 @@ def do_GET(self):
+         logger.debug(name)
+ 
+         name = urllibparse.unquote(name)
+-        name = _decode_str_if_py2(name, "utf-8")
+ 
+-        # TODO: Refactor special-method handling to make more modular?
+         # Include ability to self-define "special method" prefix path?
+-        # TODO Verify that this is path-injection proof
+-        localpath = _encode_str_if_py2(os.path.join(self.directory, name), "utf-8")
++        localpath = os.path.join(self.directory, name)
+         with open(localpath, "rb") as f:
+             self.send_resp_headers(
+                 200,
+@@ -262,7 +239,7 @@ def do_POST(self):
+ 
+         if "loomFilePath" in form.keys():
+             self.directory = data_file_handler.get_data_dir_path_by_file_type(file_type=form.getvalue("file-type"))
+-            localpath = _encode_str_if_py2(os.path.join(self.directory, form.getvalue("loomFilePath")), "utf-8")
++            localpath = os.path.join(self.directory, form.getvalue("loomFilePath"))
+             with open(localpath, "rb") as f:
+                 self.send_resp_headers(
+                     200,
+@@ -299,13 +276,13 @@ def do_POST(self):
+             if not isinstance(file_items, list):
+                 file_items = [file_items]
+             for item in file_items:
+-                filename = _decode_str_if_py2(basename(item.filename), "utf-8")
++                filename = basename(item.filename)
+                 if filename == "":
+                     continue
+-                localpath = _encode_str_if_py2(os.path.join(self.directory, filename), "utf-8")
++                localpath = os.path.join(self.directory, filename)
+                 root, ext = os.path.splitext(localpath)
+                 i = 1
+-                # TODO: race condition...
++
+                 while os.path.exists(localpath):
+                     localpath = "%s-%d%s" % (root, i, ext)
+                     i = i + 1
+@@ -388,7 +365,7 @@ def published_files(self):
+         "Returns the list of files that should appear as download links."
+         names = []
+         # In py2, listdir() returns strings when the directory is a string.
+-        for name in os.listdir(unicode(self.directory)):
++        for name in os.listdir(str(self.directory)):
+             if name.startswith(DroopyFieldStorage.TMPPREFIX):
+                 continue
+             npath = os.path.join(self.directory, name)
+@@ -453,7 +430,7 @@ def run(
+     HTTPUploadHandler.file_mode = file_mode
+     HTTPUploadHandler.auth = auth
+     httpd = ThreadedHTTPServer((hostname, port), HTTPUploadHandler)
+-    # TODO: Specify TLS1.2 only?
++
+     if certfile:
+         try:
+             import ssl
+diff --git a/server/scopeserver/dataserver/utils/cell_color_by_features.py b/server/scopeserver/dataserver/utils/cell_color_by_features.py
+index 389ece2b0..9ca2147d0 100644
+--- a/server/scopeserver/dataserver/utils/cell_color_by_features.py
++++ b/server/scopeserver/dataserver/utils/cell_color_by_features.py
+@@ -88,10 +88,12 @@ def setGeneFeature(self, request, feature, n):
+         if feature != "":
+             if len(request.annotation) > 0:
+                 annotations = [Annotation(name=ann.name, values=ann.values) for ann in request.annotation]
++                self.cellIndices = self.loom.get_anno_cells(annotations, request.logic)
+             else:
+                 annotations = None
++                self.cellIndices = list(range(self.loom.get_nb_cells()))
+ 
+-            vals, self.cellIndices = self.loom.get_gene_expression(
++            vals = self.loom.get_gene_expression(
+                 gene_symbol=feature,
+                 log_transform=request.hasLogTransform,
+                 cpm_normalise=request.hasCpmTransform,
+diff --git a/server/scopeserver/dataserver/utils/loom.py b/server/scopeserver/dataserver/utils/loom.py
+index e14dbf052..fbd7f2082 100644
+--- a/server/scopeserver/dataserver/utils/loom.py
++++ b/server/scopeserver/dataserver/utils/loom.py
+@@ -777,15 +777,13 @@ def get_gene_expression(
+         cpm_normalise: bool = False,
+         annotation: Optional[List[Annotation]] = None,
+         logic: str = "OR",
+-    ) -> Tuple[np.ndarray, list]:
++    ) -> np.ndarray:
+         if gene_symbol not in set(self.get_genes()):
+             try:
+                 gene_symbol = self.get_gene_names()[gene_symbol]
+             except KeyError:
+                 # No gene is present, likely ATAC data, return 0's
+-                cell_indices = list(range(self.get_nb_cells()))
+-                gene_expr = np.zeros(self.get_nb_cells())
+-                return gene_expr, cell_indices
++                return np.zeros(self.get_nb_cells())
+ 
+         logger.debug("Debug: getting expression of {0} ...".format(gene_symbol))
+         gene_expr = self.get_gene_expression_by_gene_symbol(gene_symbol=gene_symbol)
+@@ -798,9 +796,8 @@ def get_gene_expression(
+         if annotation is not None:
+             cell_indices = self.get_anno_cells(annotations=annotation, logic=logic)
+             gene_expr = gene_expr[cell_indices]
+-        else:
+-            cell_indices = list(range(self.get_nb_cells()))
+-        return gene_expr, cell_indices
++
++        return gene_expr
+ 
+     ############
+     # Regulons #
+diff --git a/server/scopeserver/dataserver/utils/search_space.py b/server/scopeserver/dataserver/utils/search_space.py
+index bb2647fd3..b6037e4ad 100644
+--- a/server/scopeserver/dataserver/utils/search_space.py
++++ b/server/scopeserver/dataserver/utils/search_space.py
+@@ -154,14 +154,9 @@ def add_markers(self, element_type="regulon_target") -> None:
+                     else:
+                         self.search_space_dict[key] = [regulon]
+         if element_type == "marker_gene":
+-            searchable_clustering_ids = [
+-                x.split("_")[-1] for x in loom.ra.keys() if bool(re.search("ClusterMarkers_[0-9]+$", x))
+-            ]
+-            for clustering in searchable_clustering_ids:
+-                clustering = int(clustering)
+-                for cluster in range(len(self.meta_data["clusterings"][clustering]["clusters"])):
+-                    genes = self.loom.get_cluster_marker_genes(clustering, cluster)
+-                    for gene in genes:
++            for clustering in self.meta_data["clusterings"]:
++                for cluster in clustering["clusters"]:
++                    for gene in self.loom.get_cluster_marker_genes(clustering["id"], cluster["id"]):
+                         key = SSKey(gene, element_type)
+                         if (gene, element_type) in self.search_space_dict.keys():
+                             self.search_space_dict[key].append(f"{clustering}_{cluster}")
+diff --git a/server/scopeserver/gen_test_loom.py b/server/scopeserver/gen_test_loom.py
+deleted file mode 100644
+index eaec71b13..000000000
+--- a/server/scopeserver/gen_test_loom.py
++++ /dev/null
+@@ -1,250 +0,0 @@
+-import numpy as np
+-import pandas as pd
+-from numpy.random import Generator, PCG64
+-
+-import json
+-
+-
+-def df_to_named_matrix(df):
+-    arr_ip = [tuple(i) for i in df.values]
+-    dtyp = np.dtype(list(zip(df.dtypes.index, df.dtypes)))
+-    arr = np.array(arr_ip, dtype=dtyp)
+-    return arr
+-
+-
+-rg = Generator(PCG64(55850))
+-
+-
+-NUM_GENES = 100
+-NUM_REGULONS = 4
+-# Must be divisible by 4
+-NUM_CELLS = 100
+-
+-cell_ids = [f"Cell_{n}" for n in range(1, NUM_CELLS + 1)]
+-gene_ids = [f"Gene_{n}" for n in range(1, NUM_GENES + 1)]
+-
+-
+-def generate_matrix():
+-    genes = rg.poisson(lam=1, size=NUM_GENES)
+-    genes = [x + 1 for x in genes]
+-    matrix = rg.poisson(lam=genes, size=(NUM_CELLS, NUM_GENES))
+-    return matrix
+-
+-
+-def generate_regulons(legacy=False):
+-    col_attrs = {}
+-    row_attrs = {}
+-    metadata = {}
+-
+-    if legacy:
+-        regulons_ids = [f"Regulon_{n}" for n in range(1, NUM_REGULONS + 1)]
+-        regulons_auc_binary = (rg.integers(10, size=(NUM_CELLS, NUM_REGULONS)) > 2).astype(int)
+-        regulons_auc_data = regulons_auc_binary * rg.random(size=(NUM_GENES, NUM_REGULONS))
+-        regulons_auc = pd.DataFrame(data=regulons_auc_data, index=cell_ids, columns=regulons_ids)
+-
+-        regulons_binary = (rg.integers(5, size=(NUM_GENES, NUM_REGULONS)) > 3).astype(int)
+-        regulons = pd.DataFrame(data=regulons_binary, index=gene_ids, columns=regulons_ids)
+-
+-        col_attrs["RegulonsAUC"] = df_to_named_matrix(regulons_auc)
+-        row_attrs["Regulons"] = df_to_named_matrix(regulons)
+-
+-        metadata["regulonThresholds"] = [
+-            {
+-                "regulon": regulon,
+-                "defaultThresholdValue": regulons_auc[regulon].mean(),
+-                "defaultThresholdName": "MeanScore",
+-                "allThresholds": {
+-                    "MeanScore": regulons_auc[regulon].mean(),
+-                    "5thPercentile": np.percentile(regulons_auc[regulon], 0.05),
+-                },
+-                "motifData": f"{regulon}.png",
+-            }
+-            for regulon in regulons_ids
+-        ]
+-
+-    else:
+-        motif_regulons_ids = [f"MotifRegulon_{n}" for n in range(1, NUM_REGULONS + 1)]
+-        track_regulons_ids = [f"TrackRegulon_{n}" for n in range(1, NUM_REGULONS + 1)]
+-        motif_regulons_auc_binary = (rg.integers(10, size=(NUM_CELLS, NUM_REGULONS)) > 2).astype(int)
+-        motif_regulons_auc_data = motif_regulons_auc_binary * rg.random(size=(NUM_GENES, NUM_REGULONS))
+-        motif_regulons_auc = pd.DataFrame(data=motif_regulons_auc_data, index=cell_ids, columns=motif_regulons_ids)
+-
+-        motif_regulons_binary = (rg.integers(5, size=(NUM_GENES, NUM_REGULONS)) > 3).astype(int)
+-        motif_regulons = pd.DataFrame(data=motif_regulons_binary, index=gene_ids, columns=motif_regulons_ids)
+-
+-        motif_regulons_gene_occurences_data = motif_regulons_auc_binary * rg.integers(
+-            100, size=(NUM_GENES, NUM_REGULONS)
+-        )
+-        motif_regulons_gene_occurences = pd.DataFrame(
+-            data=motif_regulons_gene_occurences_data, index=gene_ids, columns=motif_regulons_ids
+-        )
+-
+-        track_regulons_auc_binary = (rg.integers(10, size=(NUM_CELLS, NUM_REGULONS)) > 2).astype(int)
+-        track_regulons_auc_data = track_regulons_auc_binary * rg.random(size=(NUM_GENES, NUM_REGULONS))
+-        track_regulons_auc = pd.DataFrame(data=track_regulons_auc_data, index=cell_ids, columns=track_regulons_ids)
+-
+-        track_regulons_binary = (rg.integers(5, size=(NUM_GENES, NUM_REGULONS)) > 3).astype(int)
+-        track_regulons = pd.DataFrame(data=track_regulons_binary, index=gene_ids, columns=track_regulons_ids)
+-
+-        track_regulons_gene_occurences_data = track_regulons_auc_binary * rg.integers(
+-            100, size=(NUM_GENES, NUM_REGULONS)
+-        )
+-        track_regulons_gene_occurences = pd.DataFrame(
+-            data=track_regulons_gene_occurences_data, index=gene_ids, columns=track_regulons_ids
+-        )
+-
+-        col_attrs["MotifRegulonsAUC"] = df_to_named_matrix(motif_regulons_auc)
+-        col_attrs["TrackRegulonsAUC"] = df_to_named_matrix(track_regulons_auc)
+-        row_attrs["MotifRegulons"] = df_to_named_matrix(motif_regulons)
+-        row_attrs["TrackRegulons"] = df_to_named_matrix(track_regulons)
+-        row_attrs["MotifRegulonGeneOccurrences"] = df_to_named_matrix(motif_regulons_gene_occurences)
+-        row_attrs["TrackRegulonGeneOccurrences"] = df_to_named_matrix(track_regulons_gene_occurences)
+-
+-        metadata["regulonThresholds"] = [
+-            {
+-                "regulon": regulon,
+-                "defaultThresholdValue": motif_regulons_auc[regulon].mean(),
+-                "defaultThresholdName": "MeanScore",
+-                "allThresholds": {
+-                    "MeanScore": motif_regulons_auc[regulon].mean(),
+-                    "5thPercentile": np.percentile(motif_regulons_auc[regulon], 0.05),
+-                },
+-                "motifData": f"{regulon}.png",
+-            }
+-            for regulon in motif_regulons_ids
+-        ]
+-
+-        metadata["regulonThresholds"] += [
+-            {
+-                "regulon": regulon,
+-                "defaultThresholdValue": track_regulons_auc[regulon].mean(),
+-                "defaultThresholdName": "MeanScore",
+-                "allThresholds": {
+-                    "MeanScore": track_regulons_auc[regulon].mean(),
+-                    "5thPercentile": np.percentile(track_regulons_auc[regulon], 0.05),
+-                },
+-                "motifData": f"{regulon}.png",
+-            }
+-            for regulon in track_regulons_ids
+-        ]
+-
+-        metadata["regulonSettings"] = {"min_genes_regulon": 5, "min_regulon_gene_occurrence": 5}
+-
+-    return metadata, col_attrs, row_attrs
+-
+-
+-def generate_embeddings():
+-    _X = np.concatenate([rg.normal(n, 0.1, int(NUM_CELLS / 4)) for n in range(-2, 2)])
+-    _Y = rg.normal(0, 0.1, NUM_CELLS)
+-    _X2 = rg.normal(0, 0.1, NUM_CELLS)
+-    _Y2 = np.array([rg.normal(cn % 4, 0.1) for cn in range(NUM_CELLS)])
+-
+-    main_embedding = pd.DataFrame(columns=["_X", "_Y"])
+-    main_embedding["_X"] = _X
+-    main_embedding["_Y"] = _Y
+-
+-    embeddings_X = pd.DataFrame()
+-    embeddings_Y = pd.DataFrame()
+-
+-    embeddings_X["1"] = _X2
+-    embeddings_Y["1"] = _Y2
+-
+-    metadata = {"Embeddings": [{"id": -1, "name": "Vertical Clusters"}, {"id": 1, "name": "Horizontal Clusters"}]}
+-
+-    col_attrs = {
+-        "Embedding": df_to_named_matrix(main_embedding),
+-        "Embeddings_X": df_to_named_matrix(embeddings_X),
+-        "Embeddings_Y": df_to_named_matrix(embeddings_Y),
+-    }
+-    row_attrs = {}
+-
+-    return metadata, col_attrs, row_attrs
+-
+-
+-def generate_clusterings():
+-    # Clusters
+-    metadata = {"clusterings": []}
+-    col_attrs = {}
+-    row_attrs = {}
+-
+-    clusterings = pd.DataFrame()
+-    clusterings["0"] = [int(n / (NUM_CELLS / 4)) for n in range(NUM_CELLS)]
+-    clusterings["1"] = [n % 4 for n in range(NUM_CELLS)]
+-    col_attrs["ClusterID"] = clusterings["0"].values
+-
+-    for n, clustering in enumerate(clusterings.columns):
+-        cluster_meta = {
+-            "id": n,
+-            "group": "Test clusterings",
+-            "name": f"Cluster set {n}",
+-            "clusters": [],
+-            "clusterMarkerMetrics": [
+-                {"accessor": "Test_Metric", "name": "Test Metric", "description": "Some test values to display"}
+-            ],
+-        }
+-        cluster_markers = pd.DataFrame(
+-            index=gene_ids, columns=[str(x) for x in range(max({int(x) for x in clusterings[clustering]}) + 1)]
+-        )
+-        cluster_markers_test_metric = pd.DataFrame(
+-            index=gene_ids, columns=[str(x) for x in range(max({int(x) for x in clusterings[clustering]}) + 1)]
+-        )
+-        cluster_markers.fillna(0, inplace=True)
+-        cluster_markers_test_metric.fillna(0, inplace=True)
+-        for cluster in range(4):
+-            cluster_markers.iloc[cluster * 4 : (cluster + 1) * 4, cluster] = 1
+-            cluster_markers_test_metric.iloc[cluster * 4 : (cluster + 1) * 4, cluster] = cluster * 1 * n
+-
+-            clust_dict = {}
+-            clust_dict["id"] = cluster
+-            clust_dict["description"] = f"Unannotated Cluster {str(cluster+1)}"
+-            cluster_meta["clusters"].append(clust_dict)
+-
+-        row_attrs[f"ClusterMarkers_{n}"] = df_to_named_matrix(cluster_markers)
+-        row_attrs[f"ClusterMarkers_{n}_Test_Metric"] = df_to_named_matrix(cluster_markers_test_metric)
+-        metadata["clusterings"].append(cluster_meta)
+-
+-    col_attrs["Clusterings"] = df_to_named_matrix(clusterings)
+-    return metadata, col_attrs, row_attrs
+-
+-
+-def generate_test_loom_data():
+-    matrix = generate_matrix()
+-    embeddings_meta, embeddings_cols, embeddings_rows = generate_embeddings()
+-    clusterings_meta, clusterings_cols, clusterings_rows = generate_clusterings()
+-    regulons_meta, regulons_cols, regulons_rows = generate_regulons()
+-
+-    col_attrs = {
+-        "CellID": np.array(cell_ids),
+-        "nUMI": np.array(matrix.sum(axis=0)),
+-        "nGene": np.array((matrix > 0).sum(axis=0)),
+-        "Half cells": ["First half" if n % 2 == 0 else "Second half" for n in range(NUM_CELLS)],
+-        **embeddings_cols,
+-        **clusterings_cols,
+-        **regulons_cols,
+-    }
+-
+-    row_attrs = {
+-        "Gene": gene_ids,
+-        **embeddings_rows,
+-        **clusterings_rows,
+-        **regulons_rows,
+-    }
+-
+-    meta_json = {
+-        "metrics": [{"name": "nUMI"}, {"name": "nGene"}],
+-        "annotations": [{"name": "Half cells", "values": list(set(col_attrs["Half cells"]))}],
+-        **embeddings_meta,
+-        **clusterings_meta,
+-        **regulons_meta,
+-    }
+-
+-    attrs = {
+-        "title": "Test Data",
+-        "MetaData": json.dumps(meta_json),
+-        "Genome": "Nomen dubium",
+-        "SCopeTreeL1": "Test Loom",
+-        "SCopeTreeL2": "",
+-        "SCopeTreeL3": "",
+-    }
+-
+-    return matrix, row_attrs, col_attrs, attrs
+diff --git a/server/test/__init__.py b/server/test/__init__.py
+new file mode 100644
+index 000000000..e69de29bb
+diff --git a/server/test/data/SCope_Test.loom b/server/test/data/SCope_Test.loom
+deleted file mode 100644
+index 3fa183060..000000000
+Binary files a/server/test/data/SCope_Test.loom and /dev/null differ
+diff --git a/server/test/generate.py b/server/test/generate.py
+new file mode 100644
+index 000000000..e5e552b42
+--- /dev/null
++++ b/server/test/generate.py
+@@ -0,0 +1,532 @@
++""" Fixtures for generating data in Loom formatted files. """
++from typing import Any, Dict, List, Text, Tuple, Union
++from enum import Enum
++from functools import partial
++import json
++import pickle
++import os
++from pathlib import Path
++from tempfile import mkdtemp, mkstemp
++from contextlib import contextmanager
++import traceback
++
++from typing_extensions import Literal
++
++import hypothesis.strategies as st
++import hypothesis.extra.numpy
++
++import numpy as np
++import loompy
++
++
++from scopeserver.dataserver.utils.loom import Loom
++from scopeserver.dataserver.utils.loom_file_handler import LoomFileHandler
++
++MAX_GENERATED_SIZE: int = 64
++
++
++class LoomFeatureLabel(Enum):
++    "Label for LoomFeature objects."
++    REGULON = 0
++    CLUSTERING = 1
++    EMBEDDING = 2
++
++
++class LoomFeature:
++    "Collects generated data for features such as regulons and embeddings."
++    label: LoomFeatureLabel
++    metadata: Dict[Text, Union[List[Dict[Text, Any]], Dict[Text, int]]] = {}
++    column_attributes: Dict[Text, np.ndarray] = {}
++    row_attributes: Dict[Text, np.ndarray] = {}
++
++    def __init__(self, label, metadata, column_attributes, row_attributes) -> None:
++        self.label = label
++        self.metadata = metadata
++        self.column_attributes = column_attributes
++        self.row_attributes = row_attributes
++
++    def __repr__(self) -> str:
++        return f"LoomFeature({self.label}):\n{self.column_attributes}\n{self.row_attributes}\n{self.metadata}"
++
++
++def regulons_attr_strategy(
++    which: Union[Literal["Motif"], Literal["Track"], Literal[""]], num_genes: int, num_regulons: int
++):
++    "Generate regulon attributes."
++    dtypes = [(f"{which}Regulon_{n}", np.int32) for n in range(1, num_regulons + 1)]
++    element_strategies = [st.integers(min_value=0, max_value=1) for _ in range(num_regulons)]
++    return hypothesis.extra.numpy.arrays(dtype=dtypes, shape=num_genes, elements=st.tuples(*element_strategies))
++
++
++def regulons_auc_attr_strategy(
++    which: Union[Literal["Motif"], Literal["Track"], Literal[""]], num_cells: int, num_regulons: int
++):
++    "Generate regulon AUC attributes."
++    dtypes = [(f"{which}Regulon_{n}", np.float64) for n in range(1, num_regulons + 1)]
++    element_strategies = [st.floats(min_value=0, max_value=1, exclude_max=True) for _ in range(num_regulons)]
++    return hypothesis.extra.numpy.arrays(dtype=dtypes, shape=num_cells, elements=st.tuples(*element_strategies))
++
++
++def regulons_occurences_strategy(which: Union[Literal["Motif"], Literal["Track"]], num_genes: int, num_regulons: int):
++    "Generate regulon occurences."
++    dtypes = [(f"{which}Regulon_{n}", np.int32) for n in range(1, num_regulons + 1)]
++    element_strategies = [st.integers(min_value=0, max_value=MAX_GENERATED_SIZE) for _ in range(num_regulons)]
++    return hypothesis.extra.numpy.arrays(dtype=dtypes, shape=num_genes, elements=st.tuples(*element_strategies))
++
++
++def regulons_column_attributes_strategy(num_cells: int, num_regulons: int):
++    "Generate regulon column attributes."
++    return st.fixed_dictionaries(
++        {
++            "MotifRegulonsAUC": regulons_auc_attr_strategy("Motif", num_cells, num_regulons),
++            "TrackRegulonsAUC": regulons_auc_attr_strategy("Track", num_cells, num_regulons),
++        }
++    )
++
++
++def regulons_row_attributes_strategy(num_genes: int, num_regulons: int):
++    "Generate regulon row attributes."
++    return st.fixed_dictionaries(
++        {
++            "MotifRegulons": regulons_attr_strategy("Motif", num_genes, num_regulons),
++            "TrackRegulons": regulons_attr_strategy("Track", num_genes, num_regulons),
++            "MotifRegulonGeneOccurrences": regulons_occurences_strategy("Motif", num_genes, num_regulons),
++            "TrackRegulonGeneOccurrences": regulons_occurences_strategy("Track", num_genes, num_regulons),
++        }
++    )
++
++
++def regulons_threshold_strategy(regulon: str):
++    "Generate a regulon thresholda dictionary."
++    return st.fixed_dictionaries(
++        {
++            "regulon": st.just(regulon),
++            "defaultThresholdValue": st.floats(min_value=0, max_value=1, exclude_max=True),
++            "defaultThresholdName": st.just("MeanScore"),
++            "allThresholds": st.fixed_dictionaries(
++                {
++                    "MeanScore": st.floats(min_value=0, max_value=1, exclude_max=True),
++                    "5thPercentile": st.floats(min_value=0, max_value=1, exclude_max=True),
++                }
++            ),
++            "motifData": st.just(f"{regulon}.png"),
++        }
++    )
++
++
++@st.composite
++def regulons_thresholds_strategy(draw, num_regulons: int):
++    "Generate a regulon threshold dictionary for each regulon."
++    names = [f"MotifRegulon_{i}" for i in range(1, num_regulons + 1)] + [
++        f"TrackRegulon_{i}" for i in range(1, num_regulons + 1)
++    ]
++    return [draw(regulons_threshold_strategy(regulon)) for regulon in names]
++
++
++@st.composite
++def regulons_legacy_thresholds_strategy(draw, num_regulons: int):
++    "Generate a regulon threshold dictionary with old-style labels."
++    names = [f"Regulon_{i}" for i in range(1, num_regulons + 1)]
++    return [draw(regulons_threshold_strategy(regulon)) for regulon in names]
++
++
++def regulons_new_strategy(num_genes: int, num_cells: int, num_regulons: int):
++    "Generate regulon features in the new-style."
++    return st.builds(
++        LoomFeature,
++        label=st.just(LoomFeatureLabel.REGULON),
++        metadata=st.fixed_dictionaries(
++            {
++                "regulonThresholds": regulons_thresholds_strategy(num_regulons),
++                "regulonSettings": st.fixed_dictionaries(
++                    {
++                        "min_genes_regulon": st.integers(min_value=0, max_value=MAX_GENERATED_SIZE),
++                        "min_regulon_gene_occurrence": st.integers(min_value=0, max_value=MAX_GENERATED_SIZE),
++                    }
++                ),
++            }
++        ),
++        column_attributes=regulons_column_attributes_strategy(num_cells, num_regulons),
++        row_attributes=regulons_row_attributes_strategy(num_genes, num_regulons),
++    )
++
++
++def regulons_legacy_strategy(num_genes: int, num_cells: int, num_regulons: int):
++    "Generate regulon features in the old-style."
++    return st.builds(
++        LoomFeature,
++        label=st.just(LoomFeatureLabel.REGULON),
++        metadata=st.fixed_dictionaries({"regulonThresholds": regulons_legacy_thresholds_strategy(num_regulons)}),
++        column_attributes=st.fixed_dictionaries(
++            {"RegulonsAUC": regulons_auc_attr_strategy("", num_cells, num_regulons)}
++        ),
++        row_attributes=st.fixed_dictionaries({"Regulons": regulons_attr_strategy("", num_genes, num_regulons)}),
++    )
++
++
++def regulons_strategy(num_genes: int, num_cells: int, num_regulons: int):
++    "Generate regulon features."
++    return st.one_of(
++        regulons_legacy_strategy(num_genes, num_cells, num_regulons),
++        regulons_new_strategy(num_genes, num_cells, num_regulons),
++    )
++
++
++def embeddings_column_attributes_strategy(num_cells: int):
++    "Generate embedding column attributes."
++    return st.fixed_dictionaries(
++        {
++            "Embedding": hypothesis.extra.numpy.arrays(
++                dtype=[("_X", float), ("_Y", float)], shape=num_cells, elements=st.tuples(st.floats(), st.floats())
++            ),
++            "Embeddings_X": hypothesis.extra.numpy.arrays(
++                dtype=[("1", float)], shape=num_cells, elements=st.tuples(st.floats())
++            ),
++            "Embeddings_Y": hypothesis.extra.numpy.arrays(
++                dtype=[("1", float)], shape=num_cells, elements=st.tuples(st.floats())
++            ),
++        }
++    )
++
++
++@st.composite
++def embeddings_strategy(draw, num_cells: int):
++    "Generate Embedding features."
++    names = (
++        st.text(st.characters(max_codepoint=1000, blacklist_categories=("Cc", "Cs")), min_size=1)
++        .map(lambda s: s.strip())
++        .filter(lambda s: len(s) > 0)
++    )
++
++    return draw(
++        st.builds(
++            LoomFeature,
++            label=st.just(LoomFeatureLabel.EMBEDDING),
++            metadata=st.just({"Embeddings": [{"id": -1, "name": draw(names)}, {"id": 1, "name": draw(names)}]}),
++            column_attributes=embeddings_column_attributes_strategy(num_cells),
++            row_attributes=st.just({}),
++        )
++    )
++
++
++class Clustering:
++    "Organise data for a single clustering containing multiple clusters."
++    identifier: int
++    clusters: List[int]
++    assignment: List[int]
++    metadata: Dict[Text, Union[List[Dict[Text, Any]], Dict[Text, int]]]
++    markers: np.ndarray
++    metrics: np.ndarray
++
++    def __init__(self, identifier, clusters, assignment, metadata, markers: Tuple[np.ndarray, np.ndarray]) -> None:
++        self.identifier = identifier
++        self.clusters = clusters
++        self.assignment = assignment
++        self.metadata = metadata
++        self.markers = markers[0]
++        self.metrics = self.init_metric(markers[1])
++
++    def init_metric(self, metric: np.ndarray):
++        "Apply the marker mask to metric."
++        return np.array(
++            [tuple(x * y for x, y in zip(mask, _metric)) for mask, _metric in zip(self.markers, metric)],
++            dtype=metric.dtype,
++        )
++
++    def __repr__(self):
++        return f(
++            "Clustering(self.identifier={self.identifier}, "
++            "self.clusters={self.clusters}, "
++            "self.assignment={self.assignment})"
++        )
++
++
++def assign_cells_to_clusters(clusters: List[int], num_cells: int) -> List[int]:
++    "Distribute cell ids into a list of len(clusters)."
++    num_clusters = len(clusters)
++    return [clusters[num_clusters * n // num_cells] for n in range(num_cells)]
++
++
++def cluster_markers_strategy(clusters: List[int], num_genes: int):
++    "Generate valid cluster markers."
++    dtypes = [(str(c), np.int32) for c in clusters]
++    metric_strategy = [st.integers(min_value=1, max_value=MAX_GENERATED_SIZE) for _ in clusters]
++    score = hypothesis.extra.numpy.arrays(dtype=dtypes, shape=num_genes, elements=st.tuples(*metric_strategy))
++    mask = np.array(
++        [tuple((clusters[gene % len(clusters)] == c) for c in clusters) for gene in range(num_genes)], dtype=dtypes
++    )
++
++    return st.tuples(st.just(mask), score)
++
++
++@st.composite
++def clustering_internal_strategy(draw, cluster_id: int, num_cells: int, num_genes: int):
++    "Generate valid Clustering objects."
++    clusters = draw(
++        st.lists(
++            st.integers(min_value=0, max_value=MAX_GENERATED_SIZE),
++            min_size=min(1, num_cells),
++            max_size=num_cells,
++            unique=True,
++        )
++    )
++    assignment = assign_cells_to_clusters(clusters, num_cells=num_cells)
++
++    return draw(
++        st.builds(
++            Clustering,
++            identifier=st.just(cluster_id),
++            clusters=st.just(clusters),
++            assignment=st.just(assignment),
++            metadata=clustering_metadata_internal_strategy(cluster_id, clusters),
++            markers=cluster_markers_strategy(clusters, num_genes),
++        )
++    )
++
++
++@st.composite
++def clusterings_internal_strategy(draw, clustering_ids: List[int], num_cells: int, num_genes: int):
++    "Generate a list of valid Clustering objects."
++    return [draw(clustering_internal_strategy(cid, num_cells, num_genes)) for cid in clustering_ids]
++
++
++def cluster_metadata_strategy(cluster_id: int):
++    "Generate metadata for a single cluster."
++    return st.fixed_dictionaries(
++        {
++            "id": st.just(cluster_id),
++            "description": st.text(st.characters(max_codepoint=1000, blacklist_categories=("Cc", "Cs")), min_size=1),
++        }
++    )
++
++
++@st.composite
++def clusters_metadata_strategy(draw, cluster_ids: List[int]):
++    "Generate metadata for each cluster in a clustering."
++    return [draw(cluster_metadata_strategy(cid)) for cid in cluster_ids]
++
++
++def clustering_metadata_internal_strategy(identifier: int, clusters: List[int]):
++    "Generate metadata for a single Clustering."
++    names = (
++        st.text(st.characters(max_codepoint=1000, blacklist_categories=("Cc", "Cs")), min_size=1)
++        .map(lambda s: s.strip())
++        .filter(lambda s: len(s) > 0)
++    )
++
++    return st.fixed_dictionaries(
++        {
++            "id": st.just(identifier),
++            "group": names,
++            "name": st.just(f"Cluster set {identifier}"),
++            "clusters": st.just(clusters).flatmap(clusters_metadata_strategy),
++            "clusterMarkerMetrics": st.fixed_dictionaries(
++                {
++                    "accessor": names,
++                    "name": names,
++                    "description": st.text(
++                        st.characters(max_codepoint=1000, blacklist_categories=("Cc", "Cs")), min_size=1
++                    ),
++                }
++            ).map(lambda metric: [metric]),
++        }
++    )
++
++
++@st.composite
++def clusterings_strategy(draw, num_cells: int, num_genes: int):
++    "Generate valid clustering features."
++    clustering_ids = st.lists(
++        st.integers(min_value=0, max_value=MAX_GENERATED_SIZE), min_size=1, max_size=MAX_GENERATED_SIZE, unique=True
++    )
++    clusterings: List[Clustering] = draw(
++        clustering_ids.flatmap(partial(clusterings_internal_strategy, num_cells=num_cells, num_genes=num_genes))
++    )
++
++    markers = {f"ClusterMarkers_{clustering.identifier}": st.just(clustering.markers) for clustering in clusterings}
++    metrics = {
++        f"ClusterMarkers_{clustering.identifier}_Test_Metric": st.just(clustering.metrics) for clustering in clusterings
++    }
++
++    return draw(
++        st.builds(
++            LoomFeature,
++            label=st.just(LoomFeatureLabel.CLUSTERING),
++            metadata=st.fixed_dictionaries(
++                {"clusterings": st.just([clustering.metadata for clustering in clusterings])}
++            ),
++            column_attributes=st.fixed_dictionaries(
++                {
++                    "ClusterID": st.just(clusterings[0].assignment),
++                    "Clusterings": st.just(
++                        np.array(
++                            list(zip(*[c.assignment for c in clusterings])),
++                            dtype=np.dtype([(str(c.identifier), np.int32) for c in clusterings]),
++                        )
++                    ),
++                }
++            ),
++            row_attributes=st.fixed_dictionaries({**markers, **metrics}),
++        )
++    )
++
++
++def matrix_strategy(num_cells: int, num_genes: int):
++    "Generate an expression matrix."
++    return hypothesis.extra.numpy.arrays(
++        dtype=np.int32, shape=(num_genes, num_cells), elements=st.integers(min_value=1, max_value=MAX_GENERATED_SIZE)
++    )
++
++
++class LoomData:
++    "Data required to build a valid Loom file."
++    name: str
++    matrix: np.ndarray
++    n_genes: int
++    n_cells: int
++    n_regulons: int
++    regulons: LoomFeature
++    embeddings: LoomFeature
++    clusterings: LoomFeature
++    annotations: Dict[str, Dict[str, Any]]
++
++    def __init__(
++        self, name, matrix, n_genes, n_cells, n_regulons, regulons, embeddings, clusterings, annotations: List[str]
++    ):
++        self.name = name
++        self.matrix = matrix
++        self.n_genes = n_genes
++        self.n_cells = n_cells
++        self.n_regulons = n_regulons
++        self.regulons = regulons
++        self.embeddings = embeddings
++        self.clusterings = clusterings
++        self.annotations = self.generate_annotations(n_cells, annotations, embeddings.column_attributes["Embedding"])
++
++    def generate_annotations(self, n_cells: int, values: List[str], coords: np.ndarray) -> Dict[str, Dict[str, Any]]:
++        "Organise information for an annotation entry."
++        assignment = [values[n % len(values)] for n in range(n_cells)]
++        return {
++            "My Annotation": {
++                "values": values,
++                "assignment": assignment,
++                "coordinates": {
++                    value: np.array([coords[i] for i in range(n_cells) if assignment[i] == value], dtype=coords.dtype)
++                    for value in values
++                },
++            },
++        }
++
++    def __repr__(self):
++        return f(
++            "LoomData(name={self.name}, "
++            "{self.n_genes}, {self.n_cells}, "
++            "matrix={self.matrix}, "
++            "annotations={self.annotations})"
++        )
++
++
++@st.composite
++def loom_data_strategy(draw):
++    "Generate LoomData objects."
++    sizes = st.integers(min_value=1, max_value=MAX_GENERATED_SIZE)
++    names = st.text(st.characters(max_codepoint=1000, whitelist_categories=("Nd", "Ll", "Lu")), min_size=1)
++    n_regulons = draw(sizes)
++    n_cells = draw(sizes)
++    n_genes = draw(sizes)
++    annotations = st.lists(names, min_size=1, max_size=n_cells, unique=True)
++
++    return draw(
++        st.builds(
++            LoomData,
++            name=names,
++            matrix=matrix_strategy(n_cells, n_genes),
++            n_genes=st.just(n_genes),
++            n_cells=st.just(n_cells),
++            n_regulons=st.just(n_regulons),
++            regulons=regulons_strategy(n_genes, n_cells, n_regulons),
++            embeddings=embeddings_strategy(n_cells),
++            clusterings=clusterings_strategy(n_cells, n_genes),
++            annotations=annotations,
++        )
++    )
++
++
++class SearchSpaceMock:
++    "Mock of a SearchSpace for pickling."
++    loom = ""
++    dfh = ""
++
++
++@contextmanager
++def loom_generator(loom_data: LoomData):
++    "Generate a loom file on the filesystem."
++    path = Path(mkdtemp())
++    handle, _filep = mkstemp(dir=path)
++    filepath = path / Path(_filep)
++    os.close(handle)
++    pkl_path = path / Path(f"{filepath.name}.ss_pkl")
++
++    with pkl_path.open(mode="wb") as pkl:
++        pickle.dump(SearchSpaceMock(), pkl)
++
++    col_attrs = {
++        "CellID": np.array([f"Cell_{n}" for n in range(1, loom_data.n_cells + 1)]),
++        "nUMI": loom_data.matrix.sum(axis=0),
++        "nGene": (loom_data.matrix > 0).sum(axis=0),
++        **{annotation: loom_data.annotations[annotation]["assignment"] for annotation in loom_data.annotations},
++        **loom_data.embeddings.column_attributes,
++        **loom_data.clusterings.column_attributes,
++        **loom_data.regulons.column_attributes,
++    }
++
++    row_attrs = {
++        "Gene": np.array([f"Gene_{n}" for n in range(1, loom_data.n_genes + 1)]),
++        **loom_data.embeddings.row_attributes,
++        **loom_data.clusterings.row_attributes,
++        **loom_data.regulons.row_attributes,
++    }
++
++    file_attrs = {
++        "title": loom_data.name,
++        "MetaData": json.dumps(
++            {
++                "metrics": [{"name": "nUMI"}, {"name": "nGene"}],
++                "annotations": [
++                    {"name": annotation, "values": loom_data.annotations[annotation]["values"]}
++                    for annotation in loom_data.annotations
++                ],
++                **loom_data.embeddings.metadata,
++                **loom_data.clusterings.metadata,
++                **loom_data.regulons.metadata,
++            }
++        ),
++        "Genome": "Nomen dubium",
++        "SCopeTreeL1": loom_data.name,
++        "SCopeTreeL2": "",
++        "SCopeTreeL3": "",
++    }
++
++    try:
++        loompy.create(
++            filename=str(filepath),
++            layers=loom_data.matrix,
++            row_attrs=row_attrs,
++            col_attrs=col_attrs,
++            file_attrs=file_attrs,
++        )
++    except OSError as err:
++        print(f"loompy.create {err}")
++        traceback.print_exc()
++
++    print(f"Created {filepath}")
++
++    connection: loompy.LoomConnection = loompy.connect(str(filepath), mode="r", validate=False)
++
++    loom = Loom(Path(connection.filename), Path(connection.filename), connection, LoomFileHandler())
++    yield loom
++
++    connection.close()
++    for obj in path.iterdir():
++        obj.unlink()
++    path.rmdir()
+diff --git a/server/test/test_labels.py b/server/test/test_labels.py
+index a96bc9c8b..26dbff470 100644
+--- a/server/test/test_labels.py
++++ b/server/test/test_labels.py
+@@ -1,73 +1,67 @@
+-import loompy as lp
+-import numpy as np
+-import pandas as pd
+-import json
+-import pytest
+-import os
+-
+-from pathlib import Path
+-from numpy.random import Generator, PCG64
+-
+-from scopeserver.dataserver.utils.loom import Loom
+-from scopeserver.dataserver.utils.loom_file_handler import LoomFileHandler
+-from scopeserver.gen_test_loom import generate_test_loom_data
+-from scopeserver.dataserver.utils.labels import label_all_clusters, label_annotation, FeatureLabel, Coordinate
+-from scopeserver.dataserver.utils.annotation import Annotation
+-from scopeserver.dataserver.utils import constant
+-from scopeserver.dataserver.utils.data import uniq
++"Test the mechanism for labeling features for display on the client."
+ 
++import pytest
+ 
+-LOOM_FILE_HANDLER = LoomFileHandler()
++from hypothesis import given, settings, HealthCheck
+ 
+-rg = Generator(PCG64(55850))
++import numpy as np
+ 
+-LOOM_PATH = Path("test/data/SCope_Test.loom")
+ 
++from scopeserver.dataserver.utils.labels import label_all_clusters, label_annotation, FeatureLabel, Coordinate
++from scopeserver.dataserver.utils import constant
+ 
+-@pytest.fixture
+-def loom_file():
+-    if os.path.isfile("test/data/SCope_Test.loom"):
+-        os.remove("test/data/SCope_Test.loom")
+-    if os.path.isfile("test/data/SCope_Test.ss_pkl"):
+-        os.remove("test/data/SCope_Test.ss_pkl")
+-    return generate_test_loom_data()
++from .generate import loom_data_strategy, loom_generator
+ 
+ 
+-def test_label_annotation(loom_file):
+-    matrix, row_attrs, col_attrs, attrs = loom_file
++@settings(deadline=1000, suppress_health_check=[HealthCheck.too_slow, HealthCheck.data_too_large], max_examples=10)
++@given(data=loom_data_strategy())
++def test_label_annotation(data):
++    "Test that labels are generated for each annotation value."
++    with loom_generator(data) as loom:
++        full_observed = [
++            label_annotation(loom, -1, anno["name"]) for anno in loom.get_meta_data_by_key(key="annotations")
++        ]
+ 
+-    annotation = [f"Annotation {x % 5}" for x in range(100)]
+-    col_attrs["Test_Anno"] = annotation
+-    meta = json.loads(attrs["MetaData"])
+-    anno_vals = sorted(list(set(col_attrs["Test_Anno"])))
+-    meta["annotations"].append({"name": "Test_Anno", "values": anno_vals})
+-    attrs["MetaData"] = json.dumps(meta)
++        full_expected = [
++            [
++                FeatureLabel(
++                    label=value,
++                    colour=constant.BIG_COLOR_LIST[i + j],
++                    coordinate=Coordinate(
++                        x=np.mean(data.annotations[annotation]["coordinates"][value]["_X"]),
++                        y=-np.mean(data.annotations[annotation]["coordinates"][value]["_Y"]),
++                    ),
++                )
++                for j, value in enumerate(data.annotations[annotation]["values"])
++            ]
++            for i, annotation in enumerate(data.annotations)
++        ]
+ 
+-    lp.create(filename=str(LOOM_PATH), layers=matrix, row_attrs=row_attrs, col_attrs=col_attrs, file_attrs=attrs)
+-    with lp.connect(LOOM_PATH, mode="r", validate=False) as ds:
+-        test_loom = Loom(LOOM_PATH, LOOM_PATH, ds, LOOM_FILE_HANDLER)
+-        coords = test_loom.get_coordinates(-1, annotation=[Annotation(name="Test_Anno", values=[anno_vals[0]])])
+-        anno_coords = Coordinate(np.mean(coords["x"]), y=np.mean(coords["y"]))
+-        colour = constant.BIG_COLOR_LIST[0]
+-        assert label_annotation(test_loom, -1, "Test_Anno")[0] == FeatureLabel(
+-            label=anno_vals[0], colour=colour, coordinate=anno_coords
+-        )
++        for _observed, _expexted in zip(full_observed, full_expected):
++            for observed, expected in zip(_observed, _expexted):
++                assert observed.label == expected.label
++                assert observed.colour == expected.colour
++                assert observed.coordinate.x == pytest.approx(expected.coordinate.x, nan_ok=True)
++                assert observed.coordinate.y == pytest.approx(expected.coordinate.y, nan_ok=True)
+ 
+ 
+-def test_label_all_clusters(loom_file):
+-    matrix, row_attrs, col_attrs, attrs = loom_file
+-    lp.create(filename=str(LOOM_PATH), layers=matrix, row_attrs=row_attrs, col_attrs=col_attrs, file_attrs=attrs)
+-    with lp.connect(LOOM_PATH, mode="r", validate=False) as ds:
+-        test_loom = Loom(LOOM_PATH, LOOM_PATH, ds, LOOM_FILE_HANDLER)
+-        clustering_meta = test_loom.get_meta_data_clustering_by_id(0)
+-        cluster_names = test_loom.get_cluster_names(0)
+-        labels = []
+-        for cluster_id, cluster in cluster_names.items():
+-            print(cluster, cluster_id)
+-            coords = test_loom.get_coordinates(-1, cluster_info=(0, cluster_id))
+-            cluster_coords = Coordinate(np.mean(coords["x"]), y=np.mean(coords["y"]))
+-            colour = constant.BIG_COLOR_LIST[cluster_id]
+-            labels.append(FeatureLabel(label=cluster, colour=colour, coordinate=cluster_coords))
++@settings(deadline=1000, suppress_health_check=[HealthCheck.too_slow, HealthCheck.data_too_large], max_examples=10)
++@given(data=loom_data_strategy())
++def test_label_all_clusters(data):
++    "Test that labels are generated for each cluster in a clustering."
++    with loom_generator(data) as loom:
++        for clustering_meta in data.clusterings.metadata["clusterings"]:
++            cluster_names = {meta["id"]: meta["description"] for meta in clustering_meta["clusters"]}
++            labels = []
++            for cluster_id, cluster in cluster_names.items():
++                coords = loom.get_coordinates(-1, cluster_info=(clustering_meta["id"], cluster_id))
++                cluster_coords = Coordinate(np.mean(coords["x"]), y=np.mean(coords["y"]))
++                colour = constant.BIG_COLOR_LIST[cluster_id % len(constant.BIG_COLOR_LIST)]
++                labels.append(FeatureLabel(label=cluster, colour=colour, coordinate=cluster_coords))
+ 
+-        print(labels)
+-        assert sorted(label_all_clusters(test_loom, -1, clustering_meta["name"])) == sorted(labels)
++            _observed = sorted(label_all_clusters(loom, -1, clustering_meta["name"]))
++            for observed, expected in zip(_observed, sorted(labels)):
++                assert observed.label == expected.label
++                assert observed.colour == expected.colour
++                assert observed.coordinate.x == pytest.approx(expected.coordinate.x, nan_ok=True)
++                assert observed.coordinate.y == pytest.approx(expected.coordinate.y, nan_ok=True)
+diff --git a/server/test/test_loom.py b/server/test/test_loom.py
+index 4fe7e528f..6665781a8 100644
+--- a/server/test/test_loom.py
++++ b/server/test/test_loom.py
+@@ -1,145 +1,93 @@
+-import loompy as lp
+-import numpy as np
+-import pandas as pd
+-import pytest
+-import os
+-
+-from pathlib import Path
+-from numpy.random import Generator, PCG64
+-
+-from scopeserver.dataserver.utils.loom import Loom
+-from scopeserver.dataserver.utils.loom_file_handler import LoomFileHandler
+-from scopeserver.gen_test_loom import generate_test_loom_data
+-
+-LOOM_FILE_HANDLER = LoomFileHandler()
+-
+-rg = Generator(PCG64(55850))
+-
+-LOOM_PATH = Path("test/data/SCope_Test.loom")
+-
+-
+-@pytest.fixture
+-def matrix():
+-    num_genes = 100
+-    # Must be divisible by 4
+-    num_cells = 100
+-
+-    genes = rg.poisson(lam=1, size=num_genes)
+-    genes = [x + 1 for x in genes]
+-    matrix = rg.poisson(lam=genes, size=(num_cells, num_genes))
+-    return matrix
+-
+-
+-@pytest.fixture
+-def loom_file():
+-    if os.path.isfile("test/data/SCope_Test.loom"):
+-        os.remove("test/data/SCope_Test.loom")
+-    if os.path.isfile("test/data/SCope_Test.ss_pkl"):
+-        os.remove("test/data/SCope_Test.ss_pkl")
+-    return generate_test_loom_data()
+-
+-
+-def test_get_connection(loom_file):
+-    matrix, row_attrs, col_attrs, attrs = loom_file
+-    lp.create(filename=str(LOOM_PATH), layers=matrix, row_attrs=row_attrs, col_attrs=col_attrs, file_attrs=attrs)
+-    with lp.connect(LOOM_PATH, mode="r", validate=False) as ds:
+-        test_loom = Loom(LOOM_PATH, LOOM_PATH, ds, LOOM_FILE_HANDLER)
+-        assert test_loom.get_connection() == ds
+-
++""" Test the Loom API. """
+ 
+-def test_get_file_path(loom_file):
+-    matrix, row_attrs, col_attrs, attrs = loom_file
+-    lp.create(filename=str(LOOM_PATH), layers=matrix, row_attrs=row_attrs, col_attrs=col_attrs, file_attrs=attrs)
+-    with lp.connect(LOOM_PATH, mode="r", validate=False) as ds:
+-        test_loom = Loom(LOOM_PATH, LOOM_PATH, ds, LOOM_FILE_HANDLER)
+-        assert test_loom.get_file_path() == LOOM_PATH
+-
+-
+-def test_get_abs_file_path(loom_file):
+-    matrix, row_attrs, col_attrs, attrs = loom_file
+-    lp.create(filename=str(LOOM_PATH), layers=matrix, row_attrs=row_attrs, col_attrs=col_attrs, file_attrs=attrs)
+-    with lp.connect(LOOM_PATH, mode="r", validate=False) as ds:
+-        test_loom = Loom(LOOM_PATH, LOOM_PATH, ds, LOOM_FILE_HANDLER)
+-        assert test_loom.get_abs_file_path() == LOOM_PATH
+-
+-
+-def test_get_global_attribute_by_name(loom_file):
+-    matrix, row_attrs, col_attrs, attrs = loom_file
+-    lp.create(filename=str(LOOM_PATH), layers=matrix, row_attrs=row_attrs, col_attrs=col_attrs, file_attrs=attrs)
+-    with lp.connect(LOOM_PATH, mode="r", validate=False) as ds:
+-        test_loom = Loom(LOOM_PATH, LOOM_PATH, ds, LOOM_FILE_HANDLER)
+-        assert test_loom.get_global_attribute_by_name("Genome") == "Nomen dubium"
+-
+-
+-def test_get_cell_ids(loom_file):
+-    matrix, row_attrs, col_attrs, attrs = loom_file
+-    lp.create(filename=str(LOOM_PATH), layers=matrix, row_attrs=row_attrs, col_attrs=col_attrs, file_attrs=attrs)
+-    with lp.connect(LOOM_PATH, mode="r", validate=False) as ds:
+-        test_loom = Loom(LOOM_PATH, LOOM_PATH, ds, LOOM_FILE_HANDLER)
+-        num_cells = ds.shape[1]
+-        assert (test_loom.get_cell_ids() == np.array([f"Cell_{n}" for n in range(1, num_cells + 1)])).all()
+-
+-
+-def test_get_gene_names(loom_file):
+-    matrix, row_attrs, col_attrs, attrs = loom_file
+-    lp.create(filename=str(LOOM_PATH), layers=matrix, row_attrs=row_attrs, col_attrs=col_attrs, file_attrs=attrs)
+-    with lp.connect(LOOM_PATH, mode="r", validate=False) as ds:
+-        test_loom = Loom(LOOM_PATH, LOOM_PATH, ds, LOOM_FILE_HANDLER)
+-        assert test_loom.get_gene_names() == {}
+-
+-
+-def test_get_meta_data_cluster_by_clustering_id_and_cluster_id(loom_file):
+-    matrix, row_attrs, col_attrs, attrs = loom_file
+-    lp.create(filename=str(LOOM_PATH), layers=matrix, row_attrs=row_attrs, col_attrs=col_attrs, file_attrs=attrs)
+-    with lp.connect(LOOM_PATH, mode="r", validate=False) as ds:
+-        test_loom = Loom(LOOM_PATH, LOOM_PATH, ds, LOOM_FILE_HANDLER)
+-        assert (
+-            test_loom.get_meta_data_cluster_by_clustering_id_and_cluster_id(0, 0)["description"]
+-            == "Unannotated Cluster 1"
+-        )
+-
+-
+-def test_infer_species(loom_file):
+-    matrix, row_attrs, col_attrs, attrs = loom_file
+-    lp.create(filename=str(LOOM_PATH), layers=matrix, row_attrs=row_attrs, col_attrs=col_attrs, file_attrs=attrs)
+-    with lp.connect(LOOM_PATH, mode="r", validate=False) as ds:
+-        test_loom = Loom(LOOM_PATH, LOOM_PATH, ds, LOOM_FILE_HANDLER)
+-        assert test_loom.infer_species() == ("Unknown", {})
++from hypothesis import given, settings, HealthCheck
+ 
++import numpy as np
+ 
+-def test_has_motif_and_track_regulons(loom_file):
+-    matrix, row_attrs, col_attrs, attrs = loom_file
+-    lp.create(filename=str(LOOM_PATH), layers=matrix, row_attrs=row_attrs, col_attrs=col_attrs, file_attrs=attrs)
+-    with lp.connect(LOOM_PATH, mode="r", validate=False) as ds:
+-        test_loom = Loom(LOOM_PATH, LOOM_PATH, ds, LOOM_FILE_HANDLER)
+-        assert test_loom.has_motif_and_track_regulons() == True
+-
+-
+-def test_get_coordinates(loom_file):
+-    matrix, row_attrs, col_attrs, attrs = loom_file
+-
+-    # POC for custom data in the loom file.
+-    num_cells = 100
+-    _X = np.concatenate([rg.normal(n, 0.1, int(num_cells / 4)) for n in range(-2, 2)])
+-    _Y = rg.normal(0, 0.1, num_cells)
+-    main_embedding = pd.DataFrame(columns=["_X", "_Y"])
+-    main_embedding["_X"] = _X
+-    main_embedding["_Y"] = _Y
+-    col_attrs["Embedding"] = Loom.dfToNamedMatrix(main_embedding)
+-
+-    lp.create(filename=str(LOOM_PATH), layers=matrix, row_attrs=row_attrs, col_attrs=col_attrs, file_attrs=attrs)
+-
+-    with lp.connect(LOOM_PATH, mode="r", validate=False) as ds:
+-        test_loom = Loom(LOOM_PATH, LOOM_PATH, ds, LOOM_FILE_HANDLER)
+-        np.testing.assert_equal(
+-            test_loom.get_coordinates(-1), {"x": _X, "y": -_Y, "cellIndices": list(range(num_cells))}
+-        )
+-
+-
+-def get_gene_expression(loom_file):
+-    matrix, row_attrs, col_attrs, attrs = loom_file
+-    lp.create(filename=str(LOOM_PATH), layers=matrix, row_attrs=row_attrs, col_attrs=col_attrs, file_attrs=attrs)
+-    with lp.connect(LOOM_PATH, mode="r", validate=False) as ds:
+-        test_loom = Loom(LOOM_PATH, LOOM_PATH, ds, LOOM_FILE_HANDLER)
+-        np.testing.assert_equal(test_loom.get_gene_expression("Gene_1", True, False), np.log1p(matrix[0]))
+-        np.testing.assert_equal(test_loom.get_gene_expression("Gene_100", False, False), matrix[99])
++from .generate import loom_data_strategy, loom_generator
++
++
++@settings(deadline=1000, suppress_health_check=[HealthCheck.too_slow, HealthCheck.data_too_large], max_examples=10)
++@given(data=loom_data_strategy())
++def test_get_global_attribute(data):
++    "Check that global attributes are set correctly and accessible."
++    with loom_generator(data) as loom:
++        assert loom.get_global_attribute_by_name("title") == data.name
++        assert loom.get_global_attribute_by_name("Genome") == "Nomen dubium"
++        assert loom.get_global_attribute_by_name("SCopeTreeL1") == data.name
++
++
++@settings(deadline=1000, suppress_health_check=[HealthCheck.too_slow, HealthCheck.data_too_large], max_examples=10)
++@given(data=loom_data_strategy())
++def test_get_cell_ids(data):
++    "Check that cell ids have been set correctly."
++    with loom_generator(data) as loom:
++        assert (loom.get_cell_ids() == np.array([f"Cell_{n}" for n in range(1, data.n_cells + 1)])).all()
++
++
++@settings(deadline=1000, suppress_health_check=[HealthCheck.too_slow, HealthCheck.data_too_large], max_examples=10)
++@given(data=loom_data_strategy())
++def test_at_least_one_cluster_foreach_clustering(data):
++    """Check that there is at least 1 cluster for each clustering
++    and that the descriptions match.
++    """
++    with loom_generator(data) as loom:
++        for clustering in data.clusterings.metadata["clusterings"]:
++            assert len(clustering["clusters"]) > 0
++            for cluster in clustering["clusters"]:
++                assert (
++                    loom.get_meta_data_cluster_by_clustering_id_and_cluster_id(clustering["id"], cluster["id"])[
++                        "description"
++                    ]
++                    == cluster["description"]
++                )
++
++
++@settings(deadline=1000, suppress_health_check=[HealthCheck.too_slow, HealthCheck.data_too_large], max_examples=10)
++@given(data=loom_data_strategy())
++def test_has_motif_and_track_regulons(data):
++    "Check that regulons are set."
++    with loom_generator(data) as loom:
++        assert loom.has_motif_and_track_regulons() or loom.has_legacy_regulons()
++
++
++@settings(deadline=1000, suppress_health_check=[HealthCheck.too_slow, HealthCheck.data_too_large], max_examples=10)
++@given(data=loom_data_strategy())
++def test_get_coordinates_length(data):
++    "Check that the number of coordinates matches the generated coordinates."
++    with loom_generator(data) as loom:
++        assert len(loom.get_coordinates(-1)["x"]) == data.n_cells
++        assert len(loom.get_coordinates(-1)["x"]) == len(loom.get_coordinates(-1)["y"])
++
++
++@settings(deadline=1000, suppress_health_check=[HealthCheck.too_slow, HealthCheck.data_too_large], max_examples=10)
++@given(data=loom_data_strategy())
++def test_correct_cell_indices(data):
++    "Check that the cell indexes are as expected."
++    with loom_generator(data) as loom:
++        assert loom.get_coordinates(-1)["cellIndices"] == list(range(data.n_cells))
++
++
++@settings(deadline=1000, suppress_health_check=[HealthCheck.too_slow, HealthCheck.data_too_large], max_examples=10)
++@given(data=loom_data_strategy())
++def test_get_coordinates_x(data):
++    "Check that x coordinates match generated coordinates."
++    with loom_generator(data) as loom:
++        np.testing.assert_equal(loom.get_coordinates(-1)["x"], data.embeddings.column_attributes["Embedding"]["_X"])
++
++
++@settings(deadline=1000, suppress_health_check=[HealthCheck.too_slow, HealthCheck.data_too_large], max_examples=10)
++@given(data=loom_data_strategy())
++def test_get_coordinates_y(data):
++    "Check that y coordinates match generated coordinates."
++    with loom_generator(data) as loom:
++        np.testing.assert_equal(loom.get_coordinates(-1)["y"], -data.embeddings.column_attributes["Embedding"]["_Y"])
++
++
++@settings(deadline=1000, suppress_health_check=[HealthCheck.too_slow, HealthCheck.data_too_large], max_examples=10)
++@given(data=loom_data_strategy())
++def test_get_gene_expression(data):
++    "Check that the gene expression matrix is accessable as expected."
++    with loom_generator(data) as loom:
++        for idx in range(data.n_genes):
++            np.testing.assert_equal(loom.get_gene_expression(f"Gene_{idx+1}", False, False), data.matrix[idx])

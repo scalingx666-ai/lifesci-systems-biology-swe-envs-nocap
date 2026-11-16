@@ -1,0 +1,74 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-70"
+description = "R Enhanced expansion: DynamicHeatmap + wider skill coverage"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "9580eb843d39d4dd43f5e6f4c7a9e2958ba1e4aa"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/70"
+source_access = "auto"
+built_at = "2026-11-15T18:18:18.168668+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:73999e5148af4b28a6f17c7e5c45283e5a9e963c5f1d78e16f909a45f317ec53"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-04-11T12:43:19Z"
+diff_format = "unified"
+context_files = [
+    "skills/singlecell/_lib/viz/r/embedding.R",
+    "skills/singlecell/_lib/viz/r/pseudotime.R",
+    "skills/singlecell/_lib/viz/r/registry.R",
+    "skills/singlecell/scrna/sc-batch-integration/sc_integrate.py",
+    "skills/singlecell/scrna/sc-clustering/sc_cluster.py",
+    "skills/singlecell/scrna/sc-doublet-detection/sc_doublet.py",
+    "skills/singlecell/scrna/sc-gene-programs/sc_gene_programs.py",
+    "skills/singlecell/scrna/sc-grn/sc_grn.py",
+    "skills/singlecell/scrna/sc-metacell/sc_metacell.py",
+    "skills/singlecell/scrna/sc-pathway-scoring/sc_pathway_scoring.py",
+    "skills/singlecell/scrna/sc-pseudotime/sc_pseudotime.py",
+    "skills/singlecell/scrna/sc-qc/sc_qc.py",
+    "skills/singlecell/scrna/sc-velocity/sc_velocity.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 186
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

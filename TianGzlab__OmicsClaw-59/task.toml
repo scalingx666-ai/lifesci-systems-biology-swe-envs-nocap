@@ -1,0 +1,75 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-59"
+description = "Polish scRNA cell annotation workflows and guidance"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "4d50076cb042fcdb63bc489612695746618cbb31"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/59"
+source_access = "auto"
+built_at = "2026-11-15T18:18:24.381379+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:ab5f2f26a8fc68f77e2aafb76714673f3acefc7080255427df23e7d2cba683aa"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-04-07T14:50:56Z"
+diff_format = "unified"
+context_files = [
+    ".gitignore",
+    "knowledge_base/knowhows/KH-sc-cell-annotation-guardrails.md",
+    "knowledge_base/skill-guides/singlecell/sc-cell-annotation.md",
+    "omicsclaw/core/registry.py",
+    "omicsclaw/r_scripts/sc_scmap_annotate.R",
+    "omicsclaw/r_scripts/sc_singler_annotate.R",
+    "skills/singlecell/_lib/annotation.py",
+    "skills/singlecell/_lib/preflight.py",
+    "skills/singlecell/_lib/viz/__init__.py",
+    "skills/singlecell/_lib/viz/annotation.py",
+    "skills/singlecell/scrna/sc-cell-annotation/SKILL.md",
+    "skills/singlecell/scrna/sc-cell-annotation/sc_annotate.py",
+    "skills/singlecell/scrna/sc-cell-annotation/tests/test_sc_annotate_methods.py",
+    "tests/test_sc_preflight.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 1637
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

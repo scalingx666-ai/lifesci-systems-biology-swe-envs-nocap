@@ -1,0 +1,76 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-162"
+description = "feat(orchestrator,literature): migrate 3 final skills (PR-G of skill rework)"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "cef54ddabffa4d6d6710168e4a4046b2a142d330"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/162"
+source_access = "auto"
+built_at = "2026-11-15T18:17:28.349366+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:77f5f24eeb7edce321d6793100a6ddad302431c79604afc99ecf095ae28c9689"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-05-10T14:44:12Z"
+diff_format = "unified"
+context_files = [
+    "skills/literature/SKILL.md",
+    "skills/literature/parameters.yaml",
+    "skills/literature/references/methodology.md",
+    "skills/literature/references/output_contract.md",
+    "skills/literature/references/parameters.md",
+    "skills/orchestrator/SKILL.md",
+    "skills/orchestrator/omics-skill-builder/SKILL.md",
+    "skills/orchestrator/omics-skill-builder/parameters.yaml",
+    "skills/orchestrator/omics-skill-builder/references/methodology.md",
+    "skills/orchestrator/omics-skill-builder/references/output_contract.md",
+    "skills/orchestrator/omics-skill-builder/references/parameters.md",
+    "skills/orchestrator/parameters.yaml",
+    "skills/orchestrator/references/methodology.md",
+    "skills/orchestrator/references/output_contract.md",
+    "skills/orchestrator/references/parameters.md",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 1397
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

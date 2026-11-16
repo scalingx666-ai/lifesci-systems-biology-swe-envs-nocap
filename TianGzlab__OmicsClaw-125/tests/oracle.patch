@@ -1,0 +1,353 @@
+diff --git a/omicsclaw/memory/namespace_policy.py b/omicsclaw/memory/namespace_policy.py
+new file mode 100644
+index 00000000..5f9a86ec
+--- /dev/null
++++ b/omicsclaw/memory/namespace_policy.py
+@@ -0,0 +1,51 @@
++"""Namespace + version policy — see docs/CONTEXT.md.
++
++Two independent classifications of a Memory URI:
++
++  resolve_namespace(uri, current=N)
++    → "__shared__" if uri matches a SHARED_PREFIXES entry, else N
++
++  should_version(uri)
++    → True if uri matches a VERSIONED_PREFIXES entry, else False
++
++Prefix semantics for both tables (`(domain, prefix)` tuples):
++  - empty prefix matches the whole domain (e.g., all of preference://*)
++  - non-empty prefix matches exact path OR "<prefix>/..." sub-paths
++  - "kh" does NOT match "khaki" — matching is by path-segment, not raw startswith
++"""
++
++from omicsclaw.memory.uri import MemoryURI
++
++SHARED = "__shared__"
++
++SHARED_PREFIXES: tuple[tuple[str, str], ...] = (
++    ("core", "agent"),
++    ("core", "kh"),
++    ("core", "my_user_default"),
++)
++
++VERSIONED_PREFIXES: tuple[tuple[str, str], ...] = (
++    ("core", "agent"),
++    ("core", "my_user"),
++    ("preference", ""),
++)
++
++
++def _matches_prefix(uri: MemoryURI, domain: str, prefix: str) -> bool:
++    if uri.domain != domain:
++        return False
++    if prefix == "":
++        return True
++    return uri.path == prefix or uri.path.startswith(prefix + "/")
++
++
++def _matches_any(uri: MemoryURI, prefixes: tuple[tuple[str, str], ...]) -> bool:
++    return any(_matches_prefix(uri, d, p) for d, p in prefixes)
++
++
++def resolve_namespace(uri: MemoryURI, *, current: str) -> str:
++    return SHARED if _matches_any(uri, SHARED_PREFIXES) else current
++
++
++def should_version(uri: MemoryURI) -> bool:
++    return _matches_any(uri, VERSIONED_PREFIXES)
+diff --git a/omicsclaw/memory/uri.py b/omicsclaw/memory/uri.py
+new file mode 100644
+index 00000000..a0f80423
+--- /dev/null
++++ b/omicsclaw/memory/uri.py
+@@ -0,0 +1,61 @@
++"""MemoryURI value object — see docs/CONTEXT.md → "Memory URI"."""
++
++from dataclasses import dataclass
++
++DEFAULT_DOMAIN = "core"
++SCHEME_SEPARATOR = "://"
++
++
++@dataclass(frozen=True, slots=True)
++class MemoryURI:
++    """Stable identifier for a memory location, independent of row id.
++
++    Invariants (enforced in ``__post_init__``):
++      - ``domain`` is non-empty, contains no ``://``, no control chars
++      - ``path`` contains no ``://`` (slashes are fine; they delimit segments)
++
++    Construct via ``parse(raw)`` for ``"domain://path"`` strings, or
++    via ``root(domain)`` for the root URI of a domain.
++    """
++
++    domain: str
++    path: str
++
++    def __post_init__(self) -> None:
++        if not self.domain:
++            raise ValueError("MemoryURI domain must be non-empty")
++        if SCHEME_SEPARATOR in self.domain:
++            raise ValueError(f"MemoryURI domain must not contain '://': {self.domain!r}")
++        if any(ord(c) < 0x20 for c in self.domain):
++            raise ValueError(f"MemoryURI domain must not contain control characters: {self.domain!r}")
++        if SCHEME_SEPARATOR in self.path:
++            raise ValueError(f"MemoryURI path must not contain '://': {self.path!r}")
++
++    @classmethod
++    def parse(cls, raw: str) -> "MemoryURI":
++        if SCHEME_SEPARATOR in raw:
++            domain, path = raw.split(SCHEME_SEPARATOR, 1)
++        else:
++            domain, path = DEFAULT_DOMAIN, raw
++        return cls(domain=domain, path=path)
++
++    @classmethod
++    def root(cls, domain: str = DEFAULT_DOMAIN) -> "MemoryURI":
++        return cls(domain=domain, path="")
++
++    def __str__(self) -> str:
++        return f"{self.domain}{SCHEME_SEPARATOR}{self.path}"
++
++    @property
++    def is_root(self) -> bool:
++        return self.path == ""
++
++    def child(self, name: str) -> "MemoryURI":
++        new_path = f"{self.path}/{name}" if self.path else name
++        return MemoryURI(domain=self.domain, path=new_path)
++
++    def parent(self) -> "MemoryURI | None":
++        if self.is_root:
++            return None
++        head, _, _ = self.path.rpartition("/")
++        return MemoryURI(domain=self.domain, path=head)
+diff --git a/tests/memory/test_memory_uri.py b/tests/memory/test_memory_uri.py
+new file mode 100644
+index 00000000..06a4d187
+--- /dev/null
++++ b/tests/memory/test_memory_uri.py
+@@ -0,0 +1,113 @@
++"""Tests for MemoryURI value object.
++
++See docs/CONTEXT.md → "Memory URI" for the contract this exercises.
++"""
++
++import pytest
++
++from omicsclaw.memory.uri import MemoryURI
++
++
++def test_parse_basic_uri():
++    uri = MemoryURI.parse("core://agent")
++    assert uri.domain == "core"
++    assert uri.path == "agent"
++
++
++def test_str_canonical_form():
++    uri = MemoryURI(domain="dataset", path="pbmc.h5ad")
++    assert str(uri) == "dataset://pbmc.h5ad"
++
++
++def test_is_root_property():
++    assert MemoryURI(domain="core", path="").is_root is True
++    assert MemoryURI(domain="core", path="agent").is_root is False
++
++
++def test_child_appends_name_with_slash():
++    parent = MemoryURI(domain="analysis", path="sc-de")
++    assert parent.child("run_42") == MemoryURI(domain="analysis", path="sc-de/run_42")
++
++
++def test_child_of_root_has_no_leading_slash():
++    root = MemoryURI(domain="core", path="")
++    assert root.child("agent") == MemoryURI(domain="core", path="agent")
++
++
++def test_parent_strips_last_segment():
++    uri = MemoryURI(domain="analysis", path="sc-de/run_42")
++    assert uri.parent() == MemoryURI(domain="analysis", path="sc-de")
++
++
++def test_parent_of_single_segment_returns_root():
++    uri = MemoryURI(domain="dataset", path="pbmc.h5ad")
++    parent = uri.parent()
++    assert parent == MemoryURI(domain="dataset", path="")
++    assert parent.is_root
++
++
++def test_parent_of_root_returns_none():
++    root = MemoryURI(domain="core", path="")
++    assert root.parent() is None
++
++
++def test_parse_without_scheme_defaults_to_core():
++    uri = MemoryURI.parse("agent")
++    assert uri == MemoryURI(domain="core", path="agent")
++
++
++def test_parse_root_uri_with_empty_path():
++    uri = MemoryURI.parse("core://")
++    assert uri == MemoryURI(domain="core", path="")
++    assert uri.is_root
++
++
++def test_root_classmethod_creates_root_uri():
++    assert MemoryURI.root("dataset") == MemoryURI(domain="dataset", path="")
++    assert MemoryURI.root() == MemoryURI(domain="core", path="")
++    assert MemoryURI.root("dataset").is_root
++
++
++def test_parse_str_roundtrip():
++    for raw in (
++        "core://agent",
++        "dataset://pbmc.h5ad",
++        "analysis://sc-de/run_42",
++        "core://",
++    ):
++        assert str(MemoryURI.parse(raw)) == raw, f"roundtrip failed for {raw!r}"
++
++
++def test_uri_is_hashable_and_equal_by_value():
++    a = MemoryURI(domain="core", path="agent")
++    b = MemoryURI(domain="core", path="agent")
++    c = MemoryURI(domain="core", path="other")
++    assert a == b
++    assert a != c
++    assert hash(a) == hash(b)
++    assert len({a, b, c}) == 2  # set deduplicates a/b
++
++
++def test_empty_domain_rejected():
++    with pytest.raises(ValueError, match="domain"):
++        MemoryURI(domain="", path="agent")
++    with pytest.raises(ValueError, match="domain"):
++        MemoryURI.parse("://agent")
++
++
++def test_domain_with_scheme_separator_rejected():
++    with pytest.raises(ValueError, match="domain"):
++        MemoryURI(domain="core://nope", path="agent")
++
++
++def test_path_with_scheme_separator_rejected():
++    with pytest.raises(ValueError, match="path"):
++        MemoryURI(domain="core", path="x://y")
++    with pytest.raises(ValueError, match="path"):
++        MemoryURI.parse("core://x://y")
++
++
++@pytest.mark.parametrize("bad_char", ["\n", "\t", "\x00", "\r"])
++def test_domain_with_control_chars_rejected(bad_char):
++    with pytest.raises(ValueError, match="domain"):
++        MemoryURI(domain=f"core{bad_char}", path="agent")
+diff --git a/tests/memory/test_namespace_policy.py b/tests/memory/test_namespace_policy.py
+new file mode 100644
+index 00000000..9794219b
+--- /dev/null
++++ b/tests/memory/test_namespace_policy.py
+@@ -0,0 +1,104 @@
++"""Tests for namespace_policy — see docs/CONTEXT.md namespace ownership table."""
++
++import pytest
++
++from omicsclaw.memory.namespace_policy import resolve_namespace, should_version
++from omicsclaw.memory.uri import MemoryURI
++
++
++def test_resolve_namespace_returns_shared_for_core_agent():
++    uri = MemoryURI.parse("core://agent")
++    assert resolve_namespace(uri, current="tg/A") == "__shared__"
++
++
++def test_resolve_namespace_returns_current_for_per_namespace_uri():
++    assert resolve_namespace(MemoryURI.parse("dataset://pbmc.h5ad"), current="tg/A") == "tg/A"
++    assert resolve_namespace(MemoryURI.parse("analysis://run_42"), current="tg/A") == "tg/A"
++    assert resolve_namespace(MemoryURI.parse("project://current"), current="tg/A") == "tg/A"
++
++
++def test_resolve_namespace_kh_prefix_is_shared():
++    # core://kh and any sub-path under it are shared
++    assert resolve_namespace(MemoryURI.parse("core://kh"), current="X") == "__shared__"
++    assert resolve_namespace(MemoryURI.parse("core://kh/qc_threshold"), current="X") == "__shared__"
++    assert resolve_namespace(MemoryURI.parse("core://kh/sc/marker"), current="X") == "__shared__"
++
++
++def test_resolve_namespace_false_prefix_does_not_match():
++    # 'kh' must not match 'khaki' (path-segment matching, not raw startswith)
++    assert resolve_namespace(MemoryURI.parse("core://khaki"), current="X") == "X"
++    assert resolve_namespace(MemoryURI.parse("core://agent_alt"), current="X") == "X"
++
++
++def test_resolve_namespace_my_user_is_per_namespace():
++    # core://my_user is per-user, not shared
++    assert resolve_namespace(MemoryURI.parse("core://my_user"), current="tg/A") == "tg/A"
++
++
++def test_resolve_namespace_my_user_default_is_shared():
++    # core://my_user_default is the fallback template, shared
++    assert resolve_namespace(MemoryURI.parse("core://my_user_default"), current="tg/A") == "__shared__"
++
++
++def test_should_version_core_agent_true():
++    assert should_version(MemoryURI.parse("core://agent")) is True
++
++
++def test_should_version_false_for_non_versioned_domains():
++    assert should_version(MemoryURI.parse("dataset://pbmc.h5ad")) is False
++    assert should_version(MemoryURI.parse("analysis://sc-de/run_42")) is False
++    assert should_version(MemoryURI.parse("session://abc123")) is False
++    assert should_version(MemoryURI.parse("insight://cluster/3")) is False
++    assert should_version(MemoryURI.parse("project://current")) is False
++
++
++def test_should_version_core_my_user_true():
++    # core://my_user is per-namespace (Q3) but versioned (Q5) — both rules independent
++    assert should_version(MemoryURI.parse("core://my_user")) is True
++
++
++def test_should_version_all_preferences_true():
++    # whole `preference://` domain is versioned
++    assert should_version(MemoryURI.parse("preference://qc/cutoff")) is True
++    assert should_version(MemoryURI.parse("preference://global/theme")) is True
++    assert should_version(MemoryURI.parse("preference://anything_at_all")) is True
++
++
++def test_should_version_kh_and_my_user_default_false():
++    # core://kh is shared but NOT versioned (static system content)
++    assert should_version(MemoryURI.parse("core://kh")) is False
++    assert should_version(MemoryURI.parse("core://kh/qc_threshold")) is False
++    # core://my_user_default is the static fallback template, NOT versioned
++    assert should_version(MemoryURI.parse("core://my_user_default")) is False
++
++
++# ----------------------------------------------------------------------
++# CONTEXT.md namespace ownership table — full matrix
++# Lock the entire policy contract in one place. If a row needs to change,
++# update CONTEXT.md and SHARED_PREFIXES / VERSIONED_PREFIXES in lockstep.
++# ----------------------------------------------------------------------
++
++_PER_NS = "ns/X"  # opaque current namespace for matrix tests
++
++
++@pytest.mark.parametrize(
++    "uri_str,expected_ns,expected_version",
++    [
++        ("core://agent",            "__shared__", True),
++        ("core://kh",               "__shared__", False),
++        ("core://kh/qc_threshold",  "__shared__", False),
++        ("core://my_user_default",  "__shared__", False),
++        ("core://my_user",          _PER_NS,      True),
++        ("preference://qc/cutoff",  _PER_NS,      True),
++        ("preference://global/x",   _PER_NS,      True),
++        ("dataset://pbmc.h5ad",     _PER_NS,      False),
++        ("analysis://run_42",       _PER_NS,      False),
++        ("insight://cluster/3",     _PER_NS,      False),
++        ("project://current",       _PER_NS,      False),
++        ("session://abc123",        _PER_NS,      False),
++    ],
++)
++def test_context_md_table_full_matrix(uri_str, expected_ns, expected_version):
++    uri = MemoryURI.parse(uri_str)
++    assert resolve_namespace(uri, current=_PER_NS) == expected_ns
++    assert should_version(uri) is expected_version

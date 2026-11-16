@@ -1,0 +1,66 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-189"
+description = "feat(runtime): result.json status field + safe fallback to -9→0 heuristic (OMI-12 audit P1 #2)"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "1f2a3ec7e5b814b801fb64cf46ee6707db107344"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/189"
+source_access = "auto"
+built_at = "2026-11-15T18:16:55.293166+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:bf6a3b4552589724c7c7afdcebbbd87253276506f5e26b2c4e10a5490489ad03"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-05-12T14:04:53Z"
+diff_format = "unified"
+context_files = [
+    "omicsclaw/common/report.py",
+    "omicsclaw/core/runtime/subprocess_driver.py",
+    "templates/skill/references/output_contract.md",
+    "templates/skill/replace_me.py",
+    "tests/test_result_status_contract.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 375
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

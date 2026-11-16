@@ -1,0 +1,71 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-99"
+description = "Migrate logo assets to high-resolution SVG"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "21c84e3923c250499701fb55f327f51cce268347"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/99"
+source_access = "auto"
+built_at = "2026-11-15T18:17:58.421931+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:12a9beb64c1af9b3e0ba9260b85dd13beb253683c5e3c2c06e9c0a4115950234"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-05-06T06:32:36Z"
+diff_format = "unified"
+context_files = [
+    "README.md",
+    "README_zh-CN.md",
+    "docs/favicon.svg",
+    "docs/images/OmicsClaw_icon.svg",
+    "docs/images/OmicsClaw_logo.jpeg",
+    "docs/images/OmicsClaw_logo.png",
+    "docs/images/OmicsClaw_logo.svg",
+    "docs/logo/dark.svg",
+    "docs/logo/light.svg",
+    "website/public/favicon.svg",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 9203
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

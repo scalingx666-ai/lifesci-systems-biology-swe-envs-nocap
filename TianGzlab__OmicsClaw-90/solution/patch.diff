@@ -1,0 +1,125 @@
+diff --git a/bot/core.py b/bot/core.py
+index d7bbc27d..425278f6 100644
+--- a/bot/core.py
++++ b/bot/core.py
+@@ -799,6 +799,7 @@ async def _auto_capture_analysis(session_id: str, skill: str, args: dict, output
+     (r"downgrade to ['\"]?numpy[<>=]",                "NumPy 版本冲突"),
+     (r"CUDA.*out of memory|out of memory.*CUDA",      "GPU 显存不足"),
+     (r"Rscript[:\s]+command not found",               "R 未安装或不在 PATH 中"),
++    (r"Rscript.*not found",                           "R 未安装或不在 PATH 中"),
+     (r"cannot find R",                                "R 未安装或不在 PATH 中"),
+     (r"there is no package called",                   "缺少 R 包"),
+     (r"No space left on device",                      "服务器磁盘空间不足"),
+@@ -2731,16 +2732,18 @@ async def execute_replot_skill(args: dict, session_id: str = None, chat_id: int
+ 
+     if not figure_names:
+         # R renderer may have silently failed (exit 0 but no PNG produced).
+-        # Check stderr for environment errors and give the user a fix command.
+-        env_msg = _classify_env_error(stderr_str) if stderr_str else None
++        # Check both stderr AND stdout — R errors from call_r_plot() are
++        # wrapped in Python warnings and may appear in either stream.
++        combined_output = f"{stderr_str}\n{stdout_str}"
++        env_msg = _classify_env_error(combined_output) if combined_output.strip() else None
+         if env_msg:
+             return env_msg
+ 
+-        # Check for common R-side warnings/errors in stderr that _classify_env_error missed
++        # Check for common R-side warnings/errors that _classify_env_error missed
+         r_hints: list[str] = []
+-        if "there is no package called" in stderr_str:
++        if "there is no package called" in combined_output:
+             import re as _re
+-            pkgs = _re.findall(r"there is no package called '([^']+)'", stderr_str)
++            pkgs = _re.findall(r"there is no package called '([^']+)'", combined_output)
+             if pkgs:
+                 install_cmd = ", ".join(f'"{p}"' for p in pkgs)
+                 r_hints.append(
+@@ -2748,7 +2751,7 @@ async def execute_replot_skill(args: dict, session_id: str = None, chat_id: int
+                     f"**修复方法（在终端运行）:**\n"
+                     f"```\nRscript -e 'install.packages(c({install_cmd}))'\n```"
+                 )
+-        if "Rscript" in stderr_str and ("not found" in stderr_str or "No such file" in stderr_str):
++        if "Rscript" in combined_output and ("not found" in combined_output or "No such file" in combined_output):
+             r_hints.append(
+                 "**Rscript 未安装或不在 PATH 中。**\n\n"
+                 "**修复方法:**\n"
+@@ -2762,15 +2765,28 @@ async def execute_replot_skill(args: dict, session_id: str = None, chat_id: int
+                 + f"\n\n修复后重试: 再次要求 replot {skill_key} 即可。"
+             )
+ 
+-        # Generic fallback — no identifiable cause
++        # Distinguish "no renderers registered" vs "renderers exist but all failed"
++        no_renderers = "No R Enhanced renderers registered" in stdout_str
+         stderr_snippet = stderr_str[-500:].strip() if stderr_str else ""
+-        detail = f"\n\n**stderr:**\n```\n{stderr_snippet}\n```" if stderr_snippet else ""
++        detail = f"\n\n**技术详情:**\n```\n{stderr_snippet}\n```" if stderr_snippet else ""
++
++        if no_renderers:
++            return (
++                f"{skill_key} 目前没有注册 R Enhanced 渲染器。\n\n"
++                "当前支持 R Enhanced replot 的 scRNA 技能包括: "
++                "sc-qc, sc-de, sc-markers, sc-clustering, sc-preprocessing, "
++                "sc-cell-annotation, sc-enrichment, sc-velocity, sc-pseudotime 等 22 个。\n\n"
++                "如需其他绘图方式，请明确告诉我（如 'use matplotlib'）。"
++            )
++
+         return (
+-            f"replot {skill_key} 完成但没有生成 R Enhanced 图片。\n"
+-            f"Output: {out_dir}\n\n"
+-            f"可能原因: 该技能没有 R Enhanced 渲染器，或 figure_data 不完整。"
++            f"replot {skill_key} 的 R Enhanced 渲染器全部失败，没有生成图片。\n\n"
++            f"**最可能的原因：R 环境未正确配置。**\n\n"
++            f"**修复方法（在终端运行）:**\n"
++            f"```\nconda install -c conda-forge r-base r-ggplot2 r-dplyr r-tidyr\n```\n\n"
++            f"修复后重试: 再次要求 replot {skill_key} 即可。"
+             f"{detail}\n\n"
+-            f"请告诉用户具体情况，不要自行尝试其他绘图工具替代。"
++            f"请将修复方法告诉用户，不要自行尝试其他绘图工具替代。"
+         )
+ 
+     # Queue figures for delivery
+diff --git a/omicsclaw.py b/omicsclaw.py
+index a31fcfd3..01f3adde 100644
+--- a/omicsclaw.py
++++ b/omicsclaw.py
+@@ -1444,6 +1444,8 @@ def main():
+             else:
+                 warn_msg = str(caught[-1].message) if caught else "unknown error"
+                 print(f"{YELLOW}skipped{RESET}  ({warn_msg[:80]})")
++                # Write full error to stderr so bot subprocess can classify it
++                print(warn_msg, file=sys.stderr)
+                 failed.append(renderer)
+ 
+         print()
+@@ -1454,6 +1456,9 @@ def main():
+             print()
+         if succeeded:
+             print(f"  Figures: {r_figures_dir}")
++        # Exit 2 when all renderers failed — signals R env issue to bot
++        if failed and not succeeded:
++            sys.exit(2)
+         sys.exit(0)
+ 
+     if args.command == "optimize":
+diff --git a/omicsclaw/runtime/bot_tools.py b/omicsclaw/runtime/bot_tools.py
+index de43fdc9..456d3a77 100644
+--- a/omicsclaw/runtime/bot_tools.py
++++ b/omicsclaw/runtime/bot_tools.py
+@@ -146,8 +146,15 @@ def build_bot_tool_specs(context: BotToolContext) -> list[ToolSpec]:
+                 "Use this when the user explicitly asks to 're-draw with R', 'use R Enhanced', "
+                 "'make it prettier', or 'replot'. "
+                 "The skill must have been run first (via the omicsclaw tool). "
+-                "R Enhanced is currently supported for single-cell scRNA skills only "
+-                "(sc-qc, sc-de, sc-markers, sc-preprocessing, sc-clustering, etc.). "
++                "22 scRNA skills support R Enhanced, including: sc-qc, sc-de, sc-markers, "
++                "sc-preprocessing, sc-clustering, sc-filter, sc-cell-annotation, sc-enrichment, "
++                "sc-velocity, sc-pseudotime, sc-doublet-detection, sc-batch-integration, "
++                "sc-cell-communication, sc-grn, sc-cytotrace, sc-differential-abundance, "
++                "sc-metacell, sc-ambient-removal, sc-pathway-scoring, sc-perturb, "
++                "sc-gene-programs, sc-in-silico-perturbation. "
++                "ALWAYS call this tool when the user asks for R Enhanced — do NOT assume "
++                "a skill lacks R support without calling. If R is not installed, this tool "
++                "returns specific install instructions to relay to the user. "
+                 "output_path is the output directory from a previous omicsclaw call. "
+                 "If output_path is unknown, omit it — OmicsClaw will auto-resolve from session history. "
+                 "By default returns all generated R Enhanced figures. "

@@ -1,0 +1,110 @@
+diff --git a/src/app/translations/files/translated/ar.json b/src/app/translations/files/translated/ar.json
+index 22f245fb..11b719fa 100644
+--- a/src/app/translations/files/translated/ar.json
++++ b/src/app/translations/files/translated/ar.json
+@@ -30,7 +30,7 @@
+   "components.LangSelect.language.id": "الإندونيسية",
+   "components.LangSelect.language.ja": "اليابانية",
+   "components.LangSelect.language.fa": "الفارسي",
+-  "components.SelectedFiles.select_file": "يرجى تحديد ملف واحد من مساحة العمل",
++  "components.SelectedFiles.select_file": "يرجى تحديد ملف واحد من مساحة العمل لبدء تحليل",
+   "views.apps.simon.analysis.components.FileDetails.head.title": "يرجى تحديد المطلوب تحليل خصائص",
+   "views.apps.simon.analysis.components.FileDetails.head.description": "فقط لأول 50 المتغيرات تظهر نوع لتصفية الآخرين أو حدد جميع التبديل",
+   "views.apps.simon.analysis.components.FileDetails.head.clear": "واضح",
+@@ -474,7 +474,7 @@
+   "globals.performanceVariables.options.TrainSpecificity.description": "",
+   "views.layout.components.AppMain.connection_lost": "جهازك فقدت الاتصال مع الخادم",
+   "views.layout.components.Navbar.logout": "تسجيل الخروج",
+-  "views.layout.components.Sidebar.action_not_allowed": "يجب استيفاء وحدة نمطية محددة معايير استخدامها, مثل على سبيل المثال اختر من مساحة العمل.",
++  "views.layout.components.Sidebar.action_not_allowed": "يجب استيفاء وحدة نمطية محددة معايير استخدامها, مثل على سبيل المثال حدد الملف من مساحة العمل أو علامة واحدة طابور من لوحة التحكم!",
+   "views.layout.components.TagsView.context_menu.close": "قريب",
+   "views.layout.components.TagsView.context_menu.close_others": "بالقرب من الآخرين",
+   "views.layout.components.TagsView.context_menu.close_all": "إغلاق جميع",
+diff --git a/src/app/translations/files/translated/de.json b/src/app/translations/files/translated/de.json
+index dd4dd5cd..9f85f6a6 100644
+--- a/src/app/translations/files/translated/de.json
++++ b/src/app/translations/files/translated/de.json
+@@ -30,7 +30,7 @@
+   "components.LangSelect.language.id": "Indonesisch",
+   "components.LangSelect.language.ja": "Japanisch",
+   "components.LangSelect.language.fa": "Persisch",
+-  "components.SelectedFiles.select_file": "Bitte wählen Sie eine Datei aus dem Arbeitsbereich",
++  "components.SelectedFiles.select_file": "Bitte wählen Sie eine Datei aus dem Arbeitsbereich Analyse starten",
+   "views.apps.simon.analysis.components.FileDetails.head.title": "Bitte wählen Sie die gewünschten Analyseneigenschaften",
+   "views.apps.simon.analysis.components.FileDetails.head.description": "nur die ersten 50 Variablen angezeigt werden, tippen, um andere zu filtern oder ALLE Schalter auswählen",
+   "views.apps.simon.analysis.components.FileDetails.head.clear": "klar",
+@@ -474,7 +474,7 @@
+   "globals.performanceVariables.options.TrainSpecificity.description": "",
+   "views.layout.components.AppMain.connection_lost": "Ihr Gerät verloren, Verbindung mit server",
+   "views.layout.components.Navbar.logout": "Abmelden",
+-  "views.layout.components.Sidebar.action_not_allowed": "Sie genügen müssen bestimmte module, die Kriterien zu verwenden, wie zum Beispiel wählen Sie aus dem Arbeitsbereich.",
++  "views.layout.components.Sidebar.action_not_allowed": "Sie genügen müssen bestimmte module, die Kriterien zu verwenden, wie zum Beispiel wählen Sie die Datei aus dem Arbeitsbereich oder wählen Sie eine Warteschlange aus Armaturenbrett!",
+   "views.layout.components.TagsView.context_menu.close": "Schließen",
+   "views.layout.components.TagsView.context_menu.close_others": "Andere Schließen",
+   "views.layout.components.TagsView.context_menu.close_all": "Schließen Sie Alle",
+diff --git a/src/app/translations/files/translated/en.json b/src/app/translations/files/translated/en.json
+index a4d4406f..61d1cf9b 100644
+--- a/src/app/translations/files/translated/en.json
++++ b/src/app/translations/files/translated/en.json
+@@ -30,7 +30,7 @@
+   "components.LangSelect.language.id": "Indonesian",
+   "components.LangSelect.language.ja": "Japanese",
+   "components.LangSelect.language.fa": "Persian",
+-  "components.SelectedFiles.select_file": "Please select one file from Workspace",
++  "components.SelectedFiles.select_file": "Please select one file from Workspace to start Analysis",
+   "views.apps.simon.analysis.components.FileDetails.head.title": "Please select desired analysis properties",
+   "views.apps.simon.analysis.components.FileDetails.head.description": "only first 50 variables are shown, type to filter others or select ALL switch",
+   "views.apps.simon.analysis.components.FileDetails.head.clear": "clear",
+@@ -474,7 +474,7 @@
+   "globals.performanceVariables.options.TrainSpecificity.description": "",
+   "views.layout.components.AppMain.connection_lost": "Your device lost connection with server",
+   "views.layout.components.Navbar.logout": "Log out",
+-  "views.layout.components.Sidebar.action_not_allowed": "You must satisfy specific module criteria to use it, like for example select from Workspace.",
++  "views.layout.components.Sidebar.action_not_allowed": "You must satisfy specific module criteria to use it, like for example select file from Workspace or mark one queue from Dashboard!",
+   "views.layout.components.TagsView.context_menu.close": "Close",
+   "views.layout.components.TagsView.context_menu.close_others": "Close Others",
+   "views.layout.components.TagsView.context_menu.close_all": "Close All",
+diff --git a/src/app/translations/files/translated/fr.json b/src/app/translations/files/translated/fr.json
+index 6c530c65..54bccef8 100644
+--- a/src/app/translations/files/translated/fr.json
++++ b/src/app/translations/files/translated/fr.json
+@@ -30,7 +30,7 @@
+   "components.LangSelect.language.id": "Indonésien",
+   "components.LangSelect.language.ja": "Japonais",
+   "components.LangSelect.language.fa": "Persan",
+-  "components.SelectedFiles.select_file": "Veuillez sélectionner un fichier à partir de l'espace de travail",
++  "components.SelectedFiles.select_file": "Veuillez sélectionner un fichier à partir de l'espace de travail pour commencer l'Analyse",
+   "views.apps.simon.analysis.components.FileDetails.head.title": "Veuillez sélectionner les propriétés d'analyse",
+   "views.apps.simon.analysis.components.FileDetails.head.description": "seulement 50 premières variables sont indiqués, le type de filtre à autrui ou de sélectionner TOUS les switch",
+   "views.apps.simon.analysis.components.FileDetails.head.clear": "claire",
+@@ -474,7 +474,7 @@
+   "globals.performanceVariables.options.TrainSpecificity.description": "",
+   "views.layout.components.AppMain.connection_lost": "Votre appareil perdu la connexion avec le serveur",
+   "views.layout.components.Navbar.logout": "Déconnecter",
+-  "views.layout.components.Sidebar.action_not_allowed": "Vous devez satisfaire module spécifique de critères pour l'utiliser, comme par exemple, sélectionnez à partir de l'espace de travail.",
++  "views.layout.components.Sidebar.action_not_allowed": "Vous devez satisfaire module spécifique de critères pour l'utiliser, comme par exemple, sélectionnez le fichier à partir de l'espace de travail ou de marquer une file d'attente à partir du tableau de bord!",
+   "views.layout.components.TagsView.context_menu.close": "Fermer",
+   "views.layout.components.TagsView.context_menu.close_others": "Fermez Les Autres",
+   "views.layout.components.TagsView.context_menu.close_all": "Fermez Toutes Les",
+diff --git a/src/app/translations/files/translated/zh.json b/src/app/translations/files/translated/zh.json
+index 67ac4a8f..9b00445f 100644
+--- a/src/app/translations/files/translated/zh.json
++++ b/src/app/translations/files/translated/zh.json
+@@ -30,7 +30,7 @@
+   "components.LangSelect.language.id": "印度尼西亚",
+   "components.LangSelect.language.ja": "日本",
+   "components.LangSelect.language.fa": "波斯",
+-  "components.SelectedFiles.select_file": "请选择一个文件从工作区",
++  "components.SelectedFiles.select_file": "请选择一个文件从工作区开始分析",
+   "views.apps.simon.analysis.components.FileDetails.head.title": "请选择所需的分析性",
+   "views.apps.simon.analysis.components.FileDetails.head.description": "只有第50变量都显示，型过滤的其他人或者选择的所有开关",
+   "views.apps.simon.analysis.components.FileDetails.head.clear": "清楚的",
+@@ -474,7 +474,7 @@
+   "globals.performanceVariables.options.TrainSpecificity.description": "",
+   "views.layout.components.AppMain.connection_lost": "你的设备丢失的连接的服务器",
+   "views.layout.components.Navbar.logout": "登出",
+-  "views.layout.components.Sidebar.action_not_allowed": "你必须满足的具体模块的标准来使用它，就像例如选择从工作区。",
++  "views.layout.components.Sidebar.action_not_allowed": "你必须满足的具体模块的标准来使用它，就像例如选择文件从工作区或者标记的一项队列从仪表板！",
+   "views.layout.components.TagsView.context_menu.close": "靠近",
+   "views.layout.components.TagsView.context_menu.close_others": "接近其他人",
+   "views.layout.components.TagsView.context_menu.close_all": "关闭所有",

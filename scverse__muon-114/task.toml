@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__muon-114"
+description = ":sparkles: Extend _l2norm for sparse input"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "muon",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/muon"
+ref = "31a45d76f7a1d97eee34866e525788f960e7d504"
+reference = "https://github.com/scverse/muon/pull/114"
+source_access = "auto"
+built_at = "2026-11-15T17:00:11.560610+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:b0b2a9d03f259a7088b481cd7c5bb78b4c86c0e58be7106ba904cda44b8c1c3b"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2023-07-03T08:02:48Z"
+diff_format = "unified"
+context_files = [
+    "muon/_core/preproc.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 27
+difficulty = "medium"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

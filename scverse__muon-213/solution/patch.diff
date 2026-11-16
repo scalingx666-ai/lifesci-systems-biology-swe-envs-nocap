@@ -1,0 +1,41 @@
+diff --git a/docs/source/changelog.rst b/docs/source/changelog.rst
+index b28a59b..ad843aa 100644
+--- a/docs/source/changelog.rst
++++ b/docs/source/changelog.rst
+@@ -9,6 +9,11 @@ Release notes
+ 
+    *
+ 
++v0.1.10
++-------
++
++* Avoid a ``FutureWarning`` on import by querying the scanpy version via :func:`importlib.metadata.version` instead of the deprecated ``scanpy.__version__``.
++
+ v0.1.9
+ ------
+ 
+diff --git a/muon/_core/preproc.py b/muon/_core/preproc.py
+index 5f5a542..8b5458e 100644
+--- a/muon/_core/preproc.py
++++ b/muon/_core/preproc.py
+@@ -19,7 +19,6 @@
+ from sklearn.utils import check_random_state
+ 
+ from anndata import AnnData
+-import scanpy
+ from scanpy import logging
+ from scanpy.tools._utils import _choose_representation
+ from pynndescent.distances import euclidean
+@@ -27,9 +26,11 @@
+ from umap.umap_ import nearest_neighbors
+ from numba import njit, prange
+ 
++from importlib.metadata import version
++
+ from packaging.version import Version
+ 
+-if Version(scanpy.__version__) < Version("1.10"):
++if Version(version("scanpy")) < Version("1.10"):
+     from scanpy.neighbors import _compute_connectivities_umap as __compute_connectivities_umap
+ 
+     _compute_connectivities_umap = lambda *args, **kwargs: __compute_connectivities_umap(

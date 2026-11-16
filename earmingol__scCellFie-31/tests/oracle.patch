@@ -1,0 +1,297 @@
+diff --git a/run_trimean_aggregation.py b/run_trimean_aggregation.py
+new file mode 100644
+index 0000000..4059406
+--- /dev/null
++++ b/run_trimean_aggregation.py
+@@ -0,0 +1,109 @@
++#!/usr/bin/env python3
++"""
++Aggregate metabolic task scores per cell group using the trimean and save a CSV.
++
++Reads a single metabolic_tasks .h5ad file (the ``_metabolic_tasks.h5ad`` sidecar
++written by ``sccellfie.io.save_adata``, or any AnnData whose ``.X`` holds
++metabolic-task scores), aggregates the scores within each group of ``--groupby``
++using ``sccellfie.expression.agg_expression_cells`` (default ``trimean``), and
++writes a (groups x tasks) CSV.
++
++No normalization or re-scoring is performed — the metabolic-task scores in ``.X``
++are aggregated as-is.
++
++Example
++-------
++    python run_trimean_aggregation.py \
++        --input   /path/to/MT_metabolic_tasks.h5ad \
++        --output  /path/to/MT_trimean_by_celltype.csv \
++        --groupby cell_type
++"""
++
++import os
++import argparse
++import logging
++
++import numpy as np
++import scanpy as sc
++
++from sccellfie.expression.aggregation import agg_expression_cells
++
++logging.basicConfig(level="INFO", format="[%(asctime)s][%(levelname)s] %(message)s")
++
++
++def parse_args():
++    p = argparse.ArgumentParser(
++        description="Trimean (or other) aggregation of metabolic task scores per cell group."
++    )
++    p.add_argument("--input", required=True,
++                   help="Path to the metabolic_tasks .h5ad file to aggregate.")
++    p.add_argument("--output", required=True,
++                   help="Path to the output .csv file (groups x tasks).")
++    p.add_argument("--groupby", required=True,
++                   help="adata.obs column to group cells by (e.g. cell_type, condition).")
++    p.add_argument("--agg_func", default="trimean",
++                   help="Aggregation function passed to agg_expression_cells (default: trimean). "
++                        "Options: mean, median, 25p, 75p, trimean, topmean.")
++    p.add_argument("--layer", default=None,
++                   help="Layer to aggregate instead of adata.X (default: adata.X).")
++    p.add_argument("--exclude_zeros", action="store_true",
++                   help="Exclude zeros when aggregating (treated as NaN).")
++    p.add_argument("--chunk_size", type=int, default=None,
++                   help="Number of tasks (genes) to densify at a time, to bound peak memory "
++                        "for percentile-based aggregations like trimean. Results are identical "
++                        "to the unchunked path (default: None = whole matrix at once).")
++    p.add_argument("--dtype", default=None, choices=[None, "float32", "float64"],
++                   help="Cast dense blocks to this dtype before aggregating to reduce memory "
++                        "(default: None = keep source dtype).")
++    return p.parse_args()
++
++
++def main():
++    args = parse_args()
++
++    logging.info(f"Reading metabolic task scores from '{args.input}'")
++    adata = sc.read_h5ad(args.input)
++    logging.info(f"Loaded AnnData: {adata.n_obs:,} cells x {adata.n_vars:,} tasks")
++
++    if args.groupby not in adata.obs.columns:
++        raise KeyError(
++            f"groupby column '{args.groupby}' not found in adata.obs. "
++            f"Available columns: {list(adata.obs.columns)}"
++        )
++
++    n_groups = adata.obs[args.groupby].nunique()
++    logging.info(
++        f"Aggregating with '{args.agg_func}' over '{args.groupby}' "
++        f"({n_groups} groups)"
++        + (f", layer='{args.layer}'" if args.layer else "")
++        + (", excluding zeros" if args.exclude_zeros else "")
++        + (f", chunk_size={args.chunk_size}" if args.chunk_size else "")
++        + (f", dtype={args.dtype}" if args.dtype else "")
++    )
++
++    # Only pass the newer kwargs when set, so this stays compatible with older
++    # installs of sccellfie that predate `chunk_size` / `dtype`.
++    kwargs = dict(
++        groupby=args.groupby,
++        agg_func=args.agg_func,
++        layer=args.layer,
++        exclude_zeros=args.exclude_zeros,
++    )
++    if args.chunk_size is not None:
++        kwargs["chunk_size"] = args.chunk_size
++    if args.dtype is not None:
++        kwargs["dtype"] = np.dtype(args.dtype)
++
++    # Returns a (groups x tasks) DataFrame: rows = groups, columns = task names.
++    agg_df = agg_expression_cells(adata, **kwargs)
++    agg_df.index.name = args.groupby
++    logging.info(f"Aggregated matrix: {agg_df.shape[0]} groups x {agg_df.shape[1]} tasks")
++
++    out_dir = os.path.dirname(os.path.abspath(args.output))
++    os.makedirs(out_dir, exist_ok=True)
++    agg_df.to_csv(args.output)
++    logging.info(f"Saved aggregated scores to '{args.output}'")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/sccellfie/__init__.py b/sccellfie/__init__.py
+index 209d693..2f1f31d 100644
+--- a/sccellfie/__init__.py
++++ b/sccellfie/__init__.py
+@@ -16,4 +16,4 @@
+ from .reaction_activity import (compute_reaction_activity)
+ from .sccellfie_pipeline import (run_sccellfie_pipeline)
+ 
+-__version__ = "0.6.2"
+\ No newline at end of file
++__version__ = "0.6.3"
+\ No newline at end of file
+diff --git a/sccellfie/preprocessing/prepare_inputs.py b/sccellfie/preprocessing/prepare_inputs.py
+index 7daa591..dfac483 100644
+--- a/sccellfie/preprocessing/prepare_inputs.py
++++ b/sccellfie/preprocessing/prepare_inputs.py
+@@ -111,9 +111,16 @@ def preprocess_inputs(adata, gpr_info, task_by_gene, rxn_by_gene, task_by_rxn, c
+     valid_genes = sorted(valid_genes)
+     valid_reactions = sorted(valid_reactions)
+ 
+-    # Filter adata
+-    adata2 = adata[:, adata_var[correction_col].isin(valid_genes)]
+-    adata2.var_names = adata_var[adata_var[correction_col].isin(valid_genes)][correction_col].values.tolist()
++    # Filter adata. Corrections (or an already non-unique adata.var_names) can map two
++    # genes to the same symbol, so keep the first occurrence to allow slicing by name
++    keep = adata_var[correction_col].isin(valid_genes).values
++    dups = adata_var[correction_col].duplicated(keep='first').values & keep
++    if dups.any():
++        if verbose:
++            print('Dropping {} genes with duplicated names after correction'.format(dups.sum()))
++        keep = keep & ~dups
++    adata2 = adata[:, keep]
++    adata2.var_names = adata_var[correction_col].values[keep].tolist()
+ 
+     # Filter gene tables
+     task_by_gene = task_by_gene.loc[:, valid_genes]
+diff --git a/sccellfie/preprocessing/tests/test_prepare_inputs.py b/sccellfie/preprocessing/tests/test_prepare_inputs.py
+index 69bce1c..78d43bd 100644
+--- a/sccellfie/preprocessing/tests/test_prepare_inputs.py
++++ b/sccellfie/preprocessing/tests/test_prepare_inputs.py
+@@ -129,4 +129,78 @@ def test_preprocess_inputs_one_gene_one_reaction():
+     assert task_by_gene2.shape[0] == task_by_gene.shape[0], "Number of tasks should remain the same"
+     assert rxn_by_gene2.shape[0] == rxn_by_gene.shape[0], "Number of reactions should remain the same"
+     assert task_by_rxn2.shape == task_by_rxn.shape, "task_by_rxn shape should remain the same"
+-    assert adata2.shape == adata.shape, "adata shape should remain the same"
+\ No newline at end of file
++    assert adata2.shape == adata.shape, "adata shape should remain the same"
++
++def test_duplicated_gene_names():
++    # adata with a duplicated gene name (e.g. no var_names_make_unique(), or two
++    # gene names collapsed into one by CORRECT_GENES)
++    adata = create_controlled_adata()
++    adata = adata[:, ['gene1', 'gene2', 'gene3']].copy()
++    adata.var_names = ['gene1', 'gene2', 'gene1']
++
++    gpr_dict_expected = create_controlled_gpr_dict()
++    str_gpr_dict_expected = {k: v._ast2str(v) for k, v in gpr_dict_expected.items()}
++    gpr_info = pd.DataFrame.from_dict(str_gpr_dict_expected, orient='index').reset_index()
++    gpr_info.columns = ['Reaction', 'GPR-symbol']
++
++    adata2, gpr_rules, task_by_gene2, rxn_by_gene2, task_by_rxn2 = preprocess_inputs(
++        adata, gpr_info, create_controlled_task_by_gene(), create_controlled_rxn_by_gene(),
++        create_controlled_task_by_rxn()
++    )
++
++    assert adata2.var_names.is_unique, "Duplicated gene names should have been dropped"
++    assert list(adata2.var_names) == ['gene1', 'gene2'], "The first occurrence should be kept"
++    # The duplicate carried gene3's values, so the kept gene1 must be the original one
++    assert adata2[:, 'gene1'].X.toarray().flatten().tolist() == [1, 3, 5, 7]
++
++
++def test_duplicated_gene_names_after_correction():
++    # adata carrying both the old and the new symbol of the same gene (e.g. ADSS
++    # and ADSS2): CORRECT_GENES collapses them into one name
++    import numpy as np
++    import scanpy as sc
++    from scipy import sparse
++
++    X = np.array([[1, 2, 0, 100],
++                  [3, 4, 2, 200],
++                  [5, 6, 10, 300],
++                  [7, 8, 6, 400]], dtype=float)
++    adata = sc.AnnData(X=sparse.csr_matrix(X))
++    adata.var_names = ['ADSS', 'gene2', 'gene3', 'ADSS2']
++    adata.obs_names = ['cell1', 'cell2', 'cell3', 'cell4']
++
++    # Database where the gene is stored under its current symbol (ADSS2)
++    gpr_dict_expected = create_controlled_gpr_dict()
++    str_gpr_dict_expected = {k: v._ast2str(v).replace('gene1', 'ADSS2') for k, v in gpr_dict_expected.items()}
++    gpr_info = pd.DataFrame.from_dict(str_gpr_dict_expected, orient='index').reset_index()
++    gpr_info.columns = ['Reaction', 'GPR-symbol']
++    task_by_gene = create_controlled_task_by_gene().rename(columns={'gene1': 'ADSS2'})
++    rxn_by_gene = create_controlled_rxn_by_gene().rename(columns={'gene1': 'ADSS2'})
++    task_by_rxn = create_controlled_task_by_rxn()
++
++    adata2, gpr_rules, task_by_gene2, rxn_by_gene2, task_by_rxn2 = preprocess_inputs(
++        adata, gpr_info, task_by_gene, rxn_by_gene, task_by_rxn, correction_organism='human'
++    )
++
++    assert adata2.var_names.is_unique, "Collapsed gene names should have been deduplicated"
++    assert sorted(adata2.var_names) == ['ADSS2', 'gene2', 'gene3']
++    # ADSS (first occurrence) is the one kept, not the ADSS2 column
++    assert adata2[:, 'ADSS2'].X.toarray().flatten().tolist() == [1, 3, 5, 7]
++    assert len(gpr_rules) == 4, "All reactions should be kept"
++
++
++def test_no_duplicated_gene_names_unchanged():
++    # The dedup guard must be a no-op when gene names are already unique
++    adata = create_controlled_adata()
++    gpr_dict_expected = create_controlled_gpr_dict()
++    str_gpr_dict_expected = {k: v._ast2str(v) for k, v in gpr_dict_expected.items()}
++    gpr_info = pd.DataFrame.from_dict(str_gpr_dict_expected, orient='index').reset_index()
++    gpr_info.columns = ['Reaction', 'GPR-symbol']
++
++    adata2, gpr_rules, _, _, _ = preprocess_inputs(
++        adata, gpr_info, create_controlled_task_by_gene(), create_controlled_rxn_by_gene(),
++        create_controlled_task_by_rxn(), verbose=False
++    )
++
++    assert list(adata2.var_names) == list(adata.var_names), "No gene should be dropped"
++    assert (adata2.X.toarray() == adata.X.toarray()).all(), "Expression values should be unchanged"
+diff --git a/sccellfie/sccellfie_pipeline.py b/sccellfie/sccellfie_pipeline.py
+index 9b5e2cb..4560c07 100644
+--- a/sccellfie/sccellfie_pipeline.py
++++ b/sccellfie/sccellfie_pipeline.py
+@@ -353,6 +353,10 @@ def process_chunk(adata, sccellfie_db, n_counts_col, smooth_cells, alpha, chunk_
+         correction_dict = CORRECT_GENES[organism]
+         correction_dict = {k: v for k, v in correction_dict.items() if v in met_genes}
+         adata.var.index = [correction_dict[g] if g in correction_dict.keys() else g for g in adata.var.index]
++        # Keep the first of any duplicated name, otherwise slicing by name below fails
++        dups = adata.var_names.duplicated(keep='first')
++        if dups.any():
++            adata = adata[:, ~dups]
+         # Filter genes for subsequent groups
+         adata = adata[:, met_genes]
+         preprocessed_db['adata'] = adata
+diff --git a/sccellfie/tests/test_sccellfie_pipeline.py b/sccellfie/tests/test_sccellfie_pipeline.py
+index c39118d..2657b5c 100644
+--- a/sccellfie/tests/test_sccellfie_pipeline.py
++++ b/sccellfie/tests/test_sccellfie_pipeline.py
+@@ -124,6 +124,41 @@ def test_run_sccellfie_pipeline_with_groups(random_adata_with_neighbors, sccellf
+         assert (tmp_path / f"test_output_group_{group}.h5ad").exists()
+ 
+ 
++def test_run_sccellfie_pipeline_with_duplicated_genes(sccellfie_db, tmp_path):
++    # adata whose var_names are not unique (e.g. var_names_make_unique() was never
++    # run, or two symbols collapsed by CORRECT_GENES): every group must still run
++    adata = create_random_adata(n_obs=100, n_vars=4, n_clusters=5)
++    adata.raw = None
++    adata.var_names = ['gene1', 'gene2', 'gene3', 'gene1']
++    adata = add_toy_neighbors(adata)
++    adata.obs['group'] = np.random.choice(['A', 'B', 'C'], size=adata.n_obs)
++
++    run_sccellfie_pipeline(
++        adata=adata,
++        organism='human',
++        sccellfie_data_folder=None,
++        sccellfie_db=sccellfie_db,
++        n_counts_col='total_counts',
++        process_by_group=True,
++        groupby='group',
++        neighbors_key='neighbors',
++        n_neighbors=10,
++        batch_key=None,
++        threshold_key='global',
++        smooth_cells=True,
++        alpha=0.33,
++        chunk_size=5000,
++        disable_pbar=True,
++        save_folder=str(tmp_path),
++        save_filename='test_output_dups',
++        verbose=False
++    )
++
++    # All groups processed despite the duplicated gene name
++    for group in ['A', 'B', 'C']:
++        assert (tmp_path / f"test_output_dups_{group}.h5ad").exists()
++
++
+ # Neighbors pipeline
+ @pytest.fixture
+ def mock_adata():

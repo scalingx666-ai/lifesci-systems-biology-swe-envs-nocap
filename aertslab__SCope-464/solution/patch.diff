@@ -1,0 +1,17 @@
+diff --git a/server/run-dev-env.sh b/server/run-dev-env.sh
+index 9cf13907..33ce5502 100755
+--- a/server/run-dev-env.sh
++++ b/server/run-dev-env.sh
+@@ -1,5 +1,12 @@
+ #!/bin/bash
+ 
++echo "****************************************************************************************"
++echo "* WARNING: THIS SCRIPT SHOULD ONLY BE USED TO SET UP AND RUN A DEVELOPMENT ENVIRONMENT *"
++echo "*                      !! DO NOT USE THIS SCRIPT IN PRODUCTION !!                      *"
++echo "****************************************************************************************"
++
++export DATAHASHSECRET="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ab"
++
+ poetry run dotenv run alembic upgrade head
+ 
+ poetry run dotenv run hypercorn --log-level=debug main:scope_api --reload

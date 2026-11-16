@@ -1,0 +1,72 @@
+version = "1.0"
+
+[task]
+name = "default/aertslab__SCope-304"
+description = "Feature/246 mvp app state tracking with redux"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "SCope",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aertslab/SCope"
+ref = "32f223390191bdcfac6cbb4db7547515c1838f65"
+reference = "https://github.com/aertslab/SCope/pull/304"
+source_access = "auto"
+built_at = "2026-11-15T19:38:57.248432+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:42c438f4d4df022239ae7eed5f541ca7ece39618cf135ec0f6b3f37e5a7ed21e"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2020-07-10T13:21:18Z"
+diff_format = "unified"
+context_files = [
+    "index.html",
+    "package-lock.json",
+    "package.json",
+    "src/components/App.jsx",
+    "src/main.tsx",
+    "src/redux/actionTypes.ts",
+    "src/redux/actions.ts",
+    "src/redux/reducers/index.ts",
+    "src/redux/reducers/main.ts",
+    "src/redux/store.ts",
+    "src/redux/types.ts",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 2066
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

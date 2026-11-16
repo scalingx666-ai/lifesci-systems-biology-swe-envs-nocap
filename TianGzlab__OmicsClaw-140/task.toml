@@ -1,0 +1,63 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-140"
+description = "feat(skill_lint): require Skip when/if/for clause in v2 descriptions (PR-eval of skill rework)"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "5cf97d730a83f618e5a37fa9a8dbeb09b58f7727"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/140"
+source_access = "auto"
+built_at = "2026-11-15T18:17:40.655380+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:3415d7b3c5939e0e9fe1fb3b8b64f00d4e3db7ce2496fab55d035768ba1919b6"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-05-10T08:16:01Z"
+diff_format = "unified"
+context_files = [
+    "scripts/skill_lint.py",
+    "tests/test_skill_lint.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 85
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

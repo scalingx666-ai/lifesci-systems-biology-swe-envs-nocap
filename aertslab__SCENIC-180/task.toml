@@ -1,0 +1,64 @@
+version = "1.0"
+
+[task]
+name = "default/aertslab__SCENIC-180"
+description = "rm feather package"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "SCENIC",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aertslab/SCENIC"
+ref = "7bb897ef64ad59c49182d7732c2946901c3f127c"
+reference = "https://github.com/aertslab/SCENIC/pull/180"
+source_access = "auto"
+built_at = "2026-11-15T11:57:45.048595+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:5f9c6fc749f94cc486a0ef3a37b1edfdc0128be419274b4b700bb7ca55cec730"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2021-03-23T13:28:55Z"
+diff_format = "unified"
+context_files = [
+    "R/class_ScenicOptions.R",
+    "R/runSCENIC_2_createRegulons.R",
+    "R/runSCENIC_2_createRegulons_Original.R",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 33
+difficulty = "medium"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

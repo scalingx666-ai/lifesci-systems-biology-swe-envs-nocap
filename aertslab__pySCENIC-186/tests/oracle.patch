@@ -1,0 +1,97 @@
+diff --git a/README.rst b/README.rst
+index 63741af..7dd2f9e 100644
+--- a/README.rst
++++ b/README.rst
+@@ -33,7 +33,7 @@ News and releases
+ 0.10.0 | 2020-02-27
+ ^^^^^^^^^^^^^^^^^^^
+ 
+-* Added a helper script `arboreto_with_multiprocessing.py <https://github.com/aertslab/pySCENIC/blob/master/scripts/arboreto_with_multiprocessing.py>`_ that runs the Arboreto GRN algorithms (GRNBoost2, GENIE3) without Dask for compatibility.
++* Added a helper script `arboreto_with_multiprocessing.py <https://github.com/aertslab/pySCENIC/blob/master/src/pyscenic/cli/arboreto_with_multiprocessing.py>`_ that runs the Arboreto GRN algorithms (GRNBoost2, GENIE3) without Dask for compatibility.
+ 
+ * Ability to set a fixed seed in both the AUCell step and in the calculation of regulon thresholds (CLI parameter :code:`--seed`; aucell function parameter :code:`seed`).
+ 
+diff --git a/docs/faq.rst b/docs/faq.rst
+index d65a5b5..62a903c 100644
+--- a/docs/faq.rst
++++ b/docs/faq.rst
+@@ -14,7 +14,7 @@ It is recommended to use the older version of Dask and Distributed for stability
+ 
+ 
+ But in many cases this still results in issues with the GRN step.
+-An alternative is to use the multiprocessing implementation of Arboreto recently included in pySCENIC (`arboreto_with_multiprocessing.py <https://github.com/aertslab/pySCENIC/blob/master/scripts/arboreto_with_multiprocessing.py>`_).
++An alternative is to use the multiprocessing implementation of Arboreto recently included in pySCENIC (`arboreto_with_multiprocessing.py <https://github.com/aertslab/pySCENIC/blob/master/src/pyscenic/cli/arboreto_with_multiprocessing.py>`_).
+ This script uses the Arboreto and pySCENIC codebase to run GRNBoost2 (or GENIE3) without Dask.
+ The eliminates the possibility of running the GRN step across multiple nodes, but brings provides additional stability.
+ The run time is generally equivalent to the Dask implementation using the same number of workers.
+diff --git a/setup.py b/setup.py
+index d483792..e6a4ad4 100644
+--- a/setup.py
++++ b/setup.py
+@@ -78,6 +78,7 @@ def read_requirements(fname):
+     py_modules=[os.path.splitext(os.path.basename(path))[0] for path in glob.glob('src/*.py')],
+     include_package_data=True,
+     install_requires=read_requirements('requirements.txt'),
++    scripts=['src/pyscenic/cli/arboreto_with_multiprocessing.py'],
+     entry_points = {
+         'console_scripts': ['pyscenic = pyscenic.cli.pyscenic:main',
+                             'db2feather = pyscenic.cli.db2feather:main',
+@@ -85,4 +86,5 @@ def read_requirements(fname):
+                             'invertdb = pyscenic.cli.invertdb:main',
+                             'gmt2regions = pyscenic.cli.gmt2regions:main'],
+     }
+-)
+\ No newline at end of file
++)
++
+diff --git a/scripts/arboreto_with_multiprocessing.py b/src/pyscenic/cli/arboreto_with_multiprocessing.py
+similarity index 100%
+rename from scripts/arboreto_with_multiprocessing.py
+rename to src/pyscenic/cli/arboreto_with_multiprocessing.py
+diff --git a/src/pyscenic/transform.py b/src/pyscenic/transform.py
+index 5ea86dd..acdf964 100644
+--- a/src/pyscenic/transform.py
++++ b/src/pyscenic/transform.py
+@@ -124,6 +124,11 @@ def module2features_auc1st_impl(db: Type[RankingDatabase], module: Regulon, moti
+     features, genes, rankings = df.index.values, df.columns.values, df.values
+     weights = np.asarray([module[gene] for gene in genes]) if weighted_recovery else np.ones(len(genes))
+ 
++    # include check for modules with no genes that could be mapped to the db. This can happen when including non protein-coding genes in the expression matrix.
++    if(df.empty):
++        LOGGER.warning("No genes in module {} could be mapped to {}. Skipping this module.".format(module.name, db.name))
++        return pd.DataFrame(), None, None, genes, None
++
+     # Calculate recovery curves, AUC and NES values.
+     # For fast unweighted implementation so weights to None.
+     aucs = calc_aucs(df, db.total_genes, weights, auc_threshold)
+@@ -300,6 +305,7 @@ def df2regulons(df, save_columns=[]) -> Sequence[Regulon]:
+     :return: A sequence of regulons.
+     """
+     
++    assert not df.empty, 'Signatures dataframe is empty!'
+     print("Create regulons from a dataframe of enriched features.")
+     print("Additional columns saved: {}".format(save_columns))
+ 
+diff --git a/src/pyscenic/utils.py b/src/pyscenic/utils.py
+index 79d0d1a..ce0effe 100644
+--- a/src/pyscenic/utils.py
++++ b/src/pyscenic/utils.py
+@@ -263,6 +263,9 @@ def iter_modules(adjc, context):
+ 
+         # Add correlation column and create two disjoint set of adjacencies.
+         LOGGER.info("Calculating Pearson correlations.")
++        # test for genes present in the adjacencies but not present in the expression matrix:
++        unique_adj_genes = set(adjacencies[COLUMN_NAME_TF]).union(set(adjacencies[COLUMN_NAME_TARGET])) - set(ex_mtx.columns)
++        assert len(unique_adj_genes)==0, f"Found {len(unique_adj_genes)} genes present in the network (adjacencies) output, but missing from the expression matrix. Is this a different gene expression matrix?"
+         LOGGER.warn(f"Note on correlation calculation: the default behaviour for calculating the correlations has changed after pySCENIC verion 0.9.16. Previously, the default was to calculate the correlation between a TF and target gene using only cells with non-zero expression values (mask_dropouts=True). The current default is now to use all cells to match the behavior of the R verision of SCENIC. The original settings can be retained by setting 'rho_mask_dropouts=True' in the modules_from_adjacencies function, or '--mask_dropouts' from the CLI.\n\tDropout masking is currently set to [{rho_mask_dropouts}].")
+         adjacencies = add_correlation(adjacencies, ex_mtx,
+                                   rho_threshold=rho_threshold, mask_dropouts=rho_mask_dropouts)
+@@ -316,7 +319,7 @@ def add_motif_url(df: pd.DataFrame, base_url: str):
+     :param base_url:
+     :return:
+     """
+-    df[("Enrichment", COLUMN_NAME_MOTIF_URL)] = list(map(partial(urljoin, base=base_url), df.index.get_level_values(COLUMN_NAME_MOTIF_ID)))
++    df[("Enrichment", COLUMN_NAME_MOTIF_URL)] = list(map(partial(urljoin, base_url), df.index.get_level_values(COLUMN_NAME_MOTIF_ID)))
+     return df
+ 
+ 

@@ -1,0 +1,70 @@
+version = "1.0"
+
+[task]
+name = "default/aertslab__SCope-402"
+description = "Add labels for clusterings"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "SCope",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aertslab/SCope"
+ref = "caf34c642f7c7be71c64fdef3d6342855fa47937"
+reference = "https://github.com/aertslab/SCope/pull/402"
+source_access = "auto"
+built_at = "2026-11-15T19:38:02.661205+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:ed73ad4a59a17d4372c0bcee21f1f6ba6cfd39c1013da5616638e6a92d843bcf"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2021-01-15T12:38:45Z"
+diff_format = "unified"
+context_files = [
+    "opt/scopeserver/dataserver/modules/gserver/GServer.py",
+    "opt/scopeserver/dataserver/utils/cell_color_by_features.py",
+    "opt/scopeserver/dataserver/utils/labels.py",
+    "opt/scopeserver/dataserver/utils/loom.py",
+    "opt/scopeserver/dataserver/utils/proto.py",
+    "opt/scopeserver/dataserver/utils/search.py",
+    "opt/scopeserver/gen_test_loom.py",
+    "opt/test/test_labels.py",
+    "src/components/common/Viewer.jsx",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 437
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

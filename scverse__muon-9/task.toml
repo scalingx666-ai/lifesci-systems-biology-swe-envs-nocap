@@ -1,0 +1,68 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__muon-9"
+description = "Implement DSB normalization for CiteSEQ data (closes #4)"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "muon",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/muon"
+ref = "92bd0287614fcd0f92a52993bd13deab43eeadb1"
+reference = "https://github.com/scverse/muon/pull/9"
+source_access = "auto"
+built_at = "2026-11-15T17:00:49.709181+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:8e135055094a7900b26ed3f331103fd4794204f36daedf0a1157768c2babe3da"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2020-10-16T19:23:58Z"
+diff_format = "unified"
+context_files = [
+    "docs/source/api/index.md",
+    "muon/__init__.py",
+    "muon/_core/mudata.py",
+    "muon/_prot/__init__.py",
+    "muon/_prot/io.py",
+    "muon/_prot/preproc.py",
+    "setup.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 199
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

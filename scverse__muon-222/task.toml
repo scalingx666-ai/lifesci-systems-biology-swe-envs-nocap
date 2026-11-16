@@ -1,0 +1,64 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__muon-222"
+description = "Bump the actions-deps group with 3 updates"
+
+[metadata]
+difficulty = "small"
+category = "bugfix"
+keywords = [
+    "muon",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/muon"
+ref = "b825dbd0bfd1bbaa5b257ab188dd6aa17ac4f27b"
+reference = "https://github.com/scverse/muon/pull/222"
+source_access = "auto"
+built_at = "2026-11-15T16:59:33.560750+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:46aa50cbf2c78307c8fd1cdadde290f5673f2ce218442c5128b9fea06e18b3b9"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-08-24T08:01:42Z"
+diff_format = "unified"
+context_files = [
+    ".github/workflows/build.yaml",
+    ".github/workflows/release.yaml",
+    ".github/workflows/test.yaml",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 14
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

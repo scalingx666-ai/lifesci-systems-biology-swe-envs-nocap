@@ -1,0 +1,25 @@
+diff --git a/opt/scopeserver/dataserver/utils/cell_color_by_features.py b/opt/scopeserver/dataserver/utils/cell_color_by_features.py
+index 84bcee3b..ca804af6 100644
+--- a/opt/scopeserver/dataserver/utils/cell_color_by_features.py
++++ b/opt/scopeserver/dataserver/utils/cell_color_by_features.py
+@@ -123,7 +123,7 @@ def setRegulonFeature(self, request, feature, n):
+             else:
+                 self.v_max[n], self.max_v_max[n] = CellColorByFeatures.get_vmax(vals)
+             if request.scaleThresholded:
+-                vals = [auc if auc >= request.threshold[n] else 0 for auc in vals]
++                vals = np.array([auc if auc >= request.threshold[n] else 0 for auc in vals])
+ 
+                 vals = CellColorByFeatures.normalise_vals(vals, self.v_max[n], request.vmin[n])
+                 self.features.append(vals)
+diff --git a/src/components/common/Viewer.jsx b/src/components/common/Viewer.jsx
+index 845bbbb6..dadca414 100644
+--- a/src/components/common/Viewer.jsx
++++ b/src/components/common/Viewer.jsx
+@@ -1077,6 +1077,7 @@ export default class Viewer extends Component {
+             scaleThresholded: this.props.scale,
+             annotation: queryAnnotations,
+             vmax: [0, 0, 0],
++            vmin: [0, 0, 0],
+             logic: superposition,
+         };
+         if (this.props.customScale && scale) {

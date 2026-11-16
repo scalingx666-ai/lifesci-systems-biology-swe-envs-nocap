@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/aertslab__SCope-282"
+description = "Fix regression in b855e9d"
+
+[metadata]
+difficulty = "easy"
+category = "bugfix"
+keywords = [
+    "SCope",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aertslab/SCope"
+ref = "eef083a149c15abd4b896bddc1032c0a5e363b70"
+reference = "https://github.com/aertslab/SCope/pull/282"
+source_access = "auto"
+built_at = "2026-11-15T19:39:06.725832+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:d00c1afc0ee118b85878117e60d02656b255daed2d89dd5b54668910791fa68e"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2020-03-25T09:49:55Z"
+diff_format = "unified"
+context_files = [
+    "src/components/common/ViewerSidebar.jsx",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 2
+difficulty = "trivial"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

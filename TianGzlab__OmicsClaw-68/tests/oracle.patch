@@ -1,0 +1,264 @@
+diff --git a/omicsclaw/r_scripts/sc_gsea_r.R b/omicsclaw/r_scripts/sc_gsea_r.R
+index a14248df..8bb35db8 100644
+--- a/omicsclaw/r_scripts/sc_gsea_r.R
++++ b/omicsclaw/r_scripts/sc_gsea_r.R
+@@ -1,7 +1,7 @@
+ #!/usr/bin/env Rscript
+ # sc_gsea_r.R — clusterProfiler GSEA via fgsea backend
+ #
+-# CLI: Rscript sc_gsea_r.R <de_csv> <output_dir> [species] [db] [score_type]
++# CLI: Rscript sc_gsea_r.R <de_csv> <output_dir> [species] [db] [score_type] [min_size] [max_size]
+ #
+ # de_csv columns: gene, avg_log2FC, and a group column (auto-detected)
+ # Output: gsea_r_results.csv with columns:
+@@ -19,6 +19,8 @@ output_dir  <- args[2]
+ species     <- if (length(args) >= 3) args[3] else "Homo_sapiens"
+ db          <- if (length(args) >= 4) args[4] else "GO_BP"
+ score_type  <- if (length(args) >= 5) args[5] else "std"
++min_gs_size <- as.integer(if (length(args) >= 6) args[6] else 10)
++max_gs_size <- as.integer(if (length(args) >= 7) args[7] else 500)
+ 
+ if (!dir.exists(output_dir)) {
+   dir.create(output_dir, recursive = TRUE)
+@@ -255,8 +257,8 @@ tryCatch({
+         res <- clusterProfiler::gseKEGG(
+           geneList    = entrez_ranks,
+           organism    = kegg_organism,
+-          minGSSize   = 10,
+-          maxGSSize   = 500,
++          minGSSize   = min_gs_size,
++          maxGSSize   = max_gs_size,
+           pvalueCutoff = 1.0,
+           scoreType   = score_type,
+           verbose     = FALSE
+@@ -265,8 +267,8 @@ tryCatch({
+         res <- clusterProfiler::GSEA(
+           geneList   = ranks,
+           TERM2GENE  = term2gene,
+-          minGSSize  = 10,
+-          maxGSSize  = 500,
++          minGSSize  = min_gs_size,
++          maxGSSize  = max_gs_size,
+           pvalueCutoff = 1.0,
+           scoreType  = score_type,
+           by         = "fgsea",
+@@ -339,8 +341,8 @@ tryCatch({
+           res <- clusterProfiler::GSEA(
+             geneList   = ranks,
+             TERM2GENE  = synthetic_t2g,
+-            minGSSize  = 5,
+-            maxGSSize  = 500,
++            minGSSize  = min_gs_size,
++            maxGSSize  = max_gs_size,
+             pvalueCutoff = 1.0,
+             scoreType  = score_type,
+             by         = "fgsea",
+diff --git a/omicsclaw/r_scripts/sc_gsva_r.R b/omicsclaw/r_scripts/sc_gsva_r.R
+index 4382d376..a61cd9ba 100644
+--- a/omicsclaw/r_scripts/sc_gsva_r.R
++++ b/omicsclaw/r_scripts/sc_gsva_r.R
+@@ -24,6 +24,8 @@ species        <- if (length(args) >= 3) args[3] else "Homo_sapiens"
+ db             <- if (length(args) >= 4) args[4] else "GO_BP"
+ gsva_method    <- if (length(args) >= 5) args[5] else "gsva"
+ group_by       <- if (length(args) >= 6) args[6] else "group"
++min_gs_size    <- as.integer(if (length(args) >= 7) args[7] else 5)
++max_gs_size    <- as.integer(if (length(args) >= 8) args[8] else 500)
+ 
+ if (!dir.exists(output_dir)) {
+   dir.create(output_dir, recursive = TRUE)
+@@ -157,13 +159,13 @@ tryCatch({
+ 
+   param <- switch(gsva_method,
+     "gsva"   = gsvaParam(exprData = expr_matrix, geneSets = gene_sets,
+-                         minSize = 5, maxSize = 500),
++                         minSize = min_gs_size, maxSize = max_gs_size),
+     "ssgsea" = ssgseaParam(exprData = expr_matrix, geneSets = gene_sets,
+-                           minSize = 5),
++                           minSize = min_gs_size),
+     "zscore" = zscoreParam(exprData = expr_matrix, geneSets = gene_sets,
+-                           minSize = 5),
++                           minSize = min_gs_size),
+     # default to gsva
+-    gsvaParam(exprData = expr_matrix, geneSets = gene_sets, minSize = 5, maxSize = 500)
++    gsvaParam(exprData = expr_matrix, geneSets = gene_sets, minSize = min_gs_size, maxSize = max_gs_size)
+   )
+   # CRITICAL: SerialParam() prevents OOM from parallel workers
+   gsva_scores <- gsva(param, BPPARAM = SerialParam())
+diff --git a/skills/singlecell/_lib/differential_abundance.py b/skills/singlecell/_lib/differential_abundance.py
+index 6d460ac3..4b520b5e 100644
+--- a/skills/singlecell/_lib/differential_abundance.py
++++ b/skills/singlecell/_lib/differential_abundance.py
+@@ -125,6 +125,12 @@ def build_sample_celltype_table(
+ ) -> pd.DataFrame:
+     obs = adata.obs[[sample_key, celltype_key]].copy()
+     table = pd.crosstab(obs[sample_key], obs[celltype_key]).sort_index()
++    # Convert CategoricalIndex to plain Index — avoids pandas InvalidIndexError
++    # when downstream code does join/slice on the crosstab result.
++    if hasattr(table.index, "categories"):
++        table.index = table.index.astype(str)
++    if hasattr(table.columns, "categories"):
++        table.columns = table.columns.astype(str)
+     table.index.name = sample_key
+     return table
+ 
+diff --git a/skills/singlecell/_lib/viz/r/common.R b/skills/singlecell/_lib/viz/r/common.R
+index 36749a87..85098f7f 100644
+--- a/skills/singlecell/_lib/viz/r/common.R
++++ b/skills/singlecell/_lib/viz/r/common.R
+@@ -8,8 +8,9 @@ suppressPackageStartupMessages({
+   library(ggplot2)
+   library(scales)
+   library(RColorBrewer)
+-  library(viridis)
+ })
++.HAS_VIRIDIS <- requireNamespace("viridis", quietly = TRUE)
++if (.HAS_VIRIDIS) suppressPackageStartupMessages(library(viridis))
+ 
+ # ---- Theme ----
+ 
+@@ -40,7 +41,8 @@ theme_omics <- function(base_size = 11) {
+ #' @return Character vector of hex color strings.
+ omics_palette <- function(n, type = "categorical") {
+   if (type == "continuous") {
+-    return(viridis::viridis(n, direction = 1))
++    if (.HAS_VIRIDIS) return(viridis::viridis(n, direction = 1))
++    return(colorRampPalette(c("#440154", "#31688E", "#35B779", "#FDE725"))(n))
+   }
+   # categorical
+ 
+diff --git a/skills/singlecell/_lib/viz/r/communication.R b/skills/singlecell/_lib/viz/r/communication.R
+index 22ed7d39..b4c4a794 100644
+--- a/skills/singlecell/_lib/viz/r/communication.R
++++ b/skills/singlecell/_lib/viz/r/communication.R
+@@ -164,8 +164,8 @@ plot_ccc_network <- function(data_dir, out_path, params) {
+   tryCatch({
+     df <- .load_ccc_data(data_dir)
+ 
+-    # Filter to positive scores
+-    df <- df[df$score > 0, ]
++    # Filter to positive scores and remove self-loops (geom_curve requires distinct endpoints)
++    df <- df[df$score > 0 & df$source != df$target, ]
+ 
+     # Apply min_score filter
+     min_score <- as.numeric(params[["min_score"]] %||% 0)
+diff --git a/skills/singlecell/scrna/sc-enrichment/sc_enrichment.py b/skills/singlecell/scrna/sc-enrichment/sc_enrichment.py
+index fb61dbef..42b58219 100644
+--- a/skills/singlecell/scrna/sc-enrichment/sc_enrichment.py
++++ b/skills/singlecell/scrna/sc-enrichment/sc_enrichment.py
+@@ -83,19 +83,24 @@
+ SCRIPT_REL_PATH = "skills/singlecell/scrna/sc-enrichment/sc_enrichment.py"
+ 
+ # R Enhanced renderers for this skill.
+-# Key   = renderer name registered in viz/r/registry.R R_PLOT_REGISTRY
+-# Value = output filename (written to figures/r_enhanced/)
+-R_ENHANCED_PLOTS: dict[str, str] = {
++# Shared renderers always run; GSEA-specific renderers only run for gsea method.
++_R_ENHANCED_SHARED: dict[str, str] = {
+     "plot_enrichment_bar": "r_enrichment_bar.png",
++}
++_R_ENHANCED_GSEA: dict[str, str] = {
+     "plot_gsea_mountain": "r_gsea_mountain.png",
+     "plot_gsea_nes_heatmap": "r_gsea_nes_heatmap.png",
+ }
++# Full dict kept for template compatibility
++R_ENHANCED_PLOTS: dict[str, str] = {**_R_ENHANCED_SHARED, **_R_ENHANCED_GSEA}
+ 
+ 
+ def _render_r_enhanced(
+     output_dir: Path,
+     figure_data_dir: Path,
+     r_enhanced: bool,
++    *,
++    method: str = "ora",
+ ) -> list[str]:
+     """Run R Enhanced rendering pass. Always called after Python figures are complete."""
+     if not r_enhanced:
+@@ -103,8 +108,11 @@ def _render_r_enhanced(
+     from skills.singlecell._lib.viz.r import call_r_plot
+     r_figures_dir = output_dir / "figures" / "r_enhanced"
+     r_figures_dir.mkdir(parents=True, exist_ok=True)
++    plots = dict(_R_ENHANCED_SHARED)
++    if method == "gsea":
++        plots.update(_R_ENHANCED_GSEA)
+     r_figure_paths: list[str] = []
+-    for renderer, filename in R_ENHANCED_PLOTS.items():
++    for renderer, filename in plots.items():
+         out_path = r_figures_dir / filename
+         call_r_plot(renderer, figure_data_dir, out_path)
+         if out_path.exists():
+@@ -670,7 +678,9 @@ def _run_gsea_r(adata, ranking_df: pd.DataFrame, output_dir: Path, params: dict)
+     try:
+         runner.run_script(
+             r_script,
+-            args=[str(de_csv), str(r_work_dir), species, db, score_type],
++            args=[str(de_csv), str(r_work_dir), species, db, score_type,
++                  str(params.get("gsea_min_size", 10)),
++                  str(params.get("gsea_max_size", 500))],
+             expected_outputs=["gsea_r_results.csv"],
+             output_dir=r_work_dir,
+         )
+@@ -765,7 +775,9 @@ def _run_gsva_r(adata, groupby: str, output_dir: Path, params: dict) -> tuple[pd
+     try:
+         runner.run_script(
+             r_script,
+-            args=[str(group_expr_csv), str(r_work_dir), species, db, gsva_method, groupby],
++            args=[str(group_expr_csv), str(r_work_dir), species, db, gsva_method, groupby,
++                  str(params.get("gsea_min_size", 5)),
++                  str(params.get("gsea_max_size", 500))],
+             expected_outputs=["gsva_r_scores.csv"],
+             output_dir=r_work_dir,
+         )
+@@ -1284,6 +1296,7 @@ def main() -> None:
+             output_dir=output_dir,
+             figure_data_dir=output_dir / "figure_data",
+             r_enhanced=args.r_enhanced,
++            method="gsva",
+         )
+         if r_enhanced_figures:
+             result_data["r_enhanced_figures"] = r_enhanced_figures
+@@ -1490,6 +1503,7 @@ def main() -> None:
+         output_dir=output_dir,
+         figure_data_dir=output_dir / "figure_data",
+         r_enhanced=args.r_enhanced,
++        method=args.method,
+     )
+     if r_enhanced_figures:
+         result_data["r_enhanced_figures"] = r_enhanced_figures
+diff --git a/skills/singlecell/scrna/sc-gene-programs/sc_gene_programs.py b/skills/singlecell/scrna/sc-gene-programs/sc_gene_programs.py
+index 57c2bdee..03d2c908 100644
+--- a/skills/singlecell/scrna/sc-gene-programs/sc_gene_programs.py
++++ b/skills/singlecell/scrna/sc-gene-programs/sc_gene_programs.py
+@@ -372,6 +372,14 @@ def main() -> int:
+     tables_dir = output_dir / "tables"
+     tables_dir.mkdir(exist_ok=True)
+ 
++    # ---- Auto-fallback: if cnmf is requested but not installed, use nmf ----
++    if args.method == "cnmf":
++        try:
++            import cnmf  # noqa: F401
++        except ImportError:
++            logger.warning("cnmf package not installed. Falling back to --method nmf (sklearn NMF).")
++            args.method = "nmf"
++
+     # ---- Load data ----
+     if args.demo:
+         adata = make_demo_gene_program_adata(seed=args.seed)
+diff --git a/skills/singlecell/scrna/sc-metacell/sc_metacell.py b/skills/singlecell/scrna/sc-metacell/sc_metacell.py
+index 8a53396f..3bc0261d 100644
+--- a/skills/singlecell/scrna/sc-metacell/sc_metacell.py
++++ b/skills/singlecell/scrna/sc-metacell/sc_metacell.py
+@@ -288,6 +288,14 @@ def main() -> int:
+     figures_dir.mkdir(exist_ok=True)
+     tables_dir.mkdir(exist_ok=True)
+ 
++    # -- Auto-fallback: if seacells is requested but not installed, use kmeans --
++    if args.method == "seacells":
++        try:
++            import SEACells  # noqa: F401
++        except ImportError:
++            logger.warning("SEACells package not installed. Falling back to --method kmeans.")
++            args.method = "kmeans"
++
+     # -- Load data --
+     if args.demo:
+         adata = make_demo_metacell_adata(seed=args.seed)

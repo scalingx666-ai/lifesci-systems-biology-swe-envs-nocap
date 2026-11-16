@@ -1,0 +1,13 @@
+diff --git a/src/pyscenic/cli/pyscenic.py b/src/pyscenic/cli/pyscenic.py
+index 72c1047..cb2e715 100644
+--- a/src/pyscenic/cli/pyscenic.py
++++ b/src/pyscenic/cli/pyscenic.py
+@@ -228,6 +228,8 @@ def prune_targets_command(args):
+             client_or_address=args.mode,
+             module_chunksize=args.chunk_size,
+             num_workers=args.num_workers,
++            motif_similarity_fdr=args.max_similarity_fdr,
++            orthologuous_identity_threshold=args.min_orthologous_identity
+         )
+ 
+     LOGGER.info("Writing results to file.")

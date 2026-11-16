@@ -1,0 +1,74 @@
+version = "1.0"
+
+[task]
+name = "default/aertslab__SCope-484"
+description = "Fix some bugs found by SonarQube Scanner"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "SCope",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aertslab/SCope"
+ref = "93accefe4d2e9c1c262b78781d1ac2486f36f060"
+reference = "https://github.com/aertslab/SCope/pull/484"
+source_access = "auto"
+built_at = "2026-11-15T19:36:59.679151+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:631cedaf6fcee5f2f07b120da427bfbc0e23fd0264233086dd4c5136b97b55ef"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2021-08-22T19:04:42Z"
+diff_format = "unified"
+context_files = [
+    ".github/workflows/continuous-integration-server.yml",
+    "client/package.json",
+    "client/src/components/App.jsx",
+    "client/src/components/RightSidebar/index.tsx",
+    "client/src/components/common/API.jsx",
+    "client/src/components/common/CollaborativeAnnotation.jsx",
+    "client/src/components/common/Viewer.jsx",
+    "client/src/components/pages/Annotations.jsx",
+    "client/src/components/pages/Compare.jsx",
+    "client/src/components/pages/Compare.test.tsx",
+    "client/src/components/pages/compareHelper.ts",
+    "grpc-proxy-server/server.js",
+    "server/test/generate.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 757
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

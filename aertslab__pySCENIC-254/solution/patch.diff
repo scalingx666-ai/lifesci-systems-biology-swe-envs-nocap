@@ -1,0 +1,13 @@
+diff --git a/src/pyscenic/recovery.py b/src/pyscenic/recovery.py
+index 8f2ab27..9f59abb 100644
+--- a/src/pyscenic/recovery.py
++++ b/src/pyscenic/recovery.py
+@@ -179,7 +179,7 @@ def get_genes(rank_at_max):
+         # but is inline with the RcisTarget implementation.
+         filtered_idx = sranking <= rank_at_max
+         filtered_gene_ids = gene_ids[filtered_idx]
+-        return list(zip(filtered_gene_ids, weights[filtered_idx] if weights is not None else sranking[filtered_idx]))
++        return list(zip(filtered_gene_ids, weights[sorted_idx][filtered_idx] if weights is not None else sranking[filtered_idx]))
+ 
+     rank_at_max, n_recovered_genes = critical_point()
+     # noinspection PyTypeChecker

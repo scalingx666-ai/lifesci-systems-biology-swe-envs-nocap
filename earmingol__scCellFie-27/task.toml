@@ -1,0 +1,70 @@
+version = "1.0"
+
+[task]
+name = "default/earmingol__scCellFie-27"
+description = "Merging previous PRs"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "scCellFie",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "earmingol/scCellFie"
+ref = "c5c262a56d972b1a883653aae13bb9e0e99f7c18"
+reference = "https://github.com/earmingol/scCellFie/pull/27"
+source_access = "auto"
+built_at = "2026-11-15T19:42:10.989449+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:a663794ea4e07e77a73a58b90786c4581213f3e61aa3b02f932cffc844aa93ee"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-04-23T23:25:59Z"
+diff_format = "unified"
+context_files = [
+    "docs/source/index.rst",
+    "docs/source/notebooks/extended_quick_start.ipynb",
+    "docs/source/notebooks/tensor_factorization.ipynb",
+    "task_data/homo_sapiens/Task-Info.csv",
+    "task_data/homo_sapiens/Task_by_Gene.csv",
+    "task_data/homo_sapiens/Task_by_Rxn.csv",
+    "task_data/mus_musculus/Task-Info.csv",
+    "task_data/mus_musculus/Task_by_Gene.csv",
+    "task_data/mus_musculus/Task_by_Rxn.csv",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 950
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

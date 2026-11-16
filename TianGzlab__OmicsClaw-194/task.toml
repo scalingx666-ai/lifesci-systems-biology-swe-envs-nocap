@@ -1,0 +1,68 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-194"
+description = "fix(bot): clean up bot-core carve-out fallout (NameErrors + stale-reference + dead code)"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "ddd5a4441c58d1900e42949a6d4d7c18f04d8256"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/194"
+source_access = "auto"
+built_at = "2026-11-15T18:16:49.883519+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:f1cd481c5c9c9ef71103520b99503418bd6c701d3424e60e8dbf2b6b025f0960"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-05-13T06:28:33Z"
+diff_format = "unified"
+context_files = [
+    "bot/core.py",
+    "bot/path_validation.py",
+    "bot/tool_executors.py",
+    "omicsclaw/knowledge/registry.py",
+    "tests/bot/test_tool_executors.py",
+    "tests/test_bot_core_import_behavior.py",
+    "tests/test_knowledge_registry.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 256
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

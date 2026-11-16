@@ -1,0 +1,27 @@
+diff --git a/src/components/pages/Compare.jsx b/src/components/pages/Compare.jsx
+index 22977c5e2..a647764cb 100644
+--- a/src/components/pages/Compare.jsx
++++ b/src/components/pages/Compare.jsx
+@@ -1,5 +1,6 @@
+ import _ from 'lodash';
+ import * as d3 from 'd3';
++import * as R from 'ramda';
+ import box2 from '../../js/box2.js';
+ import React, { Component } from 'react';
+ import { DragDropContext } from 'react-dnd';
+@@ -401,10 +402,11 @@ class Compare extends Component {
+                                             activeFeatures={activeFeatures}
+                                             superposition={superposition}
+                                             activeCoordinates={
+-                                                configuration == 'multi'
+-                                                    ? multiCoordinates[j]
+-                                                        ? multiCoordinates[j]
+-                                                        : -1
++                                                configuration === 'multi'
++                                                    ? R.defaultTo(
++                                                          -1,
++                                                          multiCoordinates[j]
++                                                      )
+                                                     : multiCoordinates[0]
+                                             }
+                                             activeAnnotations={va}

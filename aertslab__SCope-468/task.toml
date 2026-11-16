@@ -1,0 +1,75 @@
+version = "1.0"
+
+[task]
+name = "default/aertslab__SCope-468"
+description = "Generate test loom data with Hypothesis"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "SCope",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aertslab/SCope"
+ref = "fac243958d1ff4d4a7a148c766511960645365da"
+reference = "https://github.com/aertslab/SCope/pull/468"
+source_access = "auto"
+built_at = "2026-11-15T19:37:13.959998+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:51daa13ef189e12b3097f8e14d5666244d707b70a2ff8d6e18ab756d82872f78"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2021-07-30T14:34:25Z"
+diff_format = "unified"
+context_files = [
+    ".github/workflows/continuous-integration-server.yml",
+    "server/poetry.lock",
+    "server/pyproject.toml",
+    "server/scopeserver/dataserver/modules/gserver/GServer.py",
+    "server/scopeserver/dataserver/modules/pserver/PServer.py",
+    "server/scopeserver/dataserver/utils/cell_color_by_features.py",
+    "server/scopeserver/dataserver/utils/loom.py",
+    "server/scopeserver/dataserver/utils/search_space.py",
+    "server/scopeserver/gen_test_loom.py",
+    "server/test/__init__.py",
+    "server/test/data/SCope_Test.loom",
+    "server/test/generate.py",
+    "server/test/test_labels.py",
+    "server/test/test_loom.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 1388
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

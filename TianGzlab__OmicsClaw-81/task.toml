@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/TianGzlab__OmicsClaw-81"
+description = "refactor(deps): empty singlecell extra, delegate to sub-extras"
+
+[metadata]
+difficulty = "small"
+category = "bugfix"
+keywords = [
+    "OmicsClaw",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "TianGzlab/OmicsClaw"
+ref = "07140a2565baf79edcf718f35370c6b677d9230c"
+reference = "https://github.com/TianGzlab/OmicsClaw/pull/81"
+source_access = "auto"
+built_at = "2026-11-15T18:18:12.115858+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:4612e00de9a5b8e9c0b6df721220b2a5cfcdb5f905a1c66a9ae64126910ea279"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-04-14T15:46:32Z"
+diff_format = "unified"
+context_files = [
+    "pyproject.toml",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 15
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

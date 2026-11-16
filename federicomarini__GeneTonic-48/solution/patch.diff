@@ -1,0 +1,74 @@
+diff --git a/DESCRIPTION b/DESCRIPTION
+index da097ce8..edeb9eac 100644
+--- a/DESCRIPTION
++++ b/DESCRIPTION
+@@ -1,8 +1,8 @@
+ Package: GeneTonic
+ Title: Enjoy Analyzing And Integrating The Results From Differential Expression 
+     Analysis And Functional Enrichment Analysis
+-Version: 2.3.0
+-Date: 2022-10-29
++Version: 2.3.2
++Date: 2023-03-11
+ Authors@R: 
+     c(
+         person(
+diff --git a/NEWS.md b/NEWS.md
+index 0f9b29f8..52064937 100644
+--- a/NEWS.md
++++ b/NEWS.md
+@@ -1,3 +1,13 @@
++# GeneTonic 2.4.0
++
++## New features
++
++* `enhance_table()` has now the possibility to plot the visual summaries as ridge lines
++
++## Other notes
++
++* Fortified the behavior of `gene_plot()` to fail early when providing an invalid value to the `intgroup` parameter
++
+ # GeneTonic 2.2.0
+ 
+ ## New features
+diff --git a/R/gene_plot.R b/R/gene_plot.R
+index fcc4878e..9c0e83bd 100644
+--- a/R/gene_plot.R
++++ b/R/gene_plot.R
+@@ -94,6 +94,13 @@ gene_plot <- function(dds,
+     res_enrich <- gtl$res_enrich
+     annotation_obj <- gtl$annotation_obj
+   }
++  
++  if (!intgroup %in% colnames(colData(dds))) {
++    stop("`intgroup` not found in the colData slot of the dds object",
++         "\nPlease specify one of the following: \n",
++         paste0(colnames(colData(dds)), collapse = ", ")
++         )
++  }
+ 
+   df <- get_expression_values(
+     dds = dds,
+diff --git a/tests/testthat/test-gene_plot.R b/tests/testthat/test-gene_plot.R
+index 68da5b60..cc208259 100644
+--- a/tests/testthat/test-gene_plot.R
++++ b/tests/testthat/test-gene_plot.R
+@@ -33,6 +33,18 @@ test_that("Basic gene plot is generated", {
+     gene = "ENSG00000285982"
+   )
+   expect_is(p3_gtl, "gg")
++  
++  expect_error({
++    gene_plot(
++      dds = dds_macrophage,
++      gene = "ENSG00000285982",
++      assay = "counts",
++      intgroup = "factor_not_there",
++      annotation_obj = anno_df,
++      transform = TRUE,
++      labels_repe
++    )
++  })
+ })
+ 
+ test_that("Enforcing plot types", {

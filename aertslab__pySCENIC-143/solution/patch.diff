@@ -1,0 +1,186 @@
+diff --git a/src/pyscenic/aucell.py b/src/pyscenic/aucell.py
+index 27afb56..ddb96f3 100644
+--- a/src/pyscenic/aucell.py
++++ b/src/pyscenic/aucell.py
+@@ -23,7 +23,7 @@
+ DTYPE_C = c_uint32
+ 
+ 
+-def create_rankings(ex_mtx: pd.DataFrame) -> pd.DataFrame:
++def create_rankings(ex_mtx: pd.DataFrame, seed=None) -> pd.DataFrame:
+     """
+     Create a whole genome rankings dataframe from a single cell expression profile dataframe.
+ 
+@@ -44,7 +44,7 @@ def create_rankings(ex_mtx: pd.DataFrame) -> pd.DataFrame:
+     #    # Run below statement multiple times to see effect of shuffling in case of a tie.
+     #    df.sample(frac=1.0, replace=False).rank(ascending=False, method='first', na_option='bottom').sort_index() - 1
+     #
+-    return ex_mtx.sample(frac=1.0, replace=False, axis=1).rank(axis=1, ascending=False, method='first', na_option='bottom').astype(DTYPE) - 1
++    return ex_mtx.sample(frac=1.0, replace=False, axis=1, random_state=seed).rank(axis=1, ascending=False, method='first', na_option='bottom').astype(DTYPE) - 1
+ 
+ 
+ def derive_auc_threshold(ex_mtx: pd.DataFrame) -> pd.DataFrame:
+@@ -140,6 +140,7 @@ def aucell4r(df_rnk: pd.DataFrame, signatures: Sequence[Type[GeneSignature]],
+ 
+ def aucell(exp_mtx: pd.DataFrame, signatures: Sequence[Type[GeneSignature]],
+            auc_threshold: float = 0.05, noweights: bool = False, normalize: bool = False,
++           seed=None,
+            num_workers: int = cpu_count()) -> pd.DataFrame:
+     """
+     Calculate enrichment of gene signatures for single cells.
+@@ -153,5 +154,5 @@ def aucell(exp_mtx: pd.DataFrame, signatures: Sequence[Type[GeneSignature]],
+     :param num_workers: The number of cores to use.
+     :return: A dataframe with the AUCs (n_cells x n_modules).
+     """
+-    return aucell4r(create_rankings(exp_mtx), signatures, auc_threshold, noweights, normalize, num_workers)
++    return aucell4r(create_rankings(exp_mtx, seed), signatures, auc_threshold, noweights, normalize, num_workers)
+ 
+diff --git a/src/pyscenic/binarization.py b/src/pyscenic/binarization.py
+index b1fae45..8c6a268 100644
+--- a/src/pyscenic/binarization.py
++++ b/src/pyscenic/binarization.py
+@@ -15,7 +15,7 @@
+ from multiprocessing import Pool
+ 
+ 
+-def derive_threshold(auc_mtx: pd.DataFrame, regulon_name: str, method: str = 'hdt') -> float:
++def derive_threshold(auc_mtx: pd.DataFrame, regulon_name: str, seed=None, method: str = 'hdt') -> float:
+     '''
+     Derive threshold on the AUC values of the given regulon to binarize the cells in two clusters: "on" versus "off"
+     state of the regulator.
+@@ -34,6 +34,9 @@ def derive_threshold(auc_mtx: pd.DataFrame, regulon_name: str, method: str = 'hd
+ 
+     data = auc_mtx[regulon_name].values
+ 
++    if seed:
++        np.random.seed(seed=seed)
++
+     def isbimodal(data, method):
+         if method == 'hdt':
+             # Use Hartigan's dip statistic to decide if distribution deviates from unimodality.
+@@ -42,8 +45,8 @@ def isbimodal(data, method):
+         else:
+             # Compare Bayesian Information Content of two Gaussian Mixture Models.
+             X = data.reshape(-1, 1)
+-            gmm2 = mixture.GaussianMixture(n_components=2, covariance_type='full').fit(X)
+-            gmm1 = mixture.GaussianMixture(n_components=1, covariance_type='full').fit(X)
++            gmm2 = mixture.GaussianMixture(n_components=2, covariance_type='full', random_state=seed).fit(X)
++            gmm1 = mixture.GaussianMixture(n_components=1, covariance_type='full', random_state=seed).fit(X)
+             return gmm2.bic(X) <= gmm1.bic(X)
+ 
+     if not isbimodal(data, method):
+@@ -52,7 +55,7 @@ def isbimodal(data, method):
+     else:
+         # Fit a two component Gaussian Mixture model on the AUC distribution using an Expectation-Maximization algorithm
+         # to identify the peaks in the distribution.
+-        gmm2 = mixture.GaussianMixture(n_components=2, covariance_type='full').fit(data.reshape(-1, 1))
++        gmm2 = mixture.GaussianMixture(n_components=2, covariance_type='full', random_state=seed).fit(data.reshape(-1, 1))
+         # For a bimodal distribution the threshold is defined as the "trough" in between the two peaks.
+         # This is solved as a minimization problem on the kernel smoothed density.
+         return minimize_scalar(fun=stats.gaussian_kde(data),
+@@ -60,7 +63,7 @@ def isbimodal(data, method):
+                                method='bounded').x[0]
+ 
+ 
+-def binarize(auc_mtx: pd.DataFrame, threshold_overides:Optional[Mapping[str,float]]=None, num_workers=1) -> (pd.DataFrame, pd.Series):
++def binarize(auc_mtx: pd.DataFrame, threshold_overides:Optional[Mapping[str,float]]=None, seed=None, num_workers=1) -> (pd.DataFrame, pd.Series):
+     """
+     "Binarize" the supplied AUC matrix, i.e. decide if for each cells in the matrix a regulon is active or not based
+     on the bimodal distribution of the AUC values for that regulon.
+@@ -69,9 +72,9 @@ def binarize(auc_mtx: pd.DataFrame, threshold_overides:Optional[Mapping[str,floa
+     :param threshold_overides: A dictionary that maps name of regulons to manually set thresholds.
+     :return: A "binarized" dataframe and a series containing the AUC threshold used for each regulon.
+     """
+-    def derive_thresholds(auc_mtx):
++    def derive_thresholds(auc_mtx, seed=seed):
+         with Pool( processes=num_workers ) as p:
+-            thrs = p.starmap( derive_threshold,  [ (auc_mtx, c) for c in auc_mtx.columns ] )
++            thrs = p.starmap( derive_threshold,  [ (auc_mtx, c, seed) for c in auc_mtx.columns ] )
+         return pd.Series(index=auc_mtx.columns, data=thrs)
+     thresholds = derive_thresholds(auc_mtx)
+     if threshold_overides is not None:
+diff --git a/src/pyscenic/cli/pyscenic.py b/src/pyscenic/cli/pyscenic.py
+index ab2e9f8..1db111f 100644
+--- a/src/pyscenic/cli/pyscenic.py
++++ b/src/pyscenic/cli/pyscenic.py
+@@ -190,6 +190,7 @@ def aucell_command(args):
+     auc_mtx = aucell(ex_mtx, signatures,
+                          auc_threshold=args.auc_threshold,
+                          noweights=(args.weights != 'yes'),
++                         seed=args.seed,
+                          num_workers=args.num_workers)
+ 
+     LOGGER.info("Writing results to file.")
+@@ -197,7 +198,7 @@ def aucell_command(args):
+     if extension == '.loom':
+         try:
+             copyfile(args.expression_mtx_fname.name, args.output.name)
+-            append_auc_mtx(args.output.name, auc_mtx, signatures, args.num_workers)
++            append_auc_mtx(args.output.name, auc_mtx, signatures, args.seed, args.num_workers)
+         except OSError as e:
+             LOGGER.error("Expression matrix should be provided in the loom file format.")
+             sys.exit(1)
+@@ -390,6 +391,8 @@ def create_argument_parser():
+     parser_aucell.add_argument('--num_workers',
+                        type=int, default=cpu_count(),
+                        help='The number of workers to use (default: {}).'.format(cpu_count()))
++    parser_aucell.add_argument('--seed', type=int, required=False, default=None,
++                            help='Seed for the expression matrix ranking step. The default is to use a random seed.')
+     add_recovery_parameters(parser_aucell)
+     add_loom_parameters(parser_aucell)
+     parser_aucell.set_defaults(func=aucell_command)
+diff --git a/src/pyscenic/cli/utils.py b/src/pyscenic/cli/utils.py
+index 804fdd3..2d5fe47 100644
+--- a/src/pyscenic/cli/utils.py
++++ b/src/pyscenic/cli/utils.py
+@@ -218,7 +218,7 @@ def compress_meta(meta):
+     return base64.b64encode(zlib.compress(json.dumps(meta).encode('ascii'))).decode('ascii')
+ 
+ 
+-def append_auc_mtx(fname: str, auc_mtx: pd.DataFrame, regulons: Sequence[Type[GeneSignature]], num_workers=1) -> None:
++def append_auc_mtx(fname: str, auc_mtx: pd.DataFrame, regulons: Sequence[Type[GeneSignature]], seed=None, num_workers=1) -> None:
+     """
+ 
+     Append AUC matrix to loom file.
+@@ -239,11 +239,11 @@ def fetch_logo(context):
+         name2logo = {}
+ 
+     # Binarize matrix for AUC thresholds.
+-    _, auc_thresholds = binarize(auc_mtx, num_workers=num_workers)
++    _, auc_thresholds = binarize(auc_mtx, seed=seed, num_workers=num_workers)
+     regulon_thresholds = [{"regulon": name,
+                            "defaultThresholdValue":(threshold if isinstance(threshold, float) else threshold[0]),
+-                           "defaultThresholdName": "guassian_mixture_split",
+-                           "allThresholds": {"guassian_mixture_split": (threshold if isinstance(threshold, float) else threshold[0])},
++                           "defaultThresholdName": "gaussian_mixture_split",
++                           "allThresholds": {"gaussian_mixture_split": (threshold if isinstance(threshold, float) else threshold[0])},
+                            "motifData": name2logo.get(name, "")} for name, threshold in auc_thresholds.iteritems()]
+ 
+     # Calculate the number of genes per cell.
+@@ -284,3 +284,4 @@ def create_structure_array(df):
+             meta_data = {}
+         meta_data["regulonThresholds"] = regulon_thresholds
+         ds.attrs[ATTRIBUTE_NAME_METADATA] = compress_meta(meta_data)
++
+diff --git a/src/pyscenic/export.py b/src/pyscenic/export.py
+index d94ad0e..b39f5e9 100644
+--- a/src/pyscenic/export.py
++++ b/src/pyscenic/export.py
+@@ -148,8 +148,8 @@ def fetch_logo(context):
+     name2logo = {reg.name: fetch_logo(reg.context) for reg in regulons}
+     regulon_thresholds = [{"regulon": name,
+                             "defaultThresholdValue":(threshold if isinstance(threshold, float) else threshold[0]),
+-                            "defaultThresholdName": "guassian_mixture_split",
+-                            "allThresholds": {"guassian_mixture_split": (threshold if isinstance(threshold, float) else threshold[0])},
++                            "defaultThresholdName": "gaussian_mixture_split",
++                            "allThresholds": {"gaussian_mixture_split": (threshold if isinstance(threshold, float) else threshold[0])},
+                             "motifData": name2logo.get(name, "")} for name, threshold in auc_thresholds.iteritems()]
+ 
+     general_attrs = {
+@@ -268,4 +268,4 @@ def export_regulons(regulons: Sequence[Regulon], fname: str) -> None:
+         for dst_name, edge_strength in regulon.gene2weight.items():
+             graph.add_node(dst_name, group=node_type, **regulon.context)
+             graph.add_edge(src_name, dst_name, weight=edge_strength, interaction=edge_type, **regulon.context)
+-    nx.readwrite.write_graphml(graph, fname)
+\ No newline at end of file
++    nx.readwrite.write_graphml(graph, fname)

@@ -1,0 +1,14 @@
+diff --git a/opt/scopeserver/dataserver/modules/gserver/GServer.py b/opt/scopeserver/dataserver/modules/gserver/GServer.py
+index 9e0c5075..bf11c222 100644
+--- a/opt/scopeserver/dataserver/modules/gserver/GServer.py
++++ b/opt/scopeserver/dataserver/modules/gserver/GServer.py
+@@ -977,6 +977,9 @@ def serve(run_event, config: Dict[str, Any]) -> None:
+     while run_event.is_set():
+         time.sleep(0.1)
+ 
++    for loom in scope.lfh.active_looms.values():
++        loom.get_connection().close()
++
+     # Write UUIDs to file here
+     scope.dfh.get_uuid_log().close()
+     scope.dfh.update_UUID_db()

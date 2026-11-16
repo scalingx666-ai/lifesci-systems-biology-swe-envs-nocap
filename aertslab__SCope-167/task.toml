@@ -1,0 +1,70 @@
+version = "1.0"
+
+[task]
+name = "default/aertslab__SCope-167"
+description = "165-download-subloom"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "SCope",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aertslab/SCope"
+ref = "4a67974074e32e3f70c1ead8618cf28e3d8609bd"
+reference = "https://github.com/aertslab/SCope/pull/167"
+source_access = "auto"
+built_at = "2026-11-15T19:40:05.311873+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:c46a1662f411ba7e85203a3eb1ab4beacf7d195f5b0a48f4cc7ba27acc15ea78"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2018-08-22T15:31:20Z"
+diff_format = "unified"
+context_files = [
+    "README.md",
+    "VERSION",
+    "opt/scopeserver/dataserver/modules/gserver/GServer.py",
+    "opt/scopeserver/utils/DataFileHandler.py",
+    "opt/scopeserver/utils/Loom.py",
+    "opt/scopeserver/utils/LoomFileHandler.py",
+    "opt/setup.py",
+    "package.json",
+    "src/components/common/ViewerSidebar.jsx",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 43
+difficulty = "medium"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

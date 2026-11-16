@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/smorabit__hdWGCNA-95"
+description = "New Function for DME -- PlotDMEslollipop"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "hdWGCNA",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "smorabit/hdWGCNA"
+ref = "ac70d3423844d9f41eafacd4ea5562bd4d2f1fb8"
+reference = "https://github.com/smorabit/hdWGCNA/pull/95"
+source_access = "auto"
+built_at = "2026-11-15T11:58:29.411133+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:c6ca333d81d9cdc549522eebec9109e1157c88ae271bf4631f304627469bc2e3"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2023-03-15T23:11:05Z"
+diff_format = "unified"
+context_files = [
+    "R/plotting.R",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 178
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0
