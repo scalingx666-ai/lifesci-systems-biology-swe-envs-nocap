@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/micom-dev__micom-157"
+description = "Bump codecov/codecov-action from 3.1.4 to 3.1.5"
+
+[metadata]
+difficulty = "easy"
+category = "bugfix"
+keywords = [
+    "micom",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "micom-dev/micom"
+ref = "2f5b425c2816aee90d5623b7d46f9a78c5c7fecf"
+reference = "https://github.com/micom-dev/micom/pull/157"
+source_access = "auto"
+built_at = "2026-11-17T23:03:38.655519+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:d9a248aad1c25f960380b196e4f4fc2f2afa4e01deba2d1418b5efdb97dc072f"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2024-01-29T05:43:49Z"
+diff_format = "unified"
+context_files = [
+    ".github/workflows/pythonpackage.yml",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 2
+difficulty = "trivial"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

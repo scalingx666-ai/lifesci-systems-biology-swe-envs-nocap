@@ -1,0 +1,13 @@
+diff --git a/workflow/Snakefile b/workflow/Snakefile
+index bf4de54..22a9e06 100644
+--- a/workflow/Snakefile
++++ b/workflow/Snakefile
+@@ -586,7 +586,7 @@ rule crossMapParallel:
+ 
+         # Cleanup temp folder
+         echo -e "\nRemoving temporary directory {config[path][scratch]}/{config[folder][kallisto]}/${{focal}}_${{mapping}} ... "
+-        cd ..
++        cd -
+         rm -r {config[path][scratch]}/{config[folder][kallisto]}/${{focal}}_${{mapping}}
+         """
+ 

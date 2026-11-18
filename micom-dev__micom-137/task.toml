@@ -1,0 +1,64 @@
+version = "1.0"
+
+[task]
+name = "default/micom-dev__micom-137"
+description = "Indicate tested comparison or covariate in test output"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "micom",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "micom-dev/micom"
+ref = "47b5f7fcab94ad142b94cd2f31552e9efe772e34"
+reference = "https://github.com/micom-dev/micom/pull/137"
+source_access = "auto"
+built_at = "2026-11-17T23:03:50.706318+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:922bf30bafd0acd5476ed0788c3436c48cdab0650426e2ec80629413ab3aee2f"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2023-09-18T18:13:51Z"
+diff_format = "unified"
+context_files = [
+    "micom/duality.py",
+    "micom/stats.py",
+    "tests/test_stats.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 26
+difficulty = "medium"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

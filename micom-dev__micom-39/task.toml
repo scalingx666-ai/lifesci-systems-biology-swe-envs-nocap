@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/micom-dev__micom-39"
+description = "Fix #37 by allowing the user to define the compression..."
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "micom",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "micom-dev/micom"
+ref = "5101fed4accddf5604e5f26438b618c75e3152a2"
+reference = "https://github.com/micom-dev/micom/pull/39"
+source_access = "auto"
+built_at = "2026-11-17T23:04:32.261440+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:8f3b8ad0b3fb02d2a956ea384497e7e8ad00fe51db88b26c15688313bd7ca490"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2021-07-07T17:20:00Z"
+diff_format = "unified"
+context_files = [
+    "micom/workflows/build.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 48
+difficulty = "medium"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

@@ -1,0 +1,13 @@
+diff --git a/.github/workflows/pythonpackage.yml b/.github/workflows/pythonpackage.yml
+index 7acb473d..2fb941c1 100644
+--- a/.github/workflows/pythonpackage.yml
++++ b/.github/workflows/pythonpackage.yml
+@@ -48,7 +48,7 @@ jobs:
+         pytest --cov=micom --cov-report=xml
+     - name: Upload to codecov
+       if: matrix.os == 'ubuntu-latest' && matrix.python-version == 3.8
+-      uses: codecov/codecov-action@v2.0.3
++      uses: codecov/codecov-action@v2.1.0
+ 
+   release:
+       needs: test

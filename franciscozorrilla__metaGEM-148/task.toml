@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/franciscozorrilla__metaGEM-148"
+description = "Create CITATION.bib"
+
+[metadata]
+difficulty = "small"
+category = "bugfix"
+keywords = [
+    "metaGEM",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "franciscozorrilla/metaGEM"
+ref = "bb3af01ccd51e8ddd63924f46887680bf1096d3a"
+reference = "https://github.com/franciscozorrilla/metaGEM/pull/148"
+source_access = "auto"
+built_at = "2026-11-17T21:51:17.562987+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:86613756659cb82fea0e217b01bdb50119a6ff4722e418723a77c2254245d009"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2024-01-03T14:27:17Z"
+diff_format = "unified"
+context_files = [
+    "CITATION.bib",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 15
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

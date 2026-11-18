@@ -1,0 +1,63 @@
+version = "1.0"
+
+[task]
+name = "default/franciscozorrilla__metaGEM-5"
+description = "fix: Remove duplicate file metaparser.sh"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "metaGEM",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "franciscozorrilla/metaGEM"
+ref = "90b48d277a31a49cea72ad3e064d992ba1bd953e"
+reference = "https://github.com/franciscozorrilla/metaGEM/pull/5"
+source_access = "auto"
+built_at = "2026-11-17T21:51:42.535794+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:8ea4b1ab3d660c7126a8c57a0a09977ee36b077d06e77da8cd16a1f5c077279a"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2019-11-14T16:02:21Z"
+diff_format = "unified"
+context_files = [
+    "metaBAGpipes.sh",
+    "metaparser.sh",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 349
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

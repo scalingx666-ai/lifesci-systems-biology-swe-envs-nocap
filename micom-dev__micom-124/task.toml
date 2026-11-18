@@ -1,0 +1,63 @@
+version = "1.0"
+
+[task]
+name = "default/micom-dev__micom-124"
+description = "Bump actions/setup-python from 4.6.0 to 4.6.1"
+
+[metadata]
+difficulty = "small"
+category = "bugfix"
+keywords = [
+    "micom",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "micom-dev/micom"
+ref = "db4f9d22ff3248ade0a0637e60a6492ca27fc2c3"
+reference = "https://github.com/micom-dev/micom/pull/124"
+source_access = "auto"
+built_at = "2026-11-17T23:03:56.263525+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:db319b03810857c28e1a572159adb62212a041e61fbc11491a8ef772d5e37009"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2023-05-29T16:46:42Z"
+diff_format = "unified"
+context_files = [
+    ".github/workflows/docs.yml",
+    ".github/workflows/pythonpackage.yml",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 6
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

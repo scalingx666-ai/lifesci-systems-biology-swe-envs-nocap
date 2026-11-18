@@ -1,0 +1,63 @@
+version = "1.0"
+
+[task]
+name = "default/micom-dev__micom-243"
+description = "Bump actions/checkout from 6 to 7"
+
+[metadata]
+difficulty = "small"
+category = "bugfix"
+keywords = [
+    "micom",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "micom-dev/micom"
+ref = "a6c10ceda56bcd5630fa5d20bad6623bbb11d000"
+reference = "https://github.com/micom-dev/micom/pull/243"
+source_access = "auto"
+built_at = "2026-11-17T23:02:41.907376+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:cc998fb55937117705de932a2cf19c78238b58aaa41abc95169d28cc6e8ad766"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-06-30T07:53:35Z"
+diff_format = "unified"
+context_files = [
+    ".github/workflows/docs.yml",
+    ".github/workflows/pythonpackage.yml",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 6
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

@@ -1,0 +1,145 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+new file mode 100644
+index 0000000..d73fc5d
+--- /dev/null
++++ b/CHANGELOG.md
+@@ -0,0 +1,5 @@
++# CHANGELOG
++
++## (Unreleased)
++
++> This version adds map hinting in order to let a user specify partial matches in the `find_motifs` call.
+diff --git a/README.md b/README.md
+index 20f7f5f..faa17b4 100644
+--- a/README.md
++++ b/README.md
+@@ -66,6 +66,38 @@ For very large graphs, you may use a good chunk of RAM not only on the queue of
+ | `directed` | `bool` | `None` | Whether to enforce a directed/undirected search. True means enforce directivity; False means enforce undirected search. The default (None) will guess based upon your motif and host. |
+ | `profile` | `bool` | `False` | Whether to slow down execution but give you a better idea of where your RAM usage is going. This is better ignored unless you're debugging something particularly nuanced. |
+ | `isomorphisms_only` | `bool` | `False` | Whether to search only for isomorphisms. In other words, whether to search for edges that exist in the node-induced subgraph. |
++| `hints` | `List[Dict[Hashable, Hashable]]` | A list of valid candidate mappings to use as the starting seeds for new maps. See _Using Hints_, below. |
++
++
++## Using Hints
++
++GrandIso optionally accepts an argument `hints` which is a list of valid partial mappings to use to seed the search. For example, in this code:
++
++```python
++host = nx.DiGraph()
++nx.add_path(host, ["A", "B", "C", "A"])
++motif = nx.DiGraph()
++nx.add_path(motif, ["a", "b", "c", "a"])
++
++find_motifs(motif, host)
++```
++
++There are three valid mappings (because each of `A`, `B`, and `C` can map to `a`, `b`, or `c`).
++
++We can declare that node `A` maps to node `a` or `b` like this:
++
++```python
++host = nx.DiGraph()
++nx.add_path(host, ["A", "B", "C", "A"])
++motif = nx.DiGraph()
++nx.add_path(motif, ["a", "b", "c", "a"])
++
++find_motifs(
++    motif, host, 
++    hints=[{"A": "a"}, {"A", "a"}]
++)
++```
++
+ 
+ 
+ ## Pseudocode for "Grand-Iso" algorithm
+diff --git a/grandiso/__init__.py b/grandiso/__init__.py
+index d911acf..baad376 100644
+--- a/grandiso/__init__.py
++++ b/grandiso/__init__.py
+@@ -26,7 +26,7 @@
+     - Delete the backbone queue
+     - Delete the results table (after collection)
+ """
+-from typing import List, Union
++from typing import Dict, Hashable, List, Union
+ 
+ import itertools
+ import time
+@@ -351,6 +351,7 @@ def find_motifs(
+     directed: bool = None,
+     profile: bool = False,
+     isomorphisms_only: bool = False,
++    hints: List[Dict[Hashable, Hashable]] = None,
+ ) -> List[dict]:
+     """
+     Get a list of mappings from motif node IDs to host graph IDs.
+@@ -400,7 +401,11 @@ def find_motifs(
+     results_count = 0
+ 
+     # Kick off the queue with an empty candidate:
+-    q.put({})
++    if hints is None or hints == []:
++        q.put({})
++    else:
++        for hint in hints:
++            q.put(hint)
+ 
+     while not q.empty():
+         new_backbone = q.get()
+diff --git a/grandiso/test_grandiso.py b/grandiso/test_grandiso.py
+index 0099148..8f6a3f9 100644
+--- a/grandiso/test_grandiso.py
++++ b/grandiso/test_grandiso.py
+@@ -372,3 +372,52 @@ def test_subcliques_slow(self):
+ 
+         assert find_motifs(motif, host, count_only=True) == 6
+ 
++
++class TestHints:
++    @pytest.mark.parametrize(
++        "host,motif",
++        [(_random_host(directed=False), _random_motif()) for _ in range(5)],
++    )
++    def test_empty_hints(self, host, motif):
++        assert find_motifs(motif, host, count_only=True, hints=[]) == len(
++            [i for i in GraphMatcher(host, motif).subgraph_monomorphisms_iter()]
++        )
++
++    def test_broken_hints_have_no_results(self):
++        host = nx.DiGraph()
++        nx.add_path(host, ["A", "B", "C", "A"])
++        motif = nx.DiGraph()
++        nx.add_path(motif, ["A", "B", "C", "A"])
++        assert (
++            find_motifs(motif, host, count_only=True, hints=[{"A": "A", "B": "A"}]) == 0
++        )
++        assert (
++            find_motifs(motif, host, count_only=True, hints=[{"A": "A", "B": "C"}]) == 0
++        )
++
++    def test_some_hints_have_values(self):
++        # One mapping will fail, the other is valid:
++        host = nx.DiGraph()
++        nx.add_path(host, ["A", "B", "C", "A"])
++        motif = nx.DiGraph()
++        nx.add_path(motif, ["A", "B", "C", "A"])
++        assert (
++            find_motifs(
++                motif,
++                host,
++                count_only=True,
++                hints=[{"A": "A", "B": "C"}, {"A": "A", "B": "B"}],
++            )
++            == 1
++        )
++
++    def test_basic_hints(self):
++        host = nx.DiGraph()
++        nx.add_path(host, ["A", "B", "C", "A"])
++        motif = nx.DiGraph()
++        nx.add_path(motif, ["a", "b", "c", "a"])
++        assert find_motifs(motif, host, count_only=True, hints=[{"a": "A"}]) == 1
++        assert (
++            find_motifs(motif, host, count_only=True, hints=[{"a": "A"}, {"b": "A"}])
++            == 2
++        )

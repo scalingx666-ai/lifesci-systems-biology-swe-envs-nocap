@@ -1,0 +1,314 @@
+diff --git a/NEWS.md b/NEWS.md
+index a651237..3a3acaa 100644
+--- a/NEWS.md
++++ b/NEWS.md
+@@ -1,3 +1,10 @@
++# ggpicrust2 (development version)
++
++* Sample alignment now warns whenever unmatched identifiers remove samples,
++  including in `pathway_daa()` where routine alignment messages are disabled.
++  The warning reports the retained count and unmatched IDs from both inputs
++  so lost replicates can be investigated (Discussion #208).
++
+ # ggpicrust2 2.6.0
+ 
+ ## Breaking changes
+diff --git a/R/data_utils.R b/R/data_utils.R
+index e5fe722..a5a2741 100644
+--- a/R/data_utils.R
++++ b/R/data_utils.R
+@@ -299,13 +299,25 @@ align_samples <- function(abundance, metadata, sample_col = NULL, verbose = TRUE
+   missing_in_abundance <- setdiff(metadata_samples, abundance_samples)
+   missing_in_metadata <- setdiff(abundance_samples, metadata_samples)
+ 
+-  if (verbose && (length(missing_in_abundance) > 0 || length(missing_in_metadata) > 0)) {
+-    message(sprintf(
+-      "Aligned %d samples (dropped %d from metadata, %d from abundance)",
+-      length(common_samples),
+-      length(missing_in_abundance),
+-      length(missing_in_metadata)
+-    ))
++  if (length(missing_in_abundance) > 0 || length(missing_in_metadata) > 0) {
++    # Sample loss changes replication and must remain visible even when a
++    # caller suppresses routine progress messages with verbose = FALSE.
++    describe_ids <- function(ids) {
++      if (length(ids) == 0) return("none")
++      paste0(paste(utils::head(ids, 5), collapse = ", "),
++             if (length(ids) > 5) ", ..." else "")
++    }
++    warning(
++      sprintf(
++        "Sample alignment retained %d shared samples; dropped %d metadata row(s) and %d abundance column(s).",
++        length(common_samples), length(missing_in_abundance),
++        length(missing_in_metadata)
++      ),
++      "\n  Metadata IDs absent from abundance: ", describe_ids(missing_in_abundance),
++      "\n  Abundance IDs absent from metadata: ", describe_ids(missing_in_metadata),
++      "\nCheck sample identifiers and replicate counts before interpreting results.",
++      call. = FALSE
++    )
+   }
+ 
+   # Align data: subset and reorder to common samples
+diff --git a/tests/testthat/test-data_utils.R b/tests/testthat/test-data_utils.R
+index f819ae1..b1476e0 100644
+--- a/tests/testthat/test-data_utils.R
++++ b/tests/testthat/test-data_utils.R
+@@ -363,3 +363,42 @@ test_that("align_samples is idempotent on already-aligned inputs", {
+   expect_identical(first$sample_col, second$sample_col)
+   expect_identical(first$n_samples,  second$n_samples)
+ })
++
++test_that("sample loss is reported even when alignment progress is disabled", {
++  abund <- matrix(seq_len(24), nrow = 2,
++                  dimnames = list(c("f1", "f2"), paste0("S", 1:12)))
++  meta <- data.frame(sample = colnames(abund),
++                     group = rep(c("A", "B", "C", "D"), each = 3))
++  meta$sample[3] <- "S3_typo"
++
++  expect_warning(
++    aligned <- align_samples(abund, meta, verbose = FALSE),
++    "retained 11 shared samples.*dropped 1 metadata row.*1 abundance column"
++  )
++  expect_warning(
++    align_samples(abund, meta, verbose = FALSE),
++    "Metadata IDs absent from abundance: S3_typo"
++  )
++  expect_warning(
++    align_samples(abund, meta, verbose = FALSE),
++    "Abundance IDs absent from metadata: S3"
++  )
++  expect_equal(as.integer(table(aligned$metadata$group)), c(2L, 3L, 3L, 3L))
++  expect_identical(colnames(aligned$abundance), aligned$metadata$sample)
++  expect_silent(align_samples(aligned$abundance, aligned$metadata, verbose = FALSE))
++})
++
++test_that("one-sided sample mismatches identify the input losing samples", {
++  abund <- matrix(seq_len(12), nrow = 2,
++                  dimnames = list(c("f1", "f2"), paste0("S", 1:6)))
++  meta <- data.frame(sample = colnames(abund), group = rep(c("A", "B"), each = 3))
++  expect_warning(
++    align_samples(abund, meta[-3, ], verbose = FALSE),
++    "dropped 0 metadata row.*1 abundance column"
++  )
++  expect_warning(
++    align_samples(abund[, -3], meta, verbose = FALSE),
++    "dropped 1 metadata row.*0 abundance column"
++  )
++  expect_silent(align_samples(abund, meta[6:1, ], verbose = FALSE))
++})
+diff --git a/tests/testthat/test-pathway_daa.R b/tests/testthat/test-pathway_daa.R
+index 7fffd00..a4ae677 100644
+--- a/tests/testthat/test-pathway_daa.R
++++ b/tests/testthat/test-pathway_daa.R
+@@ -39,6 +39,21 @@ test_that("pathway_daa works with basic inputs", {
+   expect_true(all(result$p_values >= 0 & result$p_values <= 1))
+ })
+ 
++test_that("pathway_daa warns when alignment removes a replicate", {
++  skip_if_not_installed("limma")
++  skip_if_not_installed("edgeR")
++  td <- create_daa_test_data(n_samples = 6)
++  td$metadata$sample[3] <- "sample3_typo"
++
++  expect_warning(
++    result <- pathway_daa(td$abundance, td$metadata, "group", daa_method = "limma voom"),
++    "Sample alignment retained 5 shared samples"
++  )
++  expected <- pathway_daa(td$abundance[, -3, drop = FALSE], td$metadata[-3, ],
++                          "group", daa_method = "limma voom")
++  expect_equal(result, expected)
++})
++
+ test_that("pathway_daa validates inputs correctly", {
+   skip_if_not_installed("ALDEx2")
+   abundance <- data.frame(
+diff --git a/tests/testthat/test-pathway_gsea.R b/tests/testthat/test-pathway_gsea.R
+index b430f1e..2a5ab32 100644
+--- a/tests/testthat/test-pathway_gsea.R
++++ b/tests/testthat/test-pathway_gsea.R
+@@ -397,14 +397,17 @@ test_that("pathway_gsea revalidates groups and design variables after alignment"
+     group = c("A", "A", "A", "A", "B", "B"),
+     stringsAsFactors = FALSE
+   )
+-  expect_error(
+-    pathway_gsea(
+-      abundance = abundance,
+-      metadata = metadata_single_after_align,
+-      group = "group",
+-      method = "camera"
++  expect_warning(
++    expect_error(
++      pathway_gsea(
++        abundance = abundance,
++        metadata = metadata_single_after_align,
++        group = "group",
++        method = "camera"
++      ),
++      "after sample alignment"
+     ),
+-    "after sample alignment"
++    "Metadata IDs absent from abundance: S5, S6"
+   )
+ 
+   metadata_group_na <- data.frame(
+diff --git a/tests/testthat/test-pathway_heatmap.R b/tests/testthat/test-pathway_heatmap.R
+index ba11ff0..e2c3ddf 100644
+--- a/tests/testthat/test-pathway_heatmap.R
++++ b/tests/testthat/test-pathway_heatmap.R
+@@ -80,6 +80,37 @@ test_that("pathway_heatmap accepts finite transformed zero-sum sample columns",
+   expect_setequal(as.character(unique(p$data$Sample)), colnames(abundance))
+ })
+ 
++test_that("pathway_heatmap retains samples absent from selected pathways", {
++  abundance <- matrix(
++    seq_len(30 * 12),
++    nrow = 30,
++    dimnames = list(paste0("Pathway", 1:30), c("64", paste0("S", 2:12)))
++  )
++  abundance[1:20, "64"] <- 0
++  metadata <- data.frame(
++    sample = colnames(abundance),
++    group = rep(c("Control", "Low", "Medium", "High"), each = 3),
++    stringsAsFactors = FALSE
++  )
++  expect_true(all(colSums(abundance) > 0))
++
++  selected <- abundance[1:20, , drop = FALSE]
++  expect_equal(sum(selected[, "64"]), 0)
++  p <- pathway_heatmap(selected, metadata, "group", cluster_rows = FALSE)
++
++  plotted_samples <- unique(p$data[c("Sample", "group")])
++  expect_setequal(as.character(plotted_samples$Sample), colnames(abundance))
++  expect_equal(as.integer(table(plotted_samples$group)), rep(3L, 4))
++  expect_true(all(is.finite(p$data$Value)))
++  zero_sample <- p$data[as.character(p$data$Sample) == "64", ]
++  expect_equal(nrow(zero_sample), nrow(selected))
++  expected_z <- -rowMeans(selected) / apply(selected, 1, stats::sd)
++  expect_equal(
++    zero_sample$Value,
++    unname(expected_z[as.character(zero_sample$rowname)])
++  )
++})
++
+ test_that("pathway_heatmap rejects missing and non-finite abundance values", {
+   td <- create_heatmap_test_data()
+ 
+@@ -122,14 +153,17 @@ test_that("pathway_heatmap revalidates grouping variables after sample alignment
+     batch = c("X", "X", "X", "X", "Y"),
+     stringsAsFactors = FALSE
+   )
+-  expect_error(
+-    pathway_heatmap(
+-      abundance = abundance,
+-      metadata = metadata_secondary_collapses,
+-      group = "group",
+-      secondary_groups = "batch"
++  expect_warning(
++    expect_error(
++      pathway_heatmap(
++        abundance = abundance,
++        metadata = metadata_secondary_collapses,
++        group = "group",
++        secondary_groups = "batch"
++      ),
++      "must contain at least 2 group"
+     ),
+-    "must contain at least 2 group"
++    "Metadata IDs absent from abundance: S5"
+   )
+ 
+   metadata_group_na <- data.frame(
+diff --git a/tests/testthat/test-taxa_contribution.R b/tests/testthat/test-taxa_contribution.R
+index 14ea52a..b56c6c3 100644
+--- a/tests/testthat/test-taxa_contribution.R
++++ b/tests/testthat/test-taxa_contribution.R
+@@ -865,14 +865,17 @@ test_that("taxa_contribution_bar validates aligned group labels", {
+     stringsAsFactors = FALSE
+   )
+ 
+-  expect_error(
+-    taxa_contribution_bar(
+-      agg,
+-      metadata,
+-      group = "group",
+-      show_percentage = FALSE
++  expect_warning(
++    expect_error(
++      taxa_contribution_bar(
++        agg,
++        metadata,
++        group = "group",
++        show_percentage = FALSE
++      ),
++      "non-missing, non-empty group labels.*S2"
+     ),
+-    "non-missing, non-empty group labels.*S2"
++    "Metadata IDs absent from abundance: S3"
+   )
+ })
+ 
+diff --git a/vignettes/using_ggpicrust2.Rmd b/vignettes/using_ggpicrust2.Rmd
+index cbeadf9..116894c 100644
+--- a/vignettes/using_ggpicrust2.Rmd
++++ b/vignettes/using_ggpicrust2.Rmd
+@@ -103,6 +103,20 @@ correct samples. For your own data, replace `sample_name` and `Environment`
+ with your sample-ID and grouping columns. Do not pass an unnamed metadata
+ column unless you have already verified its order against the abundance columns.
+ 
++These metadata-aware functions retain only sample IDs present in both inputs.
++Unmatched IDs now produce a warning even when routine progress messages are
++disabled. This can change replicate counts; investigate the reported IDs before
++interpreting results. If both tables are intended to contain exactly the same
++samples, check both directions explicitly:
++
++```{r sample-mismatches, eval = FALSE}
++setdiff(colnames(kegg_pathway_abundance), metadata$sample_name)
++setdiff(metadata$sample_name, colnames(kegg_pathway_abundance))
++```
++
++Both should be empty for a fully matched dataset. Do not silently rename or
++discard mismatched IDs; check the source tables and any upstream sample filters.
++
+ ```{r sample-groups, eval = FALSE}
+ stopifnot(
+   !anyNA(metadata$sample_name),
+@@ -187,6 +201,38 @@ pathway_pca(
+ )
+ ```
+ 
++### More than two groups with LinDA
++
++With a categorical group and an intercept, LinDA fits all included groups and
++returns each non-reference group versus the reference. Selecting pathways that
++pass a threshold in any of these contrasts is not an omnibus test. For an
++ANOVA-type joint test of the group coefficients, the official CRAN
++`MicrobiomeStat` package provides `linda.wald.test()` on a full `linda()` fit;
++the result table returned by `pathway_daa()` does not retain that fit object.
++See the [upstream Wald-test documentation](https://cran.r-project.org/web/packages/MicrobiomeStat/refman/MicrobiomeStat.html#linda.wald.test).
++Check that the installed backend exports this function, since some GitHub
++variants do not include it.
++
++For four independent groups, jointly test the three group coefficients with
++the intercept excluded, then adjust the resulting one p-value per pathway
++across all tested pathways. Do not first subset to pathways selected by the
++individual contrasts. A significant joint test indicates a difference somewhere
++among the groups; it does not supply a single signed fold change or establish a
++dose trend. Repeated measures or shared experimental units require an appropriate
++model rather than treating all observations as independent replicates.
++
++`pathway_heatmap()` displays a within-pathway z-score for each sample, not a
++LinDA coefficient or p-value. Keep pathway IDs as the analysis keys: two IDs
++can share a description, so deduplicating descriptions can discard pathways.
++To inspect the samples actually drawn, save the returned plot and count its
++unique sample/group pairs:
++
++```{r heatmap-sample-counts, eval = FALSE}
++p <- pathway_heatmap(kegg_pathway_abundance, metadata, "Environment")
++plotted_samples <- unique(p$data[c("Sample", "Environment")])
++table(plotted_samples$Environment)
++```
++
+ ### Using ALDEx2 instead
+ 
+ ALDEx2 is an optional Bioconductor dependency. For two groups it returns

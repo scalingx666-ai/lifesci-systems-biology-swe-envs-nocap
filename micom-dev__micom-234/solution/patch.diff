@@ -1,0 +1,21 @@
+diff --git a/.github/wheels/highspy-1.5.3-cp311-cp311-macosx_10_9_x86_64.whl b/.github/wheels/highspy-1.5.3-cp311-cp311-macosx_10_9_x86_64.whl
+deleted file mode 100644
+index 2d742cab..00000000
+Binary files a/.github/wheels/highspy-1.5.3-cp311-cp311-macosx_10_9_x86_64.whl and /dev/null differ
+diff --git a/.github/wheels/highspy-1.5.3-cp38-cp38-macosx_10_9_x86_64.whl b/.github/wheels/highspy-1.5.3-cp38-cp38-macosx_10_9_x86_64.whl
+deleted file mode 100644
+index d157f05f..00000000
+Binary files a/.github/wheels/highspy-1.5.3-cp38-cp38-macosx_10_9_x86_64.whl and /dev/null differ
+diff --git a/.github/workflows/pythonpackage.yml b/.github/workflows/pythonpackage.yml
+index d6533d91..92205cf7 100644
+--- a/.github/workflows/pythonpackage.yml
++++ b/.github/workflows/pythonpackage.yml
+@@ -15,7 +15,7 @@ jobs:
+   test:
+     strategy:
+       matrix:
+-        os: ["ubuntu-latest", "windows-latest", "macos-13"]
++        os: ["ubuntu-latest", "windows-latest", "macos-latest"]
+         python-version: ["3.9", "3.12"]
+     runs-on: "${{matrix.os}}"
+ 

@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/micom-dev__micom-257"
+description = "Bump pillow from 12.3.0 to 13.0.0"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "micom",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "micom-dev/micom"
+ref = "b1c37c4bc6169be2668ce0911705fcb4e78699eb"
+reference = "https://github.com/micom-dev/micom/pull/257"
+source_access = "auto"
+built_at = "2026-11-17T23:02:30.349223+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:5e89205f74e91f79f39f2db00e526a02960d6821bc975259d8589149afa963ae"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-10-28T09:03:54Z"
+diff_format = "unified"
+context_files = [
+    "uv.lock",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 167
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

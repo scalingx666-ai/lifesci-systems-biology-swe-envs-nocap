@@ -1,0 +1,75 @@
+version = "1.0"
+
+[task]
+name = "default/franciscozorrilla__metaGEM-7"
+description = "feat: added visualization rules to Snakefile, refactor: moved from python2 to python3, refactor: many small improvements to parser file"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "metaGEM",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "franciscozorrilla/metaGEM"
+ref = "a31ada4db440fabcd7127cce715bdf204b646723"
+reference = "https://github.com/franciscozorrilla/metaGEM/pull/7"
+source_access = "auto"
+built_at = "2026-11-17T21:51:39.677448+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:89e05137ee667d3f9f05932dbfe22ffc80206b3e472b84d4f8934dbfa5cd8b8a"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2020-01-15T15:20:37Z"
+diff_format = "unified"
+context_files = [
+    ".DS_Store",
+    ".gitignore",
+    "README.md",
+    "Scripts/assemblyVis.R",
+    "Scripts/binningVis.R",
+    "Scripts/modelVis.R",
+    "Snakefile",
+    "Snakefile_experimental.py",
+    "Tutorial/.DS_Store",
+    "Tutorial/visualization/assembly.pdf",
+    "Tutorial/visualization/binning.pdf",
+    "config.yaml",
+    "metaBAGpipes.sh",
+    "metaBAGpipes_env.yml",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 1699
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

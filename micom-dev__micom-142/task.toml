@@ -1,0 +1,63 @@
+version = "1.0"
+
+[task]
+name = "default/micom-dev__micom-142"
+description = "Fix the `grow` docstring to mention the correct default strategy."
+
+[metadata]
+difficulty = "small"
+category = "bugfix"
+keywords = [
+    "micom",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "micom-dev/micom"
+ref = "9dd51a0a3c66e07b7d522120b283a9fc3a8a120e"
+reference = "https://github.com/micom-dev/micom/pull/142"
+source_access = "auto"
+built_at = "2026-11-17T23:03:48.059791+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:c4997f2e5e1ee1a85077ac8917f2478018e00c67a5eb8e966ea8fc8304b63c71"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2023-10-26T22:05:11Z"
+diff_format = "unified"
+context_files = [
+    "micom/problems.py",
+    "micom/workflows/grow.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 8
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

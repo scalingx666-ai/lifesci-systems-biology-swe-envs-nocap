@@ -1,0 +1,63 @@
+version = "1.0"
+
+[task]
+name = "default/aplbrain__grandiso-networkx-25"
+description = "Pass through edge_attr fn in callables"
+
+[metadata]
+difficulty = "small"
+category = "bugfix"
+keywords = [
+    "grandiso-networkx",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aplbrain/grandiso-networkx"
+ref = "182b44314b1b07b749bd59a3fab7e3345d738ece"
+reference = "https://github.com/aplbrain/grandiso-networkx/pull/25"
+source_access = "auto"
+built_at = "2026-11-17T19:48:32.368245+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:233e4d87e7bd91d21d3e2cc073b3dc4648c0554a1ac9abe6d4812bfdbb5d9aaf"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2021-12-09T17:12:57Z"
+diff_format = "unified"
+context_files = [
+    "CHANGELOG.md",
+    "grandiso/__init__.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 8
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

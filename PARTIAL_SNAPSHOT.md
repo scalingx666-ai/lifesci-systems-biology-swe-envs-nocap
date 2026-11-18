@@ -4,12 +4,12 @@ This dataset was published from an **incomplete** generation run.
 
 - Publish mode: partial_snapshot
 - Generation-complete flag: generation_complete_expansion.flag - **ABSENT** (deliberately not faked)
-- Snapshot taken (local): 2026-11-16 23:39:22 UTC+08:00
-- Live tasks in the shared task bank at snapshot time: **26225**
-- Repositories checkpointed at snapshot time: **785** / 830
+- Snapshot taken (local): 2026-11-19 00:55:36 UTC+08:00
+- Live tasks in the shared task bank at snapshot time: **53477**
+- Repositories checkpointed at snapshot time: **1348** / 1372
 - Original generation goal: **100000** tasks
-- Progress at snapshot time: **26225 / 100000** (26.2%)
-- This domain contains: **337** tasks from **12** repositories
+- Progress at snapshot time: **53477 / 100000** (53.5%)
+- This domain contains: **467** tasks from **16** repositories
 
 ## What this means for you
 

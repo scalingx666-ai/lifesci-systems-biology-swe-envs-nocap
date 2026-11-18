@@ -1,0 +1,81 @@
+diff --git a/docs/source/installing.ipynb b/docs/source/installing.ipynb
+index 6a53f0c6..ded15af9 100755
+--- a/docs/source/installing.ipynb
++++ b/docs/source/installing.ipynb
+@@ -32,9 +32,13 @@
+     "`micom.workflows.build`.\n",
+     "\n",
+     "\n",
+-    "## (Optional) Install another QP solver\n",
++    "## Install another QP solver\n",
+     "\n",
+-    "**CPLEX (recommended)**\n",
++    "The following solvers are proprietary but offer free licenses for academic use. Both solvers are\n",
++    "faster and more accurate for the multi-step LP/QP problems in MICOM than OSQP at the moment. So if\n",
++    "yo have access to them obtaining a license is worthwhile for using MICOM. \n",
++    "\n",
++    "**CPLEX**\n",
+     "\n",
+     "After registering and downloading the CPLEX studio for your OS unpack it (by running the provided installer) to a directory of your choice (we will assume it's called `ibm`).\n",
+     "\n",
+@@ -46,14 +50,9 @@
+     "\n",
+     "Substitute `3.8` with your Python version. Substitute `x86-64_linux` with the folder corresponding to your system (there will only be one subfolder in that directory).\n",
+     "\n",
+-    "**Gurobi (works, but not recommended)**\n",
+-    "\n",
+-    "MICOM is not continuously tested against Gurobi. Consequently Gurobi support is often iffy and might break for periods of time. It will also be *much* slower than CPLEX or OSQP. Gurobi is\n",
+-    "fast in solving the problem but the Gurobi Python interface is very slow in returning the optimal values for all model variables. \n",
++    "**Gurobi**\n",
+     "\n",
+-    "You should only consider using Gurobi if:\n",
+-    "1. You do not have access to CPLEX\n",
+-    "2. You do need high accuracy solutions (tolerance of 1e-6 or lower)\n",
++    "Thanks to support from Richard Oberdieck from Gurobi, the Gurobi solvers now work excellently with MICOM.\n",
+     "\n",
+     "Gurobi can be installed with conda.\n",
+     "\n",
+@@ -97,4 +96,4 @@
+  },
+  "nbformat": 4,
+  "nbformat_minor": 4
+-}
+\ No newline at end of file
++}
+diff --git a/micom/community.py b/micom/community.py
+index bbb6327c..43e08fae 100755
+--- a/micom/community.py
++++ b/micom/community.py
+@@ -855,10 +855,9 @@ def knockout_taxa(
+     @property
+     def scale(self):
+         """Get a scale to improve numerical properties."""
+-        # may have to be adjusted based on the solver in the future
+-        if "osqp" in str(self.problem):
+-            return 1.0
+-        return 1000.0
++        if "cplex" in str(self.problem):
++            return 1000.0
++        return 1.0
+ 
+     def to_pickle(self, filename):
+         """Save a community in serialized form.
+diff --git a/micom/util.py b/micom/util.py
+index c2519118..8e66ead0 100755
+--- a/micom/util.py
++++ b/micom/util.py
+@@ -306,9 +306,13 @@ def adjust_solver_config(solver):
+         solver.problem.parameters.threads.set(1)
+         solver.problem.parameters.barrier.convergetol.set(1e-9)
+     if interface == "gurobi":
++        # see https://www.gurobi.com/documentation/9.5/refman/making_the_algorithm_less_.html
+         solver.configuration.lp_method = "barrier"
+         solver.problem.Params.BarConvTol = 1e-9
+-        solver.problem.Params.BarIterLimit = 10000
++        solver.problem.Params.BarIterLimit = 2000
++        solver.problem.Params.CrossoverBasis = 1
++        solver.problem.Params.ScaleFlag = 2
++        solver.problem.Params.NumericFocus = 1
+         solver.problem.Params.Threads = 1
+         solver.problem.Params.LogToConsole = 0
+     if interface == "osqp":

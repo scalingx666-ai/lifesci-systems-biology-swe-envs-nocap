@@ -1,0 +1,64 @@
+version = "1.0"
+
+[task]
+name = "default/aplbrain__grandiso-networkx-17"
+description = "Created find_motifs_iter to iterate over results"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "grandiso-networkx",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aplbrain/grandiso-networkx"
+ref = "7ee70dbef237aa8bf687fad0aa6211270b91e743"
+reference = "https://github.com/aplbrain/grandiso-networkx/pull/17"
+source_access = "auto"
+built_at = "2026-11-17T19:48:44.697931+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:75f2133915378e8f1961126a39bba9f6c62ca7c8a5041f3054a335ea31df2dec"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2021-05-04T19:07:40Z"
+diff_format = "unified"
+context_files = [
+    "CHANGELOG.md",
+    "grandiso/__init__.py",
+    "grandiso/test_grandiso.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 153
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

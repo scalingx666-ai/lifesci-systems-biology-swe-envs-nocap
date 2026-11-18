@@ -1,0 +1,47 @@
+diff --git a/.github/workflows/python-package.yml b/.github/workflows/python-package.yml
+index d11b2c9..a82a8c5 100644
+--- a/.github/workflows/python-package.yml
++++ b/.github/workflows/python-package.yml
+@@ -15,7 +15,7 @@ jobs:
+     runs-on: ubuntu-latest
+     strategy:
+       matrix:
+-        python-version: [3.7, 3.8]
++        python-version: [3.6, 3.7, 3.8]
+ 
+     steps:
+     - uses: actions/checkout@v2
+diff --git a/grandiso/queues.py b/grandiso/queues.py
+index 7d52784..d5e3afc 100644
+--- a/grandiso/queues.py
++++ b/grandiso/queues.py
+@@ -3,7 +3,10 @@
+ from enum import Enum
+ 
+ 
+-SimpleQueue = queue.SimpleQueue
++try:
++    SimpleQueue = queue.SimpleQueue
++except:
++    SimpleQueue = queue.Queue
+ 
+ 
+ class QueuePolicy(Enum):
+@@ -20,7 +23,7 @@ class QueuePolicy(Enum):
+     BREADTHFIRST = 2
+ 
+ 
+-class ProfilingQueue(queue.SimpleQueue):
++class ProfilingQueue(SimpleQueue):
+     """
+     A simple queue to enable profiling. This queue keeps track of its size over
+     time so that you can more easily debug performance.
+@@ -42,7 +45,7 @@ def __init__(self):
+ 
+         """
+         super(ProfilingQueue, self).__init__()
+-        self._size_history = queue.SimpleQueue()
++        self._size_history = SimpleQueue()
+         self._size = 0
+ 
+     def put(self, *args, **kwargs):

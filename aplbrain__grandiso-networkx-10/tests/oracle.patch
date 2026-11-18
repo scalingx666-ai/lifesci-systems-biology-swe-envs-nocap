@@ -1,0 +1,30 @@
+diff --git a/grandiso/__init__.py b/grandiso/__init__.py
+index 7dfe0d7..d911acf 100644
+--- a/grandiso/__init__.py
++++ b/grandiso/__init__.py
+@@ -264,6 +264,7 @@ def get_next_backbone_candidates(
+         {**backbone, next_node: c}
+         for c in candidate_nodes
+         if c not in backbone.values()
++        and is_node_structural_match(next_node, c, motif, host)
+     ]
+ 
+     # One last filtering step here. This is to catch the cases where you have
+diff --git a/grandiso/test_grandiso.py b/grandiso/test_grandiso.py
+index 42c77e6..0099148 100644
+--- a/grandiso/test_grandiso.py
++++ b/grandiso/test_grandiso.py
+@@ -362,3 +362,13 @@ def test_monomorphisms_on_directed_random_graph(self, host, motif):
+             [i for i in DiGraphMatcher(host, motif).subgraph_monomorphisms_iter()]
+         )
+ 
++
++class TestSubcliques:
++    def test_subcliques_slow(self):
++        host = nx.star_graph(30000)
++        host.add_edge(6, 9)
++
++        motif = nx.complete_graph(3)
++
++        assert find_motifs(motif, host, count_only=True) == 6
++

@@ -1,0 +1,63 @@
+version = "1.0"
+
+[task]
+name = "default/cafferychen777__ggpicrust2-54"
+description = "docs: add otaviolovison as a contributor for code"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "ggpicrust2",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "cafferychen777/ggpicrust2"
+ref = "797d0fabbaea96bbccbbd3cc7531116640942653"
+reference = "https://github.com/cafferychen777/ggpicrust2/pull/54"
+source_access = "auto"
+built_at = "2026-11-17T21:58:19.417994+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:0044bbb856ef698cd05fea844110c7ae1c0149a4cefec5c0b414d56e46762238"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2023-09-01T03:38:55Z"
+diff_format = "unified"
+context_files = [
+    ".all-contributorsrc",
+    "README.md",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 51
+difficulty = "medium"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

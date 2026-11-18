@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/aplbrain__grandiso-networkx-39"
+description = "Add streaming match generation"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "grandiso-networkx",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aplbrain/grandiso-networkx"
+ref = "7ff35624bdf6e7908b1dd9ce5cb899377a2184d8"
+reference = "https://github.com/aplbrain/grandiso-networkx/pull/39"
+source_access = "auto"
+built_at = "2026-11-17T19:48:21.937678+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:41b0a019de0ce1b2aee8f512b712254d3f158030f57fd2dcc51befe0dfd0a3bb"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2024-02-13T16:17:11Z"
+diff_format = "unified"
+context_files = [
+    "grandiso/__init__.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 153
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

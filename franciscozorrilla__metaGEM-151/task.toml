@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/franciscozorrilla__metaGEM-151"
+description = "bugfix: Update metaGEM.sh"
+
+[metadata]
+difficulty = "easy"
+category = "bugfix"
+keywords = [
+    "metaGEM",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "franciscozorrilla/metaGEM"
+ref = "978ae33afb71058e030473c330d699ac62668337"
+reference = "https://github.com/franciscozorrilla/metaGEM/pull/151"
+source_access = "auto"
+built_at = "2026-11-17T21:51:16.311110+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:fda6a395a1727dc731c5bdfde936bbee5f60e647abca5c6c8d6242dd56f380ba"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2024-01-12T20:45:07Z"
+diff_format = "unified"
+context_files = [
+    "workflow/metaGEM.sh",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 2
+difficulty = "trivial"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

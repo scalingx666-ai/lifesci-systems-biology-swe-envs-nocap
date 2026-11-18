@@ -1,0 +1,65 @@
+version = "1.0"
+
+[task]
+name = "default/aplbrain__grandiso-networkx-14"
+description = "Add grandiso.queues submodule"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "grandiso-networkx",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aplbrain/grandiso-networkx"
+ref = "570d1dd87f4c579ec61a6fd4841c5cf549c906f4"
+reference = "https://github.com/aplbrain/grandiso-networkx/pull/14"
+source_access = "auto"
+built_at = "2026-11-17T19:48:46.042757+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:66baff73e91bc0f1349f346ef7a463bacb3d5fef5d290fc0206dcca92640a93b"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2021-04-09T18:00:04Z"
+diff_format = "unified"
+context_files = [
+    "CHANGELOG.md",
+    "grandiso/__init__.py",
+    "grandiso/queues.py",
+    "requirements.txt",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 102
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

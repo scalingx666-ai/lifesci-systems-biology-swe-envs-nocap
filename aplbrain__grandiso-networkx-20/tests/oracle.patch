@@ -1,0 +1,473 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 971b5d4..090f145 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -1,9 +1,11 @@
+ # CHANGELOG
+ 
+-## v1.2.1 (Unreleased)
++## v2.0.0 (Unreleased)
+ 
+ -   Features
+     -   Memoize node match function calls, and enable the user to pass custom node match functions. This greatly improves worst-case performance by removing excess calls to the note match functions, at the cost of additional memory.
++-   Housekeeping
++    -   Remove the `profile` argument and profiling flow. (For profiling needs, you can now pass a profiling queue from the `queues` submodule.)
+ 
+ ## [v1.2.0 (May 4 2021)](https://pypi.org/project/grandiso/1.2.0/)
+ 
+diff --git a/docs/reference/grandiso/grandiso.md b/docs/reference/grandiso/grandiso.md
+index 27e074c..059c1a3 100644
+--- a/docs/reference/grandiso/grandiso.md
++++ b/docs/reference/grandiso/grandiso.md
+@@ -1,18 +1,108 @@
++## _Function_ `_is_node_attr_match(motif_node_id: str, host_node_id: str, motif: nx.Graph, host: nx.Graph) -> bool`
++
++Check if a node in the host graph matches the attributes in the motif.
++
++### Arguments
++
++> -   **motif_node_id** (`str`: `None`): The motif node ID
++> -   **host_node_id** (`str`: `None`): The host graph ID
++> -   **motif** (`nx.Graph`: `None`): The motif graph
++> -   **host** (`nx.Graph`: `None`): The host graph
++
++### Returns
++
++> -   **bool** (`None`: `None`): True if the host node matches the attributes in the motif
++
++## _Function_ `_is_node_structural_match(motif_node_id: str, host_node_id: str, motif: nx.Graph, host: nx.Graph) -> bool`
++
++Check if the motif node here is a valid structural match.
++
++Specifically, this requires that a host node has at least the degree as the motif node.
++
++### Arguments
++
++> -   **motif_node_id** (`str`: `None`): The motif node ID
++> -   **host_node_id** (`str`: `None`): The host graph ID
++> -   **motif** (`nx.Graph`: `None`): The motif graph
++> -   **host** (`nx.Graph`: `None`): The host graph
++
++### Returns
++
++> -   **bool** (`None`: `None`): True if the motif node maps to this host node
++
++## _Function_ `get_next_backbone_candidates(backbone: dict, motif: nx.Graph, host: nx.Graph, interestingness: dict, next_node: str = None, directed: bool = True, is_node_structural_match=_is_node_structural_match, is_node_attr_match=_is_node_attr_match, isomorphisms_only: bool = False) -> List[dict]`
++
++Get a list of candidate node assignments for the next "step" of this map.
++
++### Arguments
++
++> -   **backbone** (`dict`: `None`): Mapping of motif node IDs to one set of host graph IDs
++> -   **motif** (`Graph`: `None`): A graph representation of the motif
++> -   **host** (`Graph`: `None`): The host graph, complete
++> -   **interestingness** (`dict`: `None`): A mapping of motif node IDs to interestingness
++> -   **next_node** (`str`: `None`): Optional suggestion for the next node to assign
++> -   **directed** (`bool`: `True`): Whether host and motif are both directed
++> -   **isomorphisms_only** (`bool`: `False`): If true, only isomorphisms will be
++
++        returned (instead of all monomorphisms)
++
++### Returns
++
++> -   **List[dict]** (`None`: `None`): A new list of mappings with one additional element mapped
++
+ ## _Function_ `uniform_node_interestingness(motif: nx.Graph) -> dict`
+ 
+ Sort the nodes in a motif by their interestingness.
+ 
+ Most interesting nodes are defined to be those that most rapidly filter the list of nodes down to a smaller set.
+ 
+-## _Function_ `find_motifs(motif: nx.Graph, host: nx.Graph) -> List[dict]`
++## _Function_ `find_motifs_iter(motif: nx.Graph, host: nx.Graph, interestingness: dict = None, directed: bool = None, queue_=queue.SimpleQueue, isomorphisms_only: bool = False, hints: List[Dict[Hashable, Hashable]] = None, is_node_structural_match=_is_node_structural_match, is_node_attr_match=_is_node_attr_match) -> Generator[dict, None, None]`
++
++Yield mappings from motif node IDs to host graph IDs.
++
++### Arguments
++
++> -   **motif** (`nx.DiGraph`: `None`): The motif graph (needle) to search for
++> -   **host** (`nx.DiGraph`: `None`): The host graph (haystack) to search within
++> -   **interestingness** (`dict`: `None`): A map of each node in `motif` to a float
++
++        number that indicates an ordinality in which to address each node
++
++> -   **directed** (`bool`: `None`): Whether direction should be considered during
++
++        search. If omitted, this will be based upon the motif directedness.
++
++> -   **queue\_** (`queue.Queue`: `None`): What kind of queue to use.
++> -   **hints** (`dict`: `None`): A dictionary of initial starting mappings. By default,
++
++        searches for all instances. You can constrain a node by passing a
++
++> -   **item** (`None`: `None`): `[{motifId: hostId}]`.
++> -   **isomorphisms_only** (`bool`: `False`): Whether to return isomorphisms (the
++
++        default is monomorphisms).
++
++### Returns
++
++    Generator[dict, None, None]
++
++## _Function_ `find_motifs(motif: nx.Graph,host: nx.Graph,*args,count_only: bool = False,limit: int = None,is_node_attr_match=_is_node_attr_match,is_node_structural_match=_is_node_structural_match,**kwargs) -> Union[int, List[dict]]`
+ 
+ Get a list of mappings from motif node IDs to host graph IDs.
+ 
++See grandiso#find_motifs_iter for full argument list.
++
+ ### Arguments
+ 
+-> -   **motif** (`nx.Graph`: `None`): The motif graph (needle) to search for
+-> -   **host** (`nx.Graph`: `None`): The host graph (haystack) to search within
++> -   **count_only** (`bool`: `False`): If True, return only an integer count of the
++
++        number of motifs, rather than a list of mappings.
++
++> -   **limit** (`int`: `None`): A limit to place on the number of returned mappings.
++
++        The search will terminate once the limit is reached.
+ 
+ ### Returns
+ 
++> -   **int** (`None`: `None`): If `count_only` is True, return the length of the List.
+ > -   **List[dict]** (`None`: `None`): A list of mappings from motif node IDs to host graph IDs
+diff --git a/docs/reference/grandiso/queues.py.md b/docs/reference/grandiso/queues.py.md
+index 90b6de3..59fa422 100644
+--- a/docs/reference/grandiso/queues.py.md
++++ b/docs/reference/grandiso/queues.py.md
+@@ -1,116 +1,101 @@
+-## *Class* `QueuePolicy(Enum)`
+-
++## _Class_ `QueuePolicy(Enum)`
+ 
+ An Enum for queue pop policy.
+ 
+ DEPTHFIRST policy is identified with pushing and popping on the same side of the queue. BREADTHFIRST is identified with pushing and popping from the opposite side of the queue.
+ 
+-
+-
+-## *Class* `ProfilingQueue(queue.SimpleQueue)`
+-
++## _Class_ `ProfilingQueue(queue.SimpleQueue)`
+ 
+ A simple queue to enable profiling. This queue keeps track of its size over time so that you can more easily debug performance.
+ 
+ Note that you do not want to use this queue for production workloads, as it adds substantial overhead.
+ 
+-
+-
+-## *Function* `__init__(self)`
+-
++## _Function_ `__init__(self)`
+ 
+ Create a new ProfilingQueue.
+ 
+ ### Arguments
+-    None
+ 
+-### Returns
+     None
+ 
++### Returns
+ 
++    None
+ 
+-## *Function* `put(self, *args, **kwargs)`
+-
++## _Function_ `put(self, *args, **kwargs)`
+ 
+ Put a new element into the queue.
+ 
+ ### Arguments
+-> - **element** (`None`: `None`): The element to add to the queue
+-
+-### Returns
+-    None
+ 
++> -   **element** (`None`: `None`): The element to add to the queue
+ 
++### Returns
+ 
+-## *Function* `get(self, *args, **kwargs)`
++    None
+ 
++## _Function_ `get(self, *args, **kwargs)`
+ 
+ Get a new item from the queue.
+ 
+ ### Arguments
++
+     None
+ 
+ ### Returns
+-> - **Any** (`None`: `None`): The element popped from the queue
+-
+-
+ 
+-## *Class* `Deque`
++> -   **Any** (`None`: `None`): The element popped from the queue
+ 
++## _Class_ `Deque`
+ 
+ A double-ended queue implementation.
+ 
+-
+-
+-## *Function* `__init__(self, policy: QueuePolicy = QueuePolicy.DEPTHFIRST)`
+-
++## _Function_ `__init__(self, policy: QueuePolicy = QueuePolicy.DEPTHFIRST)`
+ 
+ Create a new double-ended queue.
+ 
+ ### Arguments
+-> - **policy** (`QueuePolicy`: `None`): The policy to use when adding and removing
+-        elements from this queue. Defaults to depth-first.
+ 
+-### Returns
+-    None
++> -   **policy** (`QueuePolicy`: `None`): The policy to use when adding and removing
+ 
++        elements from this queue. Defaults to depth-first.
+ 
++### Returns
+ 
+-## *Function* `put(self, *args, **kwargs)`
++    None
+ 
++## _Function_ `put(self, *args, **kwargs)`
+ 
+ Put a new element into the queue.
+ 
+ ### Arguments
+-> - **element** (`None`: `None`): The element to add to the queue
+-
+-### Returns
+-    None
+ 
++> -   **element** (`None`: `None`): The element to add to the queue
+ 
++### Returns
+ 
+-## *Function* `get(self, *args, **kwargs)`
++    None
+ 
++## _Function_ `get(self, *args, **kwargs)`
+ 
+ Get a new item from the queue.
+ 
+ ### Arguments
++
+     None
+ 
+ ### Returns
+-> - **Any** (`None`: `None`): The element popped from the queue
+ 
++> -   **Any** (`None`: `None`): The element popped from the queue
+ 
+-
+-## *Function* `empty(self)`
+-
++## _Function_ `empty(self)`
+ 
+ Returns True if the queue is empty.
+ 
+ ### Arguments
++
+     None
+ 
+ ### Returns
+-> - **bool** (`None`: `None`): True if the queue has nothing more to pop
+-
+ 
++> -   **bool** (`None`: `None`): True if the queue has nothing more to pop
+diff --git a/docs/reference/setup.py.md b/docs/reference/setup.py.md
+deleted file mode 100644
+index e69de29..0000000
+diff --git a/grandiso/__init__.py b/grandiso/__init__.py
+index 6610c07..44ebec1 100644
+--- a/grandiso/__init__.py
++++ b/grandiso/__init__.py
+@@ -1,15 +1,3 @@
+-from typing import Any, Dict, Generator, Hashable, List, Optional, Tuple, Union
+-from inspect import isclass
+-import itertools
+-import queue
+-from functools import lru_cache
+-
+-import networkx as nx
+-
+-print("Using fn pointers")
+-
+-__version__ = "1.2.0"
+-
+ """
+ In this process, we consider the following operations to be fast:
+ 
+@@ -29,6 +17,16 @@
+       attribute search.
+ """
+ 
++from typing import Dict, Generator, Hashable, List, Optional, Union
++from inspect import isclass
++import itertools
++import queue
++from functools import lru_cache
++
++import networkx as nx
++
++__version__ = "2.0.0"
++
+ 
+ @lru_cache()
+ def _is_node_attr_match(
+@@ -319,12 +317,9 @@ def find_motifs_iter(
+     queue_=queue.SimpleQueue,
+     isomorphisms_only: bool = False,
+     hints: List[Dict[Hashable, Hashable]] = None,
+-    profile: bool = False,
+     is_node_structural_match=_is_node_structural_match,
+     is_node_attr_match=_is_node_attr_match,
+-) -> Union[
+-    Generator[dict, None, None], Tuple[Union[int, Generator[dict, None, None]], Any],
+-]:
++) -> Generator[dict, None, None]:
+     """
+     Yield mappings from motif node IDs to host graph IDs.
+ 
+@@ -341,9 +336,6 @@ def find_motifs_iter(
+             number that indicates an ordinality in which to address each node
+         directed (bool: None): Whether direction should be considered during
+             search. If omitted, this will be based upon the motif directedness.
+-        profile (bool: False): SLOWER! Whether to include additional metrics
+-            in addition to results. Note that you should only ever use this to
+-            debug or understand your results, not for use in production.
+         queue_ (queue.Queue): What kind of queue to use.
+         hints (dict): A dictionary of initial starting mappings. By default,
+             searches for all instances. You can constrain a node by passing a
+@@ -352,11 +344,7 @@ def find_motifs_iter(
+             default is monomorphisms).
+ 
+     Returns:
+-        dict, Tuple[dict, queue.Queue]
+-
+-        dict: A mappings from motif node IDs to host graph IDs
+-        Tuple[dict, queue.Queue]: If `profile` is true. Also includes the
+-            current queue that is being used to perform the search.
++        Generator[dict, None, None]
+ 
+     """
+     interestingness = interestingness or uniform_node_interestingness(motif)
+@@ -392,10 +380,7 @@ def find_motifs_iter(
+ 
+         for candidate in next_candidate_backbones:
+             if len(candidate) == len(motif):
+-                if profile:
+-                    yield q, candidate
+-                else:
+-                    yield candidate
++                yield candidate
+             else:
+                 q.put(candidate)
+ 
+@@ -405,12 +390,11 @@ def find_motifs(
+     host: nx.Graph,
+     *args,
+     count_only: bool = False,
+-    profile: bool = False,
+     limit: int = None,
+     is_node_attr_match=_is_node_attr_match,
+     is_node_structural_match=_is_node_structural_match,
+     **kwargs,
+-) -> Union[int, List[dict], Tuple[Union[int, List[dict]], Any]]:
++) -> Union[int, List[dict]]:
+     """
+     Get a list of mappings from motif node IDs to host graph IDs.
+ 
+@@ -425,19 +409,13 @@ def find_motifs(
+     Arguments:
+         count_only (bool: False): If True, return only an integer count of the
+             number of motifs, rather than a list of mappings.
+-        profile (bool: False): SLOWER! Whether to include additional metrics
+-            in addition to results. Note that you should only ever use this to
+-            debug or understand your results, not for use in production.
+         limit (int: None): A limit to place on the number of returned mappings.
+             The search will terminate once the limit is reached.
+ 
+ 
+     Returns:
+-        int, List[dict], Tuple[List[dict], queue.Queue]
+         int: If `count_only` is True, return the length of the List.
+         List[dict]: A list of mappings from motif node IDs to host graph IDs
+-        Tuple[List[dict], queue.Queue]: If `profile` is true. Also includes the
+-            queue that was used to perform the search.
+ 
+     """
+     results = []
+@@ -446,37 +424,23 @@ def find_motifs(
+         motif,
+         host,
+         *args,
+-        profile=profile,
+         is_node_attr_match=is_node_attr_match,
+         is_node_structural_match=is_node_structural_match,
+         **kwargs,
+     ):
+-        if profile:
+-            q, result = qresult
+-        else:
+-            result = qresult
++
++        result = qresult
+ 
+         results_count += 1
+         if limit and results_count >= limit:
+             if count_only:
+-                # perform return logic
+-                if profile:
+-                    return results_count, q
+-                else:
+-                    return results_count
++                return results_count
+             else:
+                 if limit and results_count >= limit:
+-                    # perform return logic
+-                    if profile:
+-                        return results, q
+                     return results
+         if not count_only:
+             results.append(result)
+ 
+-    if profile:
+-        if count_only:
+-            return results_count, q
+-        return results, q
+     if count_only:
+         return results_count
+     return results
+diff --git a/grandiso/test_grandiso.py b/grandiso/test_grandiso.py
+index 9e43a3f..3be20ef 100644
+--- a/grandiso/test_grandiso.py
++++ b/grandiso/test_grandiso.py
+@@ -462,9 +462,3 @@ def test_fails_on_invalid_hint(self):
+         motif = nx.complete_graph(3)
+         with pytest.raises(Exception):
+             next(find_motifs_iter(motif, host, hints=[{"F": "X"}]))
+-
+-    def test_(self):
+-        host = nx.complete_graph(8)
+-        motif = nx.complete_graph(3)
+-        result = next(find_motifs_iter(motif, host, profile=True))
+-        assert isinstance(result, tuple)
+diff --git a/setup.py b/setup.py
+index a5e0bb7..6ef6d7d 100644
+--- a/setup.py
++++ b/setup.py
+@@ -5,7 +5,7 @@
+ 
+ setuptools.setup(
+     name="grandiso",
+-    version="1.2.0",
++    version="2.0.0",
+     author="Jordan Matelsky",
+     author_email="opensource@matelsky.com",
+     description="Performant subgraph isomorphism",

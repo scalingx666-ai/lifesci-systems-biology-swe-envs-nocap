@@ -1,0 +1,35 @@
+diff --git a/.github/workflows/docs.yml b/.github/workflows/docs.yml
+index 6170966c..5edb2bf0 100644
+--- a/.github/workflows/docs.yml
++++ b/.github/workflows/docs.yml
+@@ -8,7 +8,7 @@ jobs:
+   release:
+     runs-on: ubuntu-latest
+     steps:
+-    - uses: actions/checkout@v2
++    - uses: actions/checkout@v3
+     - name: Install pandoc
+       run: |
+         sudo apt-get -y install pandoc
+diff --git a/.github/workflows/pythonpackage.yml b/.github/workflows/pythonpackage.yml
+index 08bf4c2f..9b2e863c 100644
+--- a/.github/workflows/pythonpackage.yml
++++ b/.github/workflows/pythonpackage.yml
+@@ -20,7 +20,7 @@ jobs:
+     runs-on: "${{matrix.os}}"
+ 
+     steps:
+-    - uses: actions/checkout@v2
++    - uses: actions/checkout@v3
+     - name: Set up Python ${{ matrix.python-version }}
+       uses: actions/setup-python@v2
+       with:
+@@ -56,7 +56,7 @@ jobs:
+       runs-on: ubuntu-latest
+ 
+       steps:
+-      - uses: actions/checkout@v2
++      - uses: actions/checkout@v3
+       - name: Set up Python
+         uses: actions/setup-python@v2
+         with:

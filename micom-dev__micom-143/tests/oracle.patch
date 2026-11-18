@@ -1,0 +1,80 @@
+diff --git a/micom/community.py b/micom/community.py
+index 43e08fae..9f133446 100755
+--- a/micom/community.py
++++ b/micom/community.py
+@@ -15,6 +15,7 @@
+     clean_ids,
+     compartment_id,
+     COMPARTMENT_RE,
++    ex_metabolite,
+ )
+ from micom.logger import logger
+ from micom.optcom import optcom, solve
+@@ -659,14 +660,25 @@ def medium(self, fluxes):
+         exids = set(r.id for r in self.exchanges)
+         rids = set(k for k in fluxes)
+         found = rids & exids
++        C_num = sum(
++            cobra.core.formula.Formula(ex_metabolite(self, rid).formula).elements.get(
++                "C", 0
++            )
++            for rid in found
++        )
+         not_found = rids - exids
+         if len(found) == 0:
+             raise ValueError(
+                 "No ID from the medium could be found in the exchange reactions. "
+                 "This means you probably have mismatched IDs..."
+             )
+-        if len(not_found) > 0:
++        elif C_num == 0:
+             logger.warning(
++                "There does not seem to be any carbon source in your medium. "
++                "Please double-check your medium IDs. "
++            )
++        if len(not_found) > 0:
++            logger.info(
+                 "I could not find the following exchanges "
+                 "in your model: %s" % ", ".join(not_found)
+             )
+diff --git a/micom/util.py b/micom/util.py
+index 8e66ead0..ac9f404c 100755
+--- a/micom/util.py
++++ b/micom/util.py
+@@ -219,6 +219,11 @@ def add_var_from_expression(model, name, expr, lb=None, ub=None):
+     return var
+ 
+ 
++def ex_metabolite(model, rid):
++    """Get the metabolite from an exchange reaction ID."""
++    return list(model.reactions.get_by_id(rid).metabolites)[0]
++
++
+ def check_modification(community):
+     """Check whether a community already carries a modification.
+ 
+diff --git a/tests/test_media.py b/tests/test_media.py
+index 1fe7d3a0..84da381c 100755
+--- a/tests/test_media.py
++++ b/tests/test_media.py
+@@ -13,6 +13,20 @@ def test_medium_linear(community):
+     assert all(medium > 1e-9)
+ 
+ 
++def test_nonmatching_medium(community):
++    with pytest.raises(ValueError):
++        community.medium = {"EX_blabla": 100}
++    assert "EX_blabla" not in community.medium
++
++
++def test_partial_matching_medium(community):
++    community.medium = {"EX_glc__D_m": 10, "EX_blabla_m": 2}
++
++
++def test_matching_medium(community):
++    community.medium = {"EX_glc__D_m": 10}
++
++
+ def test_medium_mip(community):
+     medium = media.minimal_medium(community, 0.8, 0.8,
+                                     minimize_components=True)

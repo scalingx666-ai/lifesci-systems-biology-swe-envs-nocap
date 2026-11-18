@@ -1,0 +1,71 @@
+version = "1.0"
+
+[task]
+name = "default/franciscozorrilla__metaGEM-10"
+description = "Big PR adding new snakefile for single end datasets and reimplemented cross mapping of samples for all binners using bwa"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "metaGEM",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "franciscozorrilla/metaGEM"
+ref = "180a8a147e53cfae96c0990176e52946c256d116"
+reference = "https://github.com/franciscozorrilla/metaGEM/pull/10"
+source_access = "auto"
+built_at = "2026-11-17T21:51:35.162126+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:9965c5c5052adf922c7fc232a0c69a83b14f504601718b2a44d5ef10e7649dc3"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2020-03-22T10:34:55Z"
+diff_format = "unified"
+context_files = [
+    "Scripts/abundanceVis.R",
+    "Scripts/modelVis.R",
+    "Scripts/taxonomyVis.R",
+    "Snakefile",
+    "Snakefile_single_end.py",
+    "cluster_config.json",
+    "config.yaml",
+    "metaBAGpipes.sh",
+    "metaWRAP_env_backup.yml",
+    "pipeline.jpeg",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 1992
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

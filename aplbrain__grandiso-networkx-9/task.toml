@@ -1,0 +1,63 @@
+version = "1.0"
+
+[task]
+name = "default/aplbrain__grandiso-networkx-9"
+description = "Permit falsy node IDs"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "grandiso-networkx",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aplbrain/grandiso-networkx"
+ref = "18c703e7668a5baeebf87b1815a4bc4597f4afa2"
+reference = "https://github.com/aplbrain/grandiso-networkx/pull/9"
+source_access = "auto"
+built_at = "2026-11-17T19:48:51.722019+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:fcc1cd15cfdf191e253b682367caa2c8fad05632420209e758c0981cb2b1c8af"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2020-11-11T21:27:11Z"
+diff_format = "unified"
+context_files = [
+    "grandiso/__init__.py",
+    "grandiso/test_grandiso.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 22
+difficulty = "medium"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

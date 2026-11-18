@@ -1,0 +1,67 @@
+version = "1.0"
+
+[task]
+name = "default/micom-dev__micom-101"
+description = "Add a more permissible media completion"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "micom",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "micom-dev/micom"
+ref = "591c7a48e2d0654d343df23b88fe18d2b32219ba"
+reference = "https://github.com/micom-dev/micom/pull/101"
+source_access = "auto"
+built_at = "2026-11-17T23:04:10.376873+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:32c876763fc86256bf5d5b1f3647524ab84543d60a83e7347e16bfece78c8ef8"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2022-09-24T21:27:37Z"
+diff_format = "unified"
+context_files = [
+    "NEWS.md",
+    "micom/media.py",
+    "micom/workflows/__init__.py",
+    "micom/workflows/db_media.py",
+    "tests/data/test_db_media.py",
+    "tests/test_media.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 195
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

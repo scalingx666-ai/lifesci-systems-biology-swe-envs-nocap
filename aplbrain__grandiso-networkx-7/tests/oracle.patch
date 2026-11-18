@@ -1,0 +1,543 @@
+diff --git a/.github/workflows/python-package.yml b/.github/workflows/python-package.yml
+index c0b5d03..d11b2c9 100644
+--- a/.github/workflows/python-package.yml
++++ b/.github/workflows/python-package.yml
+@@ -26,7 +26,7 @@ jobs:
+     - name: Install dependencies
+       run: |
+         python -m pip install --upgrade pip
+-        pip install flake8 pytest
++        pip install flake8 pytest pytest-cov
+         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+     - name: Lint with flake8
+       run: |
+@@ -36,4 +36,6 @@ jobs:
+         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+     - name: Test with pytest
+       run: |
+-        pytest
++        pytest --cov=./ --cov-report=xml
++    - name: Codecov
++      uses: codecov/codecov-action@v1.0.13
+diff --git a/.gitignore b/.gitignore
+index 96d210d..884043e 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -1,4 +1,4 @@
+-
++notebooks/*.ipynb
+ # Created by https://www.toptal.com/developers/gitignore/api/macos,python,windows,jupyternotebooks,visualstudiocode
+ # Edit at https://www.toptal.com/developers/gitignore?templates=macos,python,windows,jupyternotebooks,visualstudiocode
+ 
+diff --git a/README.md b/README.md
+index 818b7ed..3d42b9c 100644
+--- a/README.md
++++ b/README.md
+@@ -1,4 +1,11 @@
+-# Grand Isomorphisms
++<p align="center"><h1>Grand Isomorphisms</h1></p>
++
++<p align="center">
++<a href="https://codecov.io/gh/aplbrain/grandiso-networkx/"><img alt="Codecov" src="https://img.shields.io/codecov/c/github/aplbrain/grandiso-networkx?style=for-the-badge"></a>
++<a href="https://github.com/aplbrain/grandiso-networkx/actions"><img alt="GitHub Workflow Status" src="https://img.shields.io/github/workflow/status/aplbrain/grandiso-networkx/Python%20package?style=for-the-badge"></a>
++<a href="https://bossdb.org/tools/DotMotif"><img src="https://img.shields.io/badge/Pretty Dope-👌-00ddcc.svg?style=for-the-badge" /></a>
++<img alt="GitHub" src="https://img.shields.io/github/license/aplbrain/grandiso-networkx?style=for-the-badge">
++</p>
+ 
+ Subgraph isomorphism is a resource-heavy (but branch-parallelizable) algorithm that is hugely impactful for large graph analysis. SotA algorithms for this (Ullmann, VF2, BB-Graph) are heavily RAM-bound, but this is due to a large number of small processes each of which hold a small portion of a traversal tree in memory.
+ 
+@@ -65,3 +72,11 @@ For very large graphs, you may use a good chunk of RAM not only on the queue of
+ - Reporting
+     - Return the set R to the user.
+ ```
++
++## Hacking on this repo
++
++### Running Tests
++
++```shell
++coverage run --source=grandiso -m pytest
++```
+diff --git a/grandiso/__init__.py b/grandiso/__init__.py
+index 433fe3c..c54afb2 100644
+--- a/grandiso/__init__.py
++++ b/grandiso/__init__.py
+@@ -28,6 +28,7 @@
+ """
+ from typing import List, Union
+ 
++import itertools
+ import time
+ import queue
+ 
+@@ -108,7 +109,7 @@ def get_next_backbone_candidates(
+     interestingness: dict,
+     next_node: str = None,
+     directed: bool = True,
+-    enforce_inequality: bool = True,
++    isomorphisms_only: bool = False,
+ ) -> List[dict]:
+     """
+     Get a list of candidate node assignments for the next "step" of this map.
+@@ -120,8 +121,8 @@ def get_next_backbone_candidates(
+         interestingness (dict): A mapping of motif node IDs to interestingness
+         next_node (str: None): Optional suggestion for the next node to assign
+         directed (bool: True): Whether host and motif are both directed
+-        enforce_inequality (bool: True): If true, two nodes in backbone cannot
+-            be assigned to the same host-graph
++        isomorphisms_only (bool: False): If true, only isomorphisms will be
++            returned (instead of all monomorphisms)
+ 
+     Returns:
+         List[dict]: A new list of mappings with one additional element mapped
+@@ -272,7 +273,9 @@ def get_next_backbone_candidates(
+     # edges between them DO exist in the host graph. Otherwise, when we check
+     # in find_motifs that len(motif) == len(mapping), we will discover that the
+     # mapping is "complete" even though we haven't yet checked it at all.
+-    results = []
++
++    monomorphism_candidates = []
++
+     for mapping in tentative_results:
+         if len(mapping) == len(motif):
+             if all(
+@@ -282,12 +285,31 @@ def get_next_backbone_candidates(
+                 ]
+             ):
+                 # This is a "complete" match!
+-                results.append(mapping)
++                monomorphism_candidates.append(mapping)
+         else:
+             # This is a partial match, so we'll continue building.
+-            results.append(mapping)
+-
+-    return results
++            monomorphism_candidates.append(mapping)
++
++    if not isomorphisms_only:
++        return monomorphism_candidates
++
++    # Additionally, if isomorphisms_only == True, we can use this opportunity
++    # to confirm that no spurious edges exist in the induced subgraph:
++    isomorphism_candidates = []
++    for result in monomorphism_candidates:
++        for (motif_u, motif_v) in itertools.product(result.keys(), result.keys()):
++            # if the motif has this edge, then it doesn't rule any of the
++            # above results out as an isomorphism.
++            # if the motif does NOT have the edge, then NO RESULT may have
++            # the equivalent edge in the host graph:
++            if not motif.has_edge(motif_u, motif_v) and host.has_edge(
++                result[motif_u], result[motif_v]
++            ):
++                # this is a violation.
++                break
++        else:
++            isomorphism_candidates.append(result)
++    return isomorphism_candidates
+ 
+ 
+ def uniform_node_interestingness(motif: nx.Graph) -> dict:
+@@ -301,11 +323,33 @@ def uniform_node_interestingness(motif: nx.Graph) -> dict:
+     return {n: 1 for n in motif.nodes()}
+ 
+ 
++class ProfilingQueue(queue.SimpleQueue):
++    def __init__(self):
++        super(ProfilingQueue, self).__init__()
++        self._size_history = queue.SimpleQueue()
++        self._size = 0
++
++    def put(self, *args, **kwargs):
++        res = super(ProfilingQueue, self).put(*args, **kwargs)
++        self._size += 1
++        self._size_history.put(self._size)
++        return res
++
++    def get(self, *args, **kwargs):
++        res = super(ProfilingQueue, self).get(*args, **kwargs)
++        self._size -= 1
++        self._size_history.put(self._size)
++        return res
++
++
+ def find_motifs(
+     motif: nx.DiGraph,
+     host: nx.DiGraph,
+     interestingness: dict = None,
+     count_only: bool = False,
++    directed: bool = None,
++    profile: bool = False,
++    isomorphisms_only: bool = False,
+ ) -> List[dict]:
+     """
+     Get a list of mappings from motif node IDs to host graph IDs.
+@@ -323,6 +367,13 @@ def find_motifs(
+             number that indicates an ordinality in which to address each node
+         count_only (bool: False): If True, return only an integer count of the
+             number of motifs, rather than a list of mappings.
++        directed (bool: None): Whether direction should be considered during
++            search. If omitted, this will be based upon the motif directedness.
++        profile (bool: False): SLOWER! Whether to include additional metrics
++            in addition to results. Note that you should only ever use this to
++            debug or understand your results, not for use in production.
++        isomorphisms_only (bool: False): Whether to return isomorphisms (the
++            default is monomorphisms).
+ 
+     Returns:
+         List[dict]: A list of mappings from motif node IDs to host graph IDs
+@@ -331,13 +382,18 @@ def find_motifs(
+     """
+     interestingness = interestingness or uniform_node_interestingness(motif)
+ 
+-    if isinstance(motif, nx.DiGraph):
+-        # This will be a directed query.
+-        directed = True
+-    else:
+-        directed = False
++    if directed is None:
++        # guess directedness from motif
++        if isinstance(motif, nx.DiGraph):
++            # This will be a directed query.
++            directed = True
++        else:
++            directed = False
+ 
+-    q = queue.SimpleQueue()
++    if profile:
++        q = ProfilingQueue()
++    else:
++        q = queue.SimpleQueue()
+ 
+     results = []
+     results_count = 0
+@@ -348,7 +404,12 @@ def find_motifs(
+     while not q.empty():
+         new_backbone = q.get()
+         next_candidate_backbones = get_next_backbone_candidates(
+-            new_backbone, motif, host, interestingness, directed=directed
++            new_backbone,
++            motif,
++            host,
++            interestingness,
++            directed=directed,
++            isomorphisms_only=isomorphisms_only,
+         )
+ 
+         for candidate in next_candidate_backbones:
+@@ -360,6 +421,11 @@ def find_motifs(
+             else:
+                 q.put(candidate)
+ 
++    if profile:
++        if count_only:
++            return results_count, q
++        return results, q
+     if count_only:
+         return results_count
+     return results
++
+diff --git a/grandiso/test_grandiso.py b/grandiso/test_grandiso.py
+index a76d66a..651f027 100644
+--- a/grandiso/test_grandiso.py
++++ b/grandiso/test_grandiso.py
+@@ -1,6 +1,7 @@
+ import time
+ import copy
+-import unittest
++import random
++import pytest
+ 
+ import networkx as nx
+ from networkx.algorithms.isomorphism import DiGraphMatcher, GraphMatcher
+@@ -8,7 +9,7 @@
+ from . import find_motifs
+ 
+ 
+-class TestSubgraphMatching(unittest.TestCase):
++class TestSubgraphMatching:
+     def test_finds_no_triangles_in_zero_tri_graph(self):
+ 
+         motif = nx.DiGraph()
+@@ -20,7 +21,7 @@ def test_finds_no_triangles_in_zero_tri_graph(self):
+         host.add_edge("A", "B")
+         host.add_edge("B", "C")
+ 
+-        self.assertEqual(len(find_motifs(motif, host)), 0)
++        assert len(find_motifs(motif, host)) == 0
+ 
+     def test_finds_no_rect_in_zero_rect_graph(self):
+ 
+@@ -35,7 +36,7 @@ def test_finds_no_rect_in_zero_rect_graph(self):
+         host.add_edge("B", "C")
+         host.add_edge("C", "D")
+ 
+-        self.assertEqual(len(find_motifs(motif, host)), 0)
++        assert len(find_motifs(motif, host)) == 0
+ 
+     def test_finds_no_triangles_in_zero_tri_graph_with_context(self):
+ 
+@@ -50,7 +51,7 @@ def test_finds_no_triangles_in_zero_tri_graph_with_context(self):
+         host.add_edge("A", "B")
+         host.add_edge("B", "C")
+ 
+-        self.assertEqual(len(find_motifs(motif, host)), 0)
++        assert len(find_motifs(motif, host)) == 0
+ 
+     def test_finds_no_motifs_in_small_graph(self):
+ 
+@@ -61,7 +62,7 @@ def test_finds_no_motifs_in_small_graph(self):
+         host = nx.DiGraph()
+         host.add_edge("A", "B")
+ 
+-        self.assertEqual(len(find_motifs(motif, host)), 0)
++        assert len(find_motifs(motif, host)) == 0
+ 
+     def test_subgraph_equals_graph_triangle(self):
+ 
+@@ -75,7 +76,7 @@ def test_subgraph_equals_graph_triangle(self):
+         host.add_edge("B", "C")
+         host.add_edge("C", "A")
+ 
+-        self.assertEqual(len(find_motifs(motif, host)), 3)
++        assert len(find_motifs(motif, host)) == 3
+ 
+     def test_subgraph_equals_graph_triangle_count_only(self):
+ 
+@@ -89,7 +90,7 @@ def test_subgraph_equals_graph_triangle_count_only(self):
+         host.add_edge("B", "C")
+         host.add_edge("C", "A")
+ 
+-        self.assertEqual(find_motifs(motif, host, count_only=True), 3)
++        assert find_motifs(motif, host, count_only=True) == 3
+ 
+     def test_subgraph_equals_graph_rect(self):
+ 
+@@ -105,7 +106,7 @@ def test_subgraph_equals_graph_rect(self):
+         host.add_edge("C", "D")
+         host.add_edge("D", "A")
+ 
+-        self.assertEqual(len(find_motifs(motif, host)), 4)
++        assert len(find_motifs(motif, host)) == 4
+ 
+     def test_rect_count_matches_nx(self):
+ 
+@@ -117,9 +118,8 @@ def test_rect_count_matches_nx(self):
+         motif.add_edge("C", "D")
+         motif.add_edge("D", "A")
+ 
+-        self.assertEqual(
+-            len(find_motifs(motif, host)),
+-            len([i for i in DiGraphMatcher(host, motif).subgraph_monomorphisms_iter()]),
++        assert len(find_motifs(motif, host)) == len(
++            [i for i in DiGraphMatcher(host, motif).subgraph_monomorphisms_iter()]
+         )
+ 
+     def test_tri_count_matches_nx(self):
+@@ -131,9 +131,8 @@ def test_tri_count_matches_nx(self):
+         motif.add_edge("B", "C")
+         motif.add_edge("C", "A")
+ 
+-        self.assertEqual(
+-            find_motifs(motif, host, count_only=True),
+-            len([i for i in DiGraphMatcher(host, motif).subgraph_monomorphisms_iter()]),
++        assert find_motifs(motif, host, count_only=True) == len(
++            [i for i in DiGraphMatcher(host, motif).subgraph_monomorphisms_iter()]
+         )
+ 
+     def test_two_hop_count_matches_nx(self):
+@@ -144,9 +143,8 @@ def test_two_hop_count_matches_nx(self):
+         motif.add_edge("A", "B")
+         motif.add_edge("B", "C")
+ 
+-        self.assertEqual(
+-            len(find_motifs(motif, host)),
+-            len([i for i in DiGraphMatcher(host, motif).subgraph_monomorphisms_iter()]),
++        assert len(find_motifs(motif, host)) == len(
++            [i for i in DiGraphMatcher(host, motif).subgraph_monomorphisms_iter()]
+         )
+ 
+     def test_high_degree_high_density_count_matches_nx(self):
+@@ -159,9 +157,8 @@ def test_high_degree_high_density_count_matches_nx(self):
+         motif.add_edge("A", "D")
+         motif.add_edge("A", "E")
+ 
+-        self.assertEqual(
+-            len(find_motifs(motif, host)),
+-            len([i for i in DiGraphMatcher(host, motif).subgraph_monomorphisms_iter()]),
++        assert len(find_motifs(motif, host)) == len(
++            [i for i in DiGraphMatcher(host, motif).subgraph_monomorphisms_iter()]
+         )
+ 
+     def test_high_degree_low_density_count_matches_nx(self):
+@@ -174,13 +171,12 @@ def test_high_degree_low_density_count_matches_nx(self):
+         motif.add_edge("A", "D")
+         motif.add_edge("A", "E")
+ 
+-        self.assertEqual(
+-            len(find_motifs(motif, host)),
+-            len([i for i in DiGraphMatcher(host, motif).subgraph_monomorphisms_iter()]),
++        assert len(find_motifs(motif, host)) == len(
++            [i for i in DiGraphMatcher(host, motif).subgraph_monomorphisms_iter()]
+         )
+ 
+ 
+-class TestUndirectedSubgraphMatching(unittest.TestCase):
++class TestUndirectedSubgraphMatching:
+     def test_subgraph_equals_graph_triangle(self):
+ 
+         motif = nx.Graph()
+@@ -193,7 +189,7 @@ def test_subgraph_equals_graph_triangle(self):
+         host.add_edge("B", "C")
+         host.add_edge("C", "A")
+ 
+-        self.assertEqual(len(find_motifs(motif, host)), 6)
++        assert len(find_motifs(motif, host)) == 6
+ 
+     def test_subgraph_equals_graph_rect(self):
+ 
+@@ -209,7 +205,7 @@ def test_subgraph_equals_graph_rect(self):
+         host.add_edge("C", "D")
+         host.add_edge("D", "A")
+ 
+-        self.assertEqual(len(find_motifs(motif, host)), 8)
++        assert len(find_motifs(motif, host)) == 8
+ 
+     def test_rect_count_matches_nx(self):
+ 
+@@ -221,9 +217,8 @@ def test_rect_count_matches_nx(self):
+         motif.add_edge("C", "D")
+         motif.add_edge("D", "A")
+ 
+-        self.assertEqual(
+-            len(find_motifs(motif, host)),
+-            len([i for i in GraphMatcher(host, motif).subgraph_monomorphisms_iter()]),
++        assert len(find_motifs(motif, host)) == len(
++            [i for i in GraphMatcher(host, motif).subgraph_monomorphisms_iter()]
+         )
+ 
+     def test_tri_count_matches_nx(self):
+@@ -235,9 +230,8 @@ def test_tri_count_matches_nx(self):
+         motif.add_edge("B", "C")
+         motif.add_edge("C", "A")
+ 
+-        self.assertEqual(
+-            len(find_motifs(motif, host)),
+-            len([i for i in GraphMatcher(host, motif).subgraph_monomorphisms_iter()]),
++        assert len(find_motifs(motif, host)) == len(
++            [i for i in GraphMatcher(host, motif).subgraph_monomorphisms_iter()]
+         )
+ 
+     def test_two_hop_count_matches_nx(self):
+@@ -248,9 +242,8 @@ def test_two_hop_count_matches_nx(self):
+         motif.add_edge("A", "B")
+         motif.add_edge("B", "C")
+ 
+-        self.assertEqual(
+-            len(find_motifs(motif, host)),
+-            len([i for i in GraphMatcher(host, motif).subgraph_monomorphisms_iter()]),
++        assert len(find_motifs(motif, host)) == len(
++            [i for i in GraphMatcher(host, motif).subgraph_monomorphisms_iter()]
+         )
+ 
+     def test_high_degree_high_density_count_matches_nx(self):
+@@ -263,9 +256,8 @@ def test_high_degree_high_density_count_matches_nx(self):
+         motif.add_edge("A", "D")
+         motif.add_edge("A", "E")
+ 
+-        self.assertEqual(
+-            len(find_motifs(motif, host)),
+-            len([i for i in GraphMatcher(host, motif).subgraph_monomorphisms_iter()]),
++        assert len(find_motifs(motif, host)) == len(
++            [i for i in GraphMatcher(host, motif).subgraph_monomorphisms_iter()]
+         )
+ 
+     def test_high_degree_low_density_count_matches_nx(self):
+@@ -278,8 +270,81 @@ def test_high_degree_low_density_count_matches_nx(self):
+         motif.add_edge("A", "D")
+         motif.add_edge("A", "E")
+ 
+-        self.assertEqual(
+-            len(find_motifs(motif, host)),
+-            len([i for i in GraphMatcher(host, motif).subgraph_monomorphisms_iter()]),
++        assert len(find_motifs(motif, host)) == len(
++            [i for i in GraphMatcher(host, motif).subgraph_monomorphisms_iter()]
++        )
++
++
++def _random_motif():
++    g = nx.graph_atlas(random.randint(7, 30))
++    while len([c for c in nx.connected_components(g)]) != 1:
++        g = nx.graph_atlas(random.randint(7, 30))
++    return nx.relabel_nodes(g, lambda x: str(x + 1))
++
++
++def _random_host(directed=False, n=20, p=0.1):
++    g = nx.fast_gnp_random_graph(n, p, directed=directed)
++    while (
++        len(
++            [
++                c
++                for c in (
++                    nx.weakly_connected_components(g)
++                    if directed
++                    else nx.connected_components(g)
++                )
++            ]
++        )
++        != 1
++    ):
++        g = nx.fast_gnp_random_graph(n, p, directed=directed)
++    return nx.relabel_nodes(g, lambda x: str(x + 1))
++
++
++def _random_directed_motif():
++    motif = _random_motif()
++    dmotif = nx.DiGraph()
++    for (u, v) in motif.edges():
++        dmotif.add_edge(*random.choice([(u, v), (v, u)]))
++    return dmotif
++
++
++class TestRandomGraphIsomorphisms:
++    @pytest.mark.parametrize(
++        "host,motif",
++        [(_random_host(directed=False), _random_motif()) for _ in range(5)],
++    )
++    def test_isomorphisms_on_undirected_random_graph(self, host, motif):
++        assert find_motifs(motif, host, isomorphisms_only=True, count_only=True) == len(
++            [i for i in GraphMatcher(host, motif).subgraph_isomorphisms_iter()]
++        )
++
++    @pytest.mark.parametrize(
++        "host,motif",
++        [(_random_host(directed=True), _random_directed_motif()) for _ in range(15)],
++    )
++    def test_isomorphisms_on_directed_random_graph(self, host, motif):
++        assert find_motifs(
++            motif, host, directed=True, isomorphisms_only=True, count_only=True
++        ) == len([i for i in DiGraphMatcher(host, motif).subgraph_isomorphisms_iter()])
++
++
++class TestRandomGraphMonomorphisms:
++    @pytest.mark.parametrize(
++        "host,motif",
++        [(_random_host(directed=False), _random_motif()) for _ in range(5)],
++    )
++    def test_monomorphisms_on_undirected_random_graph(self, host, motif):
++        assert find_motifs(motif, host, count_only=True) == len(
++            [i for i in GraphMatcher(host, motif).subgraph_monomorphisms_iter()]
++        )
++
++    @pytest.mark.parametrize(
++        "host,motif",
++        [(_random_host(directed=True), _random_directed_motif()) for _ in range(15)],
++    )
++    def test_monomorphisms_on_directed_random_graph(self, host, motif):
++        assert find_motifs(motif, host, directed=True, count_only=True) == len(
++            [i for i in DiGraphMatcher(host, motif).subgraph_monomorphisms_iter()]
+         )
+ 
+diff --git a/comparisons/Compare-Nx.png b/notebooks/Compare-Nx.png
+similarity index 100%
+rename from comparisons/Compare-Nx.png
+rename to notebooks/Compare-Nx.png

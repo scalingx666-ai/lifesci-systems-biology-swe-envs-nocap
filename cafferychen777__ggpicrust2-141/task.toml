@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/cafferychen777__ggpicrust2-141"
+description = "Update pathway_errorbar.R"
+
+[metadata]
+difficulty = "small"
+category = "bugfix"
+keywords = [
+    "ggpicrust2",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "cafferychen777/ggpicrust2"
+ref = "32462f1c4abfc07e197a6c0ae33a98350058857b"
+reference = "https://github.com/cafferychen777/ggpicrust2/pull/141"
+source_access = "auto"
+built_at = "2026-11-17T21:58:16.809741+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:beeae2f3060fa4d3ca9fbfa2300fab135fc0276cada65ac80b0ffad9e7db8f7a"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2025-04-01T17:13:35Z"
+diff_format = "unified"
+context_files = [
+    "R/pathway_errorbar.R",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 13
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

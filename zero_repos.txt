@@ -4,15 +4,12 @@ prathyvsh/formal-systems-in-biology
 bioFAM/MOFA2
 opencobra/cobratoolbox
 ICB-DCM/pyPESTO
-franciscozorrilla/metaGEM
 YuLab-SMU/enrichplot
 gyorilab/indra
 Murali-group/Beeline
-cafferychen777/ggpicrust2
 saeyslab/multinichenetr
 pysb/pysb
 AMICI-dev/AMICI
-micom-dev/micom
 pybel/pybel
 SysBioChalmers/yeast-GEM
 Future-House/LAB-Bench
@@ -42,7 +39,6 @@ GeomScale/dingo
 SciML/CellMLToolkit.jl
 jpquast/protti
 PEtab-dev/PEtab
-aplbrain/grandiso-networkx
 Data2Dynamics/d2d
 opencobra/COBRA.jl
 Vinay0905/Fish-Detection-YOLOv8

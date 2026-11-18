@@ -1,0 +1,63 @@
+version = "1.0"
+
+[task]
+name = "default/micom-dev__micom-249"
+description = "Support .sbml model file extension"
+
+[metadata]
+difficulty = "small"
+category = "bugfix"
+keywords = [
+    "micom",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "micom-dev/micom"
+ref = "3bff1cacc745373a0ad9633d0b96cf318a809bcf"
+reference = "https://github.com/micom-dev/micom/pull/249"
+source_access = "auto"
+built_at = "2026-11-17T23:02:37.913750+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:014cff08070f529f47f5244efcce2302c24b5043064c1fc056188b36c7bba553"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-09-11T09:31:27Z"
+diff_format = "unified"
+context_files = [
+    "micom/util.py",
+    "tests/test_util.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 10
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

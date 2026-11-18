@@ -1,0 +1,31 @@
+diff --git a/Snakefile b/Snakefile
+index cfeb095..33a2a59 100644
+--- a/Snakefile
++++ b/Snakefile
+@@ -356,14 +356,14 @@ rule assemblyVis:
+             ID=$(echo $(basename $(dirname $assembly)))
+ 
+             # Check if assembly file is empty
+-            check=$(less $assembly|wc -l)
++            check=$(zcat $assembly | head | wc -l)
+             if [ $check -eq 0 ]
+             then
+                 N=0
+                 L=0
+             else
+-                N=$(less $assembly|grep -c ">");
+-                L=$(less $assembly|grep ">"|cut -d '-' -f4|sed 's/len=//'|awk '{{sum+=$1}}END{{print sum}}');
++                N=$(zcat $assembly | grep -c ">");
++                L=$(zcat $assembly | grep ">"|cut -d '-' -f4|sed 's/len=//'|awk '{{sum+=$1}}END{{print sum}}');
+             fi
+ 
+             # Write values to stats file
+@@ -612,7 +612,7 @@ rule kallisto2concoctTable:
+ 
+         # Compile individual mapping results into coverage table for given assembly
+         python {config[path][root]}/{config[folder][scripts]}/{config[scripts][kallisto2concoct]} \
+-            --samplenames <(for s in {input}*; do echo $s|sed 's|^.*/||'; done) \
++            --samplenames <(for s in {input}/*; do echo $s|sed 's|^.*/||'; done) \
+             $(find {input} -name "*.gz") > {output}
+     
+         """

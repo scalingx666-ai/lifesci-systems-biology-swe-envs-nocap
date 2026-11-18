@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/franciscozorrilla__metaGEM-94"
+description = "Fix for conda issues in env_setup.sh script"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "metaGEM",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "franciscozorrilla/metaGEM"
+ref = "eb0860945fd0d8efa8495aeb441b55969c4e97b1"
+reference = "https://github.com/franciscozorrilla/metaGEM/pull/94"
+source_access = "auto"
+built_at = "2026-11-17T21:51:29.634935+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:3124d7fa9806d7c710423f43b1a791840a58da0d063e838d4e814d1454ff350c"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2022-05-10T14:51:29Z"
+diff_format = "unified"
+context_files = [
+    "env_setup.sh",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 25
+difficulty = "medium"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

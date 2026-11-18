@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/aplbrain__grandiso-networkx-23"
+description = "Also check edge attributes"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "grandiso-networkx",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aplbrain/grandiso-networkx"
+ref = "af13f10be9e5e047e337de7d821f2fe106d4bc20"
+reference = "https://github.com/aplbrain/grandiso-networkx/pull/23"
+source_access = "auto"
+built_at = "2026-11-17T19:48:34.982707+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:16805adaba16edf4d005520f310d766a6a2eac0b7188337c17fb399ff3757a16"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2021-12-09T17:04:31Z"
+diff_format = "unified"
+context_files = [
+    "grandiso/__init__.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 41
+difficulty = "medium"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

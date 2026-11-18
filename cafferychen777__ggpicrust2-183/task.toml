@@ -1,0 +1,64 @@
+version = "1.0"
+
+[task]
+name = "default/cafferychen777__ggpicrust2-183"
+description = "feat(visualize_gsea): add custom color scale support; tests; CI Bioc deps"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "ggpicrust2",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "cafferychen777/ggpicrust2"
+ref = "872e6bb7c32880ff12356a40e2956e25fde421db"
+reference = "https://github.com/cafferychen777/ggpicrust2/pull/183"
+source_access = "auto"
+built_at = "2026-11-17T21:58:14.246138+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:03242b05d5be771a356dd0105e90457d8cc5d75dba3fee6519d995b6ff5154fc"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2025-09-23T10:44:55Z"
+diff_format = "unified"
+context_files = [
+    ".github/workflows/R-CMD-check.yaml",
+    "R/visualize_gsea.R",
+    "tests/testthat/test-visualize_gsea_scale.R",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 338
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

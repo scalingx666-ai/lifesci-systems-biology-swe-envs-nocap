@@ -1,0 +1,318 @@
+diff --git a/micom/community.py b/micom/community.py
+index 3abf56c3..cbd1555a 100755
+--- a/micom/community.py
++++ b/micom/community.py
+@@ -135,7 +135,7 @@ def __init__(
+         if not solver:
+             solver = [
+                 s
+-                for s in ["cplex", "osqp", "gurobi", "glpk"]
++                for s in ["cplex", "gurobi", "osqp", "glpk"]
+                 if s in cobra.util.solver.solvers
+             ][0]
+         logger.info("using the %s solver." % solver)
+@@ -493,6 +493,18 @@ def optimize(
+     ):
+         """Optimize the model using flux balance analysis.
+ 
++        This is the primary accessor for optimization in MICOM and should be used
++        for all optimizations. Different from cobrapy this will *not* return the full
++        solution by default but only growth rates which is much quicker. You can
++        request a full solution by setting the `fluxes` and `pFBA` arguments.
++
++        Note
++        ----
++        for OSQP this will use an additional quadratic regularization in order
++        to convert all LP problems to QPs and stabilize the solution. This may not
++        perform well if the community growth rate is larger 1000 (which it should never
++        be as this would be a doubling time of a few seconds).
++
+         Parameters
+         ----------
+         slim : boolean, optional
+@@ -861,3 +873,13 @@ def to_pickle(self, filename):
+         """
+         with open(filename, mode="wb") as out:
+             pickle.dump(self, out, protocol=2)
++
++    @cobra.Model.solver.setter
++    def solver(self, s):
++        """Set the solver."""
++        if hasattr(self.solver.configuration, "lp_method"):
++            self.solver.configuration.lp_method = "auto"
++        if hasattr(self.solver.configuration, "qp_method"):
++            self.solver.configuration.qp_method = "auto"
++        cobra.Model.solver.fset(self, s)
++        adjust_solver_config(self.solver)
+diff --git a/micom/solution.py b/micom/solution.py
+index 16d56691..528f6cc3 100755
+--- a/micom/solution.py
++++ b/micom/solution.py
+@@ -178,6 +178,8 @@ def add_pfba_objective(community, atol=1e-6, rtol=1e-6):
+     community.objective = Zero
+     community.objective_direction = "min"
+     community.objective.set_linear_coefficients(dict.fromkeys(variables, 1.0))
++    if interface_to_str(community.solver.interface) == "osqp":
++        community.objective += 1e-6 * community.variables.community_objective ** 2
+     if community.modification is None:
+         community.modification = "pFBA"
+     else:
+@@ -186,6 +188,13 @@ def add_pfba_objective(community, atol=1e-6, rtol=1e-6):
+ 
+ def solve(community, fluxes=True, pfba=True, raise_error=False, atol=1e-6, rtol=1e-6):
+     """Get all fluxes stratified by taxa."""
++    if interface_to_str(community.solver.interface) == "osqp":
++        # This improves OSQP by soooo much
++        community.objective = community.objective.expression + (
++            1e-6
++            * community.solver.problem.direction
++            * community.variables.community_objective ** 2
++        )
+     community.solver.optimize()
+     status = community.solver.status
+     if status in good:
+@@ -204,6 +213,9 @@ def solve(community, fluxes=True, pfba=True, raise_error=False, atol=1e-6, rtol=
+             sol = CommunitySolution(community)
+         else:
+             sol = CommunitySolution(community, slim=True)
++        if interface_to_str(community.solver.interface) == "osqp":
++            correction = 1e-9 * community.variables.community_objective.primal ** 2
++            sol.objective_value -= community.solver.problem.direction * correction
+         return sol
+     logger.warning("solver encountered an error %s" % status)
+     return None
+diff --git a/micom/util.py b/micom/util.py
+index db999880..eb749426 100755
+--- a/micom/util.py
++++ b/micom/util.py
+@@ -272,6 +272,7 @@ def adjust_solver_config(solver):
+     interface = interface_to_str(solver.interface)
+ 
+     solver.configuration.tolerances.feasibility = 1e-6
++    solver.configuration.presolve = True
+     if interface == "cplex":
+         solver.configuration.lp_method = "barrier"
+         solver.configuration.qp_method = "barrier"
+@@ -283,13 +284,10 @@ def adjust_solver_config(solver):
+         solver.problem.Params.BarIterLimit = 10000
+         solver.problem.Params.Threads = 1
+         solver.problem.Params.LogToConsole = 0
+-    if interface == "glpk":
+-        solver.configuration.presolve = True
+     if interface == "osqp":
+-        # as a direct solver OSQP has trouble getting to good accuracies for LPs
+-        solver.configuration.tolerances.optimality = 1e-3
++        # as a direct solver OSQP has trouble getting to good accuracies
++        solver.configuration.tolerances.optimality = 1e-4
+         solver.configuration.tolerances.feasibility = 1e-4
+-        solver.configuration.presolve = False
+ 
+ 
+ def reset_min_community_growth(com):
+diff --git a/setup.cfg b/setup.cfg
+index 35fa2807..242cd9c0 100755
+--- a/setup.cfg
++++ b/setup.cfg
+@@ -12,7 +12,7 @@ url = https://github.com/micom-dev/micom
+ author = Christian Diener
+ author_email = mail@cdiener.com
+ license = Apache License 2.0
+-classifiers = 
++classifiers =
+ 	Development Status :: 5 - Production/Stable
+ 	Intended Audience :: Science/Research
+ 	Topic :: Scientific/Engineering :: Bio-Informatics
+@@ -22,7 +22,7 @@ classifiers =
+ 	Programming Language :: Python :: 3.7
+ 	Programming Language :: Python :: 3.8
+ 	Programming Language :: Python :: 3.9
+-keywords = 
++keywords =
+ 	microbiome
+ 	microbiota
+ 	modeling
+@@ -33,24 +33,25 @@ keywords =
+ packages = find:
+ zip_safe = True
+ python_requires = >=3.6
+-install_requires = 
++install_requires =
+ 	cobra>=0.17.1
+ 	jinja2>=2.10.0
+ 	scikit-learn>=0.22.0
+ 	scipy>=1.0.0
+ 	symengine>=0.6.1
+-tests_require = 
++	osqp>=0.6.2
++tests_require =
+ 	coverage
+ 	pytest
+ 	pytest-cov
+ 
+ [options.packages.find]
+-exclude = 
++exclude =
+ 	docs
+ 	tests
+ 
+ [options.package_data]
+-micom = 
++micom =
+ 	data/*.csv
+ 	data/*.gz
+ 	data/templates/*.*
+@@ -65,7 +66,7 @@ search = __version__ = "{current_version}"
+ replace = __version__ = "{new_version}"
+ 
+ [tool:pytest]
+-filterwarnings = 
++filterwarnings =
+ 	ignore::DeprecationWarning
+ 	ignore::FutureWarning
+ 
+@@ -77,15 +78,15 @@ source = micom
+ branch = True
+ 
+ [coverage:report]
+-exclude_lines = 
++exclude_lines =
+ 	pragma: no cover
+-	
++
+ 	def __repr__
+ 	if self\.debug
+-	
++
+ 	raise AssertionError
+ 	raise NotImplementedError
+-	
++
+ 	if 0:
+ 	if __name__ == .__main__.:
+ ignore_errors = True
+@@ -93,7 +94,7 @@ ignore_errors = True
+ [flake8]
+ exclude = tests/*, docs/*, versioneer.py, _version.py
+ max-line-length = 88
+-ignore = 
++ignore =
+ 	E203
+ 	W503
+ 	D202
+diff --git a/tests/test_community.py b/tests/test_community.py
+index 7400b1a2..bf38ab71 100755
+--- a/tests/test_community.py
++++ b/tests/test_community.py
+@@ -8,7 +8,6 @@
+ 
+ def test_construction():
+     tax = test_taxonomy()
+-    nr, mr = tax.reactions, tax.metabolites
+     com = Community(tax)
+     assert len(com.taxa) == 4
+     assert len(com.taxonomy) == 4
+diff --git a/tests/test_knockout.py b/tests/test_knockout.py
+index 373bdece..19df43a2 100644
+--- a/tests/test_knockout.py
++++ b/tests/test_knockout.py
+@@ -17,6 +17,6 @@ def test_knockout(community):
+ 
+ 
+ def test_single_knockout(community):
+-    ko = community.knockout_taxa(taxa = community.taxa[0])
++    ko = community.knockout_taxa(taxa=community.taxa[0])
+     assert ko.shape == (1, 4)
+     assert ko.iloc[0, :].values == approx([-0.874, 0.305, 0.305, 0.305], 0.01)
+diff --git a/tests/test_osqp.py b/tests/test_osqp.py
+new file mode 100644
+index 00000000..22617896
+--- /dev/null
++++ b/tests/test_osqp.py
+@@ -0,0 +1,87 @@
++"""Test the OSQP solver.
++
++We only test the core functions with relaxed accuracies as OSQP is not good with LPs.
++"""
++
++from .fixtures import community
++import micom.data as md
++from micom.workflows import (
++    build,
++    grow,
++    tradeoff,
++    minimal_media,
++    fix_medium,
++)
++from micom.qiime_formats import load_qiime_medium
++from micom.solution import CommunitySolution, OptimizationError
++import pytest
++from pytest import approx
++
++medium = load_qiime_medium(md.test_medium)
++db = md.test_db
++
++
++@pytest.mark.parametrize("strategy", ["none", "minimal imports", "pFBA"])
++def test_grow(tmp_path, strategy):
++    data = md.test_data()
++    built = build(data, db, str(tmp_path), cutoff=0, solver="osqp")
++    grown = grow(built, str(tmp_path), medium, 0.5, strategy=strategy)
++    assert len(grown) == 3
++    assert "growth_rate" in grown.growth_rates.columns
++    assert "flux" in grown.exchanges.columns
++    with pytest.raises(OptimizationError):
++        grow(built, str(tmp_path), medium, 1.5)
++
++
++def test_tradeoff(tmp_path):
++    data = md.test_data()
++    built = build(data, db, str(tmp_path), cutoff=0, solver="osqp")
++    rates = tradeoff(built, str(tmp_path), medium)
++    assert "growth_rate" in rates.columns
++    assert "tradeoff" in rates.columns
++    assert rates.dropna().shape[0] < rates.shape[0]
++
++
++def test_media(tmp_path):
++    data = md.test_data()
++    built = build(data, db, str(tmp_path), cutoff=0, solver="osqp")
++    media = minimal_media(built, str(tmp_path), 0.5)
++    assert media.shape[0] > 3
++    assert "flux" in media.columns
++    assert "reaction" in media.columns
++
++
++def test_fix_medium(tmp_path):
++    data = md.test_data()
++    built = build(data, db, str(tmp_path), cutoff=0, solver="osqp")
++    bad_medium = medium.iloc[0:2, :]
++    fixed = fix_medium(built, str(tmp_path), bad_medium, 0.5, 0.001, 10)
++    assert fixed.shape[0] > 3
++    assert "description" in fixed.columns
++
++
++def test_community_objective(community):
++    community.solver = "osqp"
++    x = community.optimize()
++    y = community.optimize(fluxes=True)
++    assert isinstance(x, CommunitySolution)
++    assert x.growth_rate == approx(0.873922, 1e-3, 1e-3)
++    assert x.members.growth_rate.dropna().sum() == approx(4*0.873922, 1e-3, 1e-3)
++    assert isinstance(y, CommunitySolution)
++    assert y.fluxes.shape[0] == 5
++
++
++def test_cooperative_tradeoff(community):
++    community.solver = "osqp"
++    sol = community.cooperative_tradeoff(fraction=1.0)
++    for g in sol.members.growth_rate.dropna():
++        assert g == approx(0.874, 1e-3, 1e-3)
++
++
++def test_multiple_tradeoffs(community):
++    community.solver = "osqp"
++    fs = [1.0, 0.5, 0.3, 0.1]
++    sol = community.cooperative_tradeoff(fraction=fs)
++    assert sol.shape == (4, 2)
++    for i, f in sol.iterrows():
++        assert f.solution.growth_rate == approx(fs[i] * 0.873922, 1e-2, 1e-2)

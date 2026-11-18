@@ -9,9 +9,9 @@ Repo2RLEnv pr_diff (v0.9.6), Harbor-format output. Domain: systems-biology.
 | Domain candidates (deduped) | 203 |
 | After active+star+noise filter | 78 |
 | Final target list (cap unlimited) | 78 |
-| Repos with >=1 task | 12 |
-| Repos with 0 tasks | 61 |
-| Total tasks (unlimited (no per-repo cap)) | 337 |
+| Repos with >=1 task | 16 |
+| Repos with 0 tasks | 57 |
+| Total tasks (unlimited (no per-repo cap)) | 467 |
 
 ## Generation
 
@@ -23,7 +23,7 @@ Repo2RLEnv pr_diff (v0.9.6), Harbor-format output. Domain: systems-biology.
 - Overlap with the 3 published cancer editions is allowed (user decision);
   domains are independent selections, not a partition of one repo set.
 
-## Zero-yield repos (informational, 61)
+## Zero-yield repos (informational, 57)
 
 - opencobra/cobrapy
 - oncologylab/craftgrn
@@ -31,15 +31,12 @@ Repo2RLEnv pr_diff (v0.9.6), Harbor-format output. Domain: systems-biology.
 - bioFAM/MOFA2
 - opencobra/cobratoolbox
 - ICB-DCM/pyPESTO
-- franciscozorrilla/metaGEM
 - YuLab-SMU/enrichplot
 - gyorilab/indra
 - Murali-group/Beeline
-- cafferychen777/ggpicrust2
 - saeyslab/multinichenetr
 - pysb/pysb
 - AMICI-dev/AMICI
-- micom-dev/micom
 - pybel/pybel
 - SysBioChalmers/yeast-GEM
 - Future-House/LAB-Bench
@@ -69,7 +66,6 @@ Repo2RLEnv pr_diff (v0.9.6), Harbor-format output. Domain: systems-biology.
 - SciML/CellMLToolkit.jl
 - jpquast/protti
 - PEtab-dev/PEtab
-- aplbrain/grandiso-networkx
 - Data2Dynamics/d2d
 - opencobra/COBRA.jl
 - Vinay0905/Fish-Detection-YOLOv8

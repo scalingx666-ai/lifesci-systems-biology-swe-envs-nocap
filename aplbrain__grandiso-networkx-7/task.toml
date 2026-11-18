@@ -1,0 +1,67 @@
+version = "1.0"
+
+[task]
+name = "default/aplbrain__grandiso-networkx-7"
+description = "Isomorphisms + Profiling"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "grandiso-networkx",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aplbrain/grandiso-networkx"
+ref = "04936ffc1c86c6c470209796732f7f98ad3adb92"
+reference = "https://github.com/aplbrain/grandiso-networkx/pull/7"
+source_access = "auto"
+built_at = "2026-11-17T19:48:54.792130+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:9cde8355b3e34913cc9985276a01a2c9e4dbd7a0dc496d8182bd064221bd6a0b"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2020-10-15T22:33:46Z"
+diff_format = "unified"
+context_files = [
+    ".github/workflows/python-package.yml",
+    ".gitignore",
+    "README.md",
+    "grandiso/__init__.py",
+    "grandiso/test_grandiso.py",
+    "notebooks/Compare-Nx.png",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 270
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

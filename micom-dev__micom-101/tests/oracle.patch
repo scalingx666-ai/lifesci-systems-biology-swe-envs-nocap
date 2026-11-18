@@ -1,0 +1,381 @@
+diff --git a/NEWS.md b/NEWS.md
+index 2068f4c2..a8b98289 100755
+--- a/NEWS.md
++++ b/NEWS.md
+@@ -5,6 +5,14 @@ This includes a list of major changes for each minor version starting from 0.19.
+ For information on how to use `micom` please refer to
+ [the documentation](https://micom-dev.github.io/micom).
+ 
++### 0.31.0
++
++The medium completion functions now have a flag that allows adding additional flux
++to components already in the candidate medium. The default is now changed to that
++new non-strict mode which makes it much easier and more efficient to complete media.
++In that case the `max_added_import` amount now specifies the maximum flux added on top
++the limit specified in the candidate medium.
++
+ ### 0.30.5
+ 
+ Fixed a bug where T-SNE would complain in low sample numbers.
+diff --git a/micom/media.py b/micom/media.py
+index bc9c9e01..7f08ea1a 100755
+--- a/micom/media.py
++++ b/micom/media.py
+@@ -266,6 +266,7 @@ def complete_medium(
+     max_import=1,
+     minimize_components=False,
+     weights=None,
++    strict=[],
+ ):
+     """Fill in missing components in a growth medium.
+ 
+@@ -307,6 +308,14 @@ def complete_medium(
+         the elemental content (for instance "C" to scale by carbon content).
+         If None every metabolite will receive the same weight.
+         Will be ignored if `minimize_components` is True.
++    strict : list
++        strict : list
++        Whether to match the imports in the predefined medium exactly. For reactions IDs
++        listed here will not allow additional import of the components in the provided
++        medium. For example, if your input medium has a flux of 10 mmol/(gDW*h) defined
++        and the requested growth rate can only be fulfilled by ramping this up that
++        would be allowed in non-strict mode but forbidden in strict mode. To match all
++        medium components to strict mode use `strict=medium.index`.
+ 
+ 
+     Returns
+@@ -319,6 +328,7 @@ def complete_medium(
+ 
+     """
+     exids = [r.id for r in model.exchanges]
++    medium_rxns = [r for r in model.exchanges if r.id in medium.index]
+     candidates = [r for r in model.exchanges if r.id not in medium.index]
+     medium = medium[[i for i in medium.index if i in exids]]
+     tol = model.solver.configuration.tolerances.feasibility
+@@ -335,6 +345,18 @@ def complete_medium(
+         model.add_cons_vars([const])
+         model.objective = Zero
+         model.medium = medium.to_dict()
++        extra_imports = []
++        for ex in medium_rxns:
++            if ex.id in strict:
++                continue
++            ex_copy = ex.copy()
++            ex_copy.id = ex.id + "_free"
++            if hasattr(ex, "global_id"):
++                ex_copy.global_id = ex.global_id + "_free"
++                ex_copy.community_id = ex.community_id
++            extra_imports.append(ex_copy)
++            candidates.append(ex)
++        model.add_reactions(extra_imports)
+         for ex in candidates:
+             export = len(ex.reactants) == 1
+             if export:
+@@ -348,7 +370,8 @@ def complete_medium(
+             add_linear_obj(model, candidates, scales)
+         if isinstance(model, Community):
+             sol = model.optimize(fluxes=True, pfba=False)
+-            fluxes = sol.fluxes.loc["medium", :]
++            if sol is not None:
++                fluxes = sol.fluxes.loc["medium", :]
+         else:
+             try:
+                 sol = model.optimize(raise_error=True)
+@@ -362,13 +385,13 @@ def complete_medium(
+     completed = pd.Series(dtype="float64")
+     for rxn in model.exchanges:
+         export = len(rxn.reactants) == 1
+-        if rxn.id in medium.index:
+-            completed[rxn.id] = medium[rxn.id]
+-            continue
+-        else:
+-            flux = -fluxes[rxn.id] if export else fluxes[rxn.id]
++        flux = -fluxes[rxn.id] if export else fluxes[rxn.id]
+         if abs(flux) < tol:
+-            continue
++            flux = 0.0
+         completed[rxn.id] = flux
++        if rxn in medium_rxns and rxn.id not in strict:
++            completed[rxn.id] += medium[rxn.id]
++        elif rxn in medium_rxns:
++            completed[rxn.id] = medium[rxn.id]
+ 
+     return completed[completed > 0]
+diff --git a/micom/workflows/__init__.py b/micom/workflows/__init__.py
+index 281a7e52..9e9f8e7f 100644
+--- a/micom/workflows/__init__.py
++++ b/micom/workflows/__init__.py
+@@ -5,13 +5,14 @@
+ from .grow import grow
+ from .tradeoff import tradeoff
+ from .media import fix_medium, minimal_media
+-from .db_media import check_db_medium
++from .db_media import check_db_medium, complete_db_medium
+ 
+ __all__ = (
+     "workflow",
+     "build",
+     "build_database",
+     "check_db_medium",
++    "complete_db_medium",
+     "grow",
+     "tradeoff",
+     "fix_medium",
+diff --git a/micom/workflows/db_media.py b/micom/workflows/db_media.py
+index 1b3e43ba..ad582f98 100644
+--- a/micom/workflows/db_media.py
++++ b/micom/workflows/db_media.py
+@@ -12,6 +12,7 @@
+ from micom.util import load_model
+ from micom.qiime_formats import load_qiime_model_db
+ import re
++from rich import print as rprint
+ from tempfile import TemporaryDirectory
+ 
+ 
+@@ -32,21 +33,32 @@ def _grow(args):
+ 
+ def _try_complete(args):
+     """Try to complete the medium for a model."""
+-    file, med, growth, max_import, mip, w = args
++    file, med, growth, max_import, mip, w, strict = args
+     mod = load_model(file)
+     exc = find_external_compartment(mod)
+     if exc.startswith("C_"):  # for CARVEME models
+         exc = exc[2:]
+     try:
+         fixed = mm.complete_medium(
+-            mod, med, growth, max_import=max_import, minimize_components=mip, weights=w
++            mod,
++            med,
++            growth,
++            max_import=max_import,
++            strict=strict,
++            minimize_components=mip,
++            weights=w,
+         )
+         added = sum(i not in med.index for i in fixed.index)
++        added_flux = fixed.sum() - med[med.index.isin(fixed.index)].sum()
+         can_grow = True
+-        logger.info("Could grow `%s` by adding %d imports." % (file, added))
++        logger.info(
++            "Could grow `%s` by adding %d imports"
++            "and %g additional .flux" % (file, added, added_flux)
++        )
+     except OptimizationError:
+         fixed = pd.Series(float("nan"), index=med.index)
+         added = float("nan")
++        added_flux = float("nan")
+         can_grow = False
+         logger.info("Could not grow `%s`." % file)
+     fixed.index = [
+@@ -58,7 +70,7 @@ def _try_complete(args):
+         for rid in fixed.index
+     ]
+ 
+-    return (can_grow, added, fixed)
++    return (can_grow, added, added_flux, fixed)
+ 
+ 
+ def check_db_medium(model_db, medium, threads=1):
+@@ -98,7 +110,7 @@ def check_db_medium(model_db, medium, threads=1):
+     else:
+         manifest = load_manifest(model_db)
+     rank = manifest["summary_rank"][0]
+-    logger.info(
++    rprint(
+         "Checking %d %s-level models on a medium with %d components."
+         % (manifest.shape[0], rank, len(medium))
+     )
+@@ -122,6 +134,7 @@ def complete_db_medium(
+     minimize_components=False,
+     weights=None,
+     threads=1,
++    strict=list(),
+ ):
+     """Complete a growth medium for all models in a database.
+ 
+@@ -156,6 +169,13 @@ def complete_db_medium(
+     threads : int >=1
+         The number of parallel workers to use when building models. As a
+         rule of thumb you will need around 1GB of RAM for each thread.
++    strict : list
++        Whether to match the imports in the predefined medium exactly. For reactions IDs
++        listed here will not allow additional import of the components in the provided
++        medium. For example, if your input medium has a flux of 10 mmol/(gDW*h) defined
++        and the requested growth rate can only be fulfilled by ramping this up that
++        would be allowed in non-strict mode but forbidden in strict mode. To match all
++        medium components to strict mode use `strict=medium.global_id`.
+ 
+     Returns
+     -------
+@@ -176,9 +196,9 @@ def complete_db_medium(
+     else:
+         manifest = load_manifest(model_db)
+     rank = manifest["summary_rank"][0]
+-    logger.info(
+-        "Checking %d %s-level models on a medium with %d components."
+-        % (manifest.shape[0], rank, len(medium))
++    rprint(
++        "Completing %d %s-level models on a medium with %d components"
++        " ([red]%d strict[/red])." % (manifest.shape[0], rank, len(medium), len(strict))
+     )
+     if not isinstance(growth, pd.Series):
+         growth = pd.Series(growth, index=manifest.id)
+@@ -192,18 +212,30 @@ def complete_db_medium(
+             max_added_import,
+             minimize_components,
+             weights,
++            strict,
+         )
+         for i in manifest.index
+     ]
+     results = workflow(_try_complete, args, threads)
+     manifest["can_grow"] = [r[0] for r in results]
+     manifest["added"] = [r[1] for r in results]
+-    imports = pd.DataFrame.from_records([r[2] for r in results]).fillna(0.0)
++    manifest["added_flux"] = [r[2] for r in results]
++    imports = pd.DataFrame.from_records([r[3] for r in results]).fillna(0.0)
+     imports.index = manifest.id
+ 
+     if compressed:
+         tdir.cleanup()
+ 
++    metrics = (
++        manifest.can_grow.sum(),
++        manifest.added_flux.dropna().mean(),
++        medium.flux.sum(),
++    )
++    rprint(
++        "Obtained growth for %d models adding additional"
++        " flux of %.2f/%.2f on average." % metrics
++    )
++
+     return (manifest, imports)
+ 
+ 
+diff --git a/tests/data/test_db_media.py b/tests/data/test_db_media.py
+new file mode 100644
+index 00000000..38442cca
+--- /dev/null
++++ b/tests/data/test_db_media.py
+@@ -0,0 +1,53 @@
++"""Test media helpers for model databases."""
++
++import micom.data as md
++from micom.qiime_formats import load_qiime_medium
++from micom.workflows import complete_db_medium
++import pytest
++
++db = md.test_db
++medium = load_qiime_medium(md.test_medium)
++medium["global_id"] = medium["reaction"].replace("_m$", "_e", regex=True)
++
++
++def test_complete_strict():
++    pruned = medium.iloc[0:2]
++    manifest, fixed = complete_db_medium(
++        db,
++        growth=0.85,
++        medium=pruned,
++        strict=pruned.global_id,
++        max_added_import=20
++    )
++    assert fixed.shape[0] > 2
++    assert manifest.can_grow.all()
++    assert manifest.added.mean() > 0
++    assert manifest.added_flux.mean() > 1.0
++
++
++def test_complete_non_strict():
++    manifest, fixed = complete_db_medium(
++        db,
++        growth=0.95,
++        medium=medium,
++        max_added_import=20
++    )
++    assert fixed.shape[0] > 2
++    assert manifest.added.mean() > 0
++    assert manifest.added_flux.mean() > 1.0
++
++
++def test_complete_weighted():
++    pruned = medium.iloc[0:2]
++    manifest, fixed = complete_db_medium(
++        db,
++        growth=0.85,
++        medium=pruned,
++        strict=pruned.global_id,
++        max_added_import=20,
++        weights="mass"
++    )
++    assert fixed.shape[0] > 2
++    assert manifest.can_grow.all()
++    assert manifest.added.mean() > 0
++    assert manifest.added_flux.mean() > 1.0
+diff --git a/tests/test_media.py b/tests/test_media.py
+index 3b2e6fc0..1fe7d3a0 100755
+--- a/tests/test_media.py
++++ b/tests/test_media.py
+@@ -3,6 +3,7 @@
+ from .fixtures import community
+ import numpy as np
+ import micom.media as media
++from pandas.testing import assert_series_equal
+ import pytest
+ 
+ 
+@@ -57,16 +58,47 @@ def test_medium_wrong_element(community):
+         medium = media.minimal_medium(community, 0.8, 0.8, weights="Cat")
+ 
+ 
+-def test_complete(community):
++def test_complete_strict(community):
+     m = media.minimal_medium(community, 0.85, 0.85,
+-                             minimize_components=True)
+-    medium = media.complete_medium(community, m[0:2], 0.8, max_import=20)
++                             minimize_components=False)
++    medium = media.complete_medium(community, m[0:2], 0.8, max_import=20,
++                                   strict=m.index)
++    assert len(medium) > 2
++
++
++def test_complete_weights(community):
++    m = media.minimal_medium(community, 0.85, 0.85,
++                             minimize_components=False)
++    medium = media.complete_medium(community, m[0:2], 0.8, max_import=20,
++                                   strict=m.index, weights="C")
++    assert len(medium) == 4
++
++
++def test_complete_non_strict(community):
++    m = media.minimal_medium(community, 0.85, 0.85,
++                             minimize_components=False)
++    # request growth rates not fulfillable with previous bounds
++    medium = media.complete_medium(community, m, 0.95, 0.95, max_import=20)
++    community.medium = medium
++    new_min = media.minimal_medium(community, 0.95, 0.95)
+     assert len(medium) > 2
++    print(new_min - medium)
++    assert_series_equal(new_min, medium)  # check if indeed minimal
+ 
+ 
+-def test_complete_mip(community):
++def test_complete_mip_strict(community):
+     m = media.minimal_medium(community, 0.85, 0.85,
+                              minimize_components=True)
+-    medium = media.complete_medium(community, m[0:2], 0.8, 0.0, max_import=20,
++    medium = media.complete_medium(community, m[0:2], 0.8, 0.8, max_import=20,
++                                   strict=m.index, minimize_components=True)
++    assert len(medium) == 4
++
++
++def test_complete_mip_non_strict(community):
++    m = media.minimal_medium(community, 0.85, 0.85,
++                             minimize_components=True)
++    medium = media.complete_medium(community, m, 0.95, 0.95, max_import=20,
+                                    minimize_components=True)
+-    assert len(medium) > 2
++    assert len(medium) == 5
++
++

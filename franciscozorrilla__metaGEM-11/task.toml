@@ -1,0 +1,70 @@
+version = "1.0"
+
+[task]
+name = "default/franciscozorrilla__metaGEM-11"
+description = "Dev update: pangenome analysis, drep, coassembly test, abundance fix"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "metaGEM",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "franciscozorrilla/metaGEM"
+ref = "f2ea7e680144d66b038f5cf3f6cd4dbb90eff8d0"
+reference = "https://github.com/franciscozorrilla/metaGEM/pull/11"
+source_access = "auto"
+built_at = "2026-11-17T21:51:33.661149+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:973854dec10facf374187facec78a35726702b3e4dd874b8068a6c81497fe636"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2020-06-08T13:29:09Z"
+diff_format = "unified"
+context_files = [
+    "Scripts/assemblyVis.R",
+    "Scripts/assemblyVis_old.R",
+    "Scripts/prepareRoaryInput.R",
+    "Snakefile",
+    "Snakefile_single_end.py",
+    "cluster_config.json",
+    "config.yaml",
+    "metaBAGpipes.sh",
+    "pipeline.jpeg",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 996
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

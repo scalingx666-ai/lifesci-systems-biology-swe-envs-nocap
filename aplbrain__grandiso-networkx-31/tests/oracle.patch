@@ -1,0 +1,164 @@
+diff --git a/.github/workflows/python-package.yml b/.github/workflows/python-package.yml
+index a82a8c5..997682e 100644
+--- a/.github/workflows/python-package.yml
++++ b/.github/workflows/python-package.yml
+@@ -15,7 +15,7 @@ jobs:
+     runs-on: ubuntu-latest
+     strategy:
+       matrix:
+-        python-version: [3.6, 3.7, 3.8]
++        python-version: [3.6, 3.7, 3.8, 3.9, '3.10']
+ 
+     steps:
+     - uses: actions/checkout@v2
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 76cde06..17f25c0 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -1,5 +1,12 @@
+ # CHANGELOG
+ 
++## [v2.1.1 (December 21 2021)](https://pypi.org/project/grandiso/2.1.0/)
++
++-   Fixes
++    -   Fixed a minor bug in which counts were one-off when using `count_only=False` and `limit=int`.
++    -   Achieved 100% test coverage, woo!
++    -   Added support for Python 3.6 (thanks @aleclearmind!), and added 3.9 and 3.10 to CI.
++
+ ## [v2.1.0 (December 16 2021)](https://pypi.org/project/grandiso/2.1.0/)
+ 
+ -   Features
+diff --git a/grandiso/__init__.py b/grandiso/__init__.py
+index bfefaa8..63c798b 100644
+--- a/grandiso/__init__.py
++++ b/grandiso/__init__.py
+@@ -25,7 +25,7 @@
+ import networkx as nx
+ from .queues import SimpleQueue
+ 
+-__version__ = "2.1.0"
++__version__ = "2.1.1"
+ 
+ 
+ @lru_cache()
+@@ -157,8 +157,9 @@ def get_next_backbone_candidates(
+     # interesting node to start with:
+     if next_node is None and len(backbone) == 0:
+         # This is the starting-case, where we have NO backbone nodes set yet.
+-        next_node = max(interestingness.keys(),
+-                        key=lambda node: interestingness.get(node, 0.0))
++        next_node = max(
++            interestingness.keys(), key=lambda node: interestingness.get(node, 0.0)
++        )
+         # Let's return ALL possible node choices for this next_node. To do this
+         # without being an insane person, let's filter on max degree in host:
+         return [
+@@ -201,8 +202,10 @@ def get_next_backbone_candidates(
+                 _nodes_with_greatest_backbone_count.append(motif_node_id)
+         # Now we have _node_with_greatest_backbone_count as the best candidate
+         # for `next_node`.
+-        next_node = max(_nodes_with_greatest_backbone_count,
+-                        key=lambda node: interestingness.get(node, 0.0))
++        next_node = max(
++            _nodes_with_greatest_backbone_count,
++            key=lambda node: interestingness.get(node, 0.0),
++        )
+ 
+     # Now we have a node `next_node` which we know is connected to the current
+     # backbone. Get all edges between `next_node` and nodes in the backbone,
+@@ -480,7 +483,10 @@ def find_motifs(
+             if count_only:
+                 return results_count
+             else:
+-                if limit and results_count >= limit:
++                # Subtract 1 from results_count because we have not yet
++                # added the new result to the results list, but we HAVE
++                # already added +1 to the count.
++                if limit and (results_count - 1) >= limit:
+                     return results
+         if not count_only:
+             results.append(result)
+diff --git a/grandiso/test_grandiso.py b/grandiso/test_grandiso.py
+index 354d642..d082b9a 100644
+--- a/grandiso/test_grandiso.py
++++ b/grandiso/test_grandiso.py
+@@ -437,7 +437,7 @@ def test_limit_one(self):
+     def test_limit_eq_answer(self):
+         host = nx.complete_graph(8)
+         motif = nx.complete_graph(3)
+-        assert find_motifs(motif, host, count_only=True, limit=336) == 336
++        assert len(find_motifs(motif, host, limit=300)) == 300
+ 
+     def test_limit_gt_answer(self):
+         host = nx.complete_graph(8)
+@@ -507,3 +507,50 @@ def test_node_and_edge_attributes(self):
+         motif.add_node("c", flavor="lint")
+ 
+         assert find_motifs(motif, host) == []
++
++    def test_attr_not_in_node(self):
++        host = nx.DiGraph()
++        nx.add_path(host, ["A", "B", "C", "A"])
++        host.add_edge("A", "B")
++        host.add_edge("B", "C")
++        host.add_edge("C", "A")
++        host.add_node("A")
++        host.add_node("B")
++        host.add_node("C")
++
++        motif = nx.DiGraph()
++        motif.add_edge("a", "b")
++        motif.add_node("a", flavor="coffee")
++
++        assert find_motifs(motif, host) == []
++
++    def test_attr_not_in_edge(self):
++        host = nx.DiGraph()
++        nx.add_path(host, ["A", "B", "C", "A"])
++        host.add_edge("A", "B")
++        host.add_edge("B", "C")
++        host.add_edge("C", "A")
++        host.add_node("A")
++        host.add_node("B")
++        host.add_node("C")
++
++        motif = nx.DiGraph()
++        motif.add_edge("a", "b", type="delicious")
++
++        assert find_motifs(motif, host) == []
++
++
++class TestBrokenMotifFailures:
++    def test_disconnected_motif(self):
++        host = nx.complete_graph(8, nx.DiGraph())
++        motif = nx.DiGraph()
++        motif.add_node("a")
++        motif.add_node("b")
++        with pytest.raises(ValueError):
++            find_motifs(motif, host)
++
++    def test_empty_motif(self):
++        host = nx.complete_graph(8, nx.DiGraph())
++        motif = nx.DiGraph()
++        with pytest.raises(ValueError):
++            find_motifs(motif, host)
+diff --git a/requirements.txt b/requirements.txt
+index 6506fc7..0198fd9 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -1 +1 @@
+-networkx==2.5.1
++networkx>=2.5.1
+diff --git a/setup.py b/setup.py
+index c058bfc..5646228 100644
+--- a/setup.py
++++ b/setup.py
+@@ -5,7 +5,7 @@
+ 
+ setuptools.setup(
+     name="grandiso",
+-    version="2.1.0",
++    version="2.1.1",
+     author="Jordan Matelsky",
+     author_email="opensource@matelsky.com",
+     description="Performant subgraph isomorphism",

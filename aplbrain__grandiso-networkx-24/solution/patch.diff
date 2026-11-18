@@ -1,0 +1,102 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 0988a7b..8ea3837 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -1,10 +1,15 @@
+ # CHANGELOG
+ 
++## [v2.1.0 (Unreleased)](#)
++
++-   Features
++    -   (#23) Adds edge-attribute matching alongside node-attribute matching (thanks @MelomanCool!), along with tests for attribute-matching (#24)
++
+ ## [v2.0.1 (Sep 20 2021)](https://pypi.org/project/grandiso/2.0.1/)
+ 
+-- Fixes
+-    - Fixes an installation error where older versions of python misread the long description of the package
+-    - Fixes a namespace resolution error in `queues`
++-   Fixes
++    -   Fixes an installation error where older versions of python misread the long description of the package
++    -   Fixes a namespace resolution error in `queues`
+ 
+ ## [v2.0.0 (May 28 2021)](https://pypi.org/project/grandiso/2.0.0/)
+ 
+diff --git a/grandiso/__init__.py b/grandiso/__init__.py
+index 3242160..d2d6790 100644
+--- a/grandiso/__init__.py
++++ b/grandiso/__init__.py
+@@ -25,7 +25,7 @@
+ import networkx as nx
+ from .queues import SimpleQueue
+ 
+-__version__ = "2.0.1"
++__version__ = "2.1.0"
+ 
+ 
+ @lru_cache()
+diff --git a/grandiso/test_grandiso.py b/grandiso/test_grandiso.py
+index 3be20ef..354d642 100644
+--- a/grandiso/test_grandiso.py
++++ b/grandiso/test_grandiso.py
+@@ -462,3 +462,48 @@ def test_fails_on_invalid_hint(self):
+         motif = nx.complete_graph(3)
+         with pytest.raises(Exception):
+             next(find_motifs_iter(motif, host, hints=[{"F": "X"}]))
++
++
++class TestAttributes:
++    def test_node_attributes(self):
++        host = nx.DiGraph()
++        nx.add_path(host, ["A", "B", "C", "A"])
++        host.add_node("A", flavor="chocolate")
++        host.add_node("B", flavor="coffee")
++        host.add_node("C", flavor="lint")
++
++        motif = nx.DiGraph()
++        nx.add_path(motif, ["a", "b", "c", "a"])
++        motif.add_node("b", flavor="chocolate")
++
++        assert find_motifs(motif, host, count_only=True) == 1
++
++    def test_edge_attributes(self):
++        host = nx.DiGraph()
++        nx.add_path(host, ["A", "B", "C", "A"])
++        host.add_edge("A", "B", flavor="chocolate")
++        host.add_edge("B", "C", flavor="coffee")
++        host.add_edge("C", "A", flavor="lint")
++
++        motif = nx.DiGraph()
++        nx.add_path(motif, ["a", "b", "c", "a"])
++        motif.add_edge("a", "b", flavor="chocolate")
++
++        assert find_motifs(motif, host) == [{"a": "A", "b": "B", "c": "C"}]
++
++    def test_node_and_edge_attributes(self):
++        host = nx.DiGraph()
++        nx.add_path(host, ["A", "B", "C", "A"])
++        host.add_edge("A", "B", flavor="chocolate")
++        host.add_edge("B", "C", flavor="coffee")
++        host.add_edge("C", "A", flavor="lint")
++        host.add_node("A", flavor="chocolate")
++        host.add_node("B", flavor="coffee")
++        host.add_node("C", flavor="lint")
++
++        motif = nx.DiGraph()
++        nx.add_path(motif, ["a", "b", "c", "a"])
++        motif.add_edge("a", "b", flavor="coffee")
++        motif.add_node("c", flavor="lint")
++
++        assert find_motifs(motif, host) == []
+diff --git a/setup.py b/setup.py
+index 3368486..c058bfc 100644
+--- a/setup.py
++++ b/setup.py
+@@ -5,7 +5,7 @@
+ 
+ setuptools.setup(
+     name="grandiso",
+-    version="2.0.1",
++    version="2.1.0",
+     author="Jordan Matelsky",
+     author_email="opensource@matelsky.com",
+     description="Performant subgraph isomorphism",

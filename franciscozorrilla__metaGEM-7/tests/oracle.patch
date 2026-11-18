@@ -1,0 +1,2403 @@
+diff --git a/.DS_Store b/.DS_Store
+deleted file mode 100644
+index 198b502..0000000
+Binary files a/.DS_Store and /dev/null differ
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000..5ca0973
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,2 @@
++.DS_Store
++
+diff --git a/README.md b/README.md
+index 7afface..b6b5a6d 100644
+--- a/README.md
++++ b/README.md
+@@ -1,5 +1,8 @@
+ # metaBAGpipes
+-### A Snakemake-based workflow to generate high quality MAGs, reconstruct GEMs, and perform community metabolic interaction simulations on HPC cluster
++
++> A Snakemake-based workflow to generate high quality MAGs, reconstruct GEMs, and perform community metabolic interaction simulations on HPC cluster
++
++metaBAGpipes integrates an array of existing bioinformatics and metabolic modeling tools using Snakemake, for the purpose of interrogating social interactions in bacterial communities of the human gut microbiome. From WGS metagenomic datasets, metagenome assembled genomes (MAGs) are reconstructed, which are then converted into genome-scale metabolic models (GEMs) for *in silico* simulations of cross feeding interactions within sample based communities. Abundance estimates for community members are estimated by mapping metagenomic samples to the generated MAGs, which are used in combination with the simulated cross feeding interactions for the generation of explanatory and statistically significant linear models. We conclude that there is indeed a correlation, ranging from weak to moderate, between gut microbiome members’ abundance and set of metabolic cross-feeding interactions across samples. A more comprehensive analysis incorporating multiple datasets needs to be conducted to strengthen and expand the findings of this work.
+ 
+ ## Use cases:
+ 
+@@ -23,10 +26,9 @@
+ 
+ ### Usage
+ 
+-
+-```
+ bash metaBAGpipes.sh [-t TASK] [-j NUMBER OF JOBS] [-c NUMBER OF CORES]
+ 
++
+ Snakefile wrapper/parser for metaBAGpipes. 
+ 
+  Options:
+@@ -64,11 +66,12 @@ Snakefile wrapper/parser for metaBAGpipes.
+   -h, --help        Display this help and exit
+ 
+ Example: bash metaBAGpipes.sh -t createFolders -j 1 -c 1
++
+ ```
+ 
+ ## Installation
+ 
+-```
++```bash
+ git clone https://github.com/franciscozorrilla/metaBAGpipes.git
+ ```
+ 
+@@ -79,7 +82,7 @@ git clone https://github.com/franciscozorrilla/metaBAGpipes.git
+ A [conda](https://conda.io/en/latest/) specification file is provided to install required packages inside an
+ environment called `metabagpipes`.
+ 
+-```
++```bash
+ conda env create -f metaBAGpipes_env.yml
+ source activate metabagpipes
+ ```
+@@ -92,7 +95,7 @@ GEM reconstruction (step 7) and GEM community simulations (step 9) require the I
+ 
+ Bin refinement (step 3) and bin reassembly (step 4) make use of metaWRAP modules. To avoid package conflicts, set up metaWRAP in its own environment using the provided conda specification file.
+ 
+-```
++```bash
+ conda env create -f metaWRAP_env.yml
+ source activate metawrap
+ ```
+@@ -105,7 +108,7 @@ CheckM is used extensively to evaluate the output of various itntermediate steps
+ 
+ A [Singularity](https://sylabs.io/docs/) recipe files is provided to build an image that can be used with HPC clusters.
+ 
+-```
++```bash
+ sudo singularity --verbose build metabagpipes.simg Singularity
+ ```
+ 
+@@ -119,7 +122,7 @@ As a tutorial, and to verify that your metaBAGpipes installation is working corr
+ 
+ Create tutorial directory and move `Snakefile`, `config.yaml`, and `cluster_config.json` to working directory:
+ 
+-```
++```bash
+ mkdir -p tutorial
+ mv Snakefile config.yaml cluster_config.json tutorial
+ cd tutorial
+@@ -130,7 +133,7 @@ pwd
+ 
+ The `config.yaml` contains the absolute path of your working directory, folder names, absolute paths to scripts/databases, and cores/parameters used by individual rules in the Snakefile. Most importantly, replace the root path (line 2) with the absolute path of your working directory in the `config.yaml` file.
+ 
+-```
++```yaml
+ path:
+     root: /home/zorrilla/workspace/githubReadmeTutorial
+ folder:
+@@ -193,25 +196,44 @@ The `folders` section should be left as is. However, ensure that the `scripts` a
+ 
+ To test that your snakemake installation and Snakefile are working properly, run the `createFolders` snakemake rule. These folders can alternatively be generated later on during the execution of each individual rule.
+ 
+-```
++```bash
+ snakemake createFolders
+ ```
+ 
+-Next, download the [toy dataset](https://zenodo.org/record/3534949#.XclQriV7lTZ) into the `dataset` folder. This can be done manually, or more conveniently, using the `downloadToy` snakemake rule.
++Or, using the metaBAGpipes.sh parser:
+ 
++```bash
++./metaBAGpipes.sh -t createFolders -j 1 -c 1
+ ```
++
++Next, download the [toy dataset](https://zenodo.org/record/3534949#.XclQriV7lTZ) into the `dataset` folder. This can be done manually, or more conveniently, using the `downloadToy` snakemake rule.
++
++```bash
+ snakemake downloadToy
+ ```
+ 
+-Organize reads into sample specific sub-directories. This is required as metaBAGpipes uses snakemake wildcards based on these subfolders.
++Alternatively, using the metaBAGpipes.sh parser:
+ 
++```bash
++./metaBAGpipes.sh -t downloadToy -j 1 -c 1
+ ```
++
++Organize reads into sample specific sub-directories. This is required as metaBAGpipes uses snakemake wildcards based on these subfolders.
++
++```bash
+ snakemake organizeData
+ ```
+ 
+-Ensure that the line 6 of your Snakefile is indeed pointing to the dataset folder with sample specific subfolders. In the case of this tutorial:
++Or using the metaBAGpipes.sh parser:
+ 
++```bash
++./metaBAGpipes.sh -t organizeData -j 1 -c 1
+ ```
++
++
++Ensure that the line 6 of your Snakefile is indeed pointing to the dataset folder with sample specific subfolders. In the case of this tutorial:
++
++```bash
+ IDs = sorted([os.path.splitext(val)[0] for val in (glob.glob('dataset/*'))])
+ ```
+ 
+@@ -219,14 +241,14 @@ IDs = sorted([os.path.splitext(val)[0] for val in (glob.glob('dataset/*'))])
+ 
+ The main body of the cluster_config.json file should look like this:
+ 
+-```
++```json
+ {
+ "__default__" : {
+         "account" : "patil",
+         "time" : "7-00:00:00",
+         "n" : 16,
+         "tasks" : 1,
+-        "mem" : 60G,
++        "mem" : "60G",
+         "cpusPerTask" : 16,
+         "name"      : "DL.{rule}",
+         "output"    : "logs/{wildcards}.%N.{rule}.out.log",
+@@ -237,7 +259,7 @@ The main body of the cluster_config.json file should look like this:
+ 
+ Configure the `cluster_config.json` file by editing the account field (line 3). The majority of the pipeline will be run through the cluster using the last line in the `cluster_config.json` file:
+ 
+-```
++```bash
+ nohup snakemake all -j 200 -k --cluster-config cluster_config.json -c "sbatch -A {cluster.account} -t {cluster.time} -n {cluster.n} --ntasks {cluster.tasks} --cpus-per-task {cluster.cpusPerTask} --output {cluster.output}" &
+ ```
+ 
+@@ -247,7 +269,7 @@ Note that the `n` (line 5) and `cpusPerTask` (line 8) should always match. Read
+ 
+ Since snakemake rules with wildcards cannot be target rules, we use the input of `rule all` to expand our wildcards. For example, to run SMETANA one would do:
+ 
+-```
++```python
+ rule all:
+     input:
+         expand(config["path"]["root"]+"/"+config["folder"]["SMETANA"]+"/{IDs}_detailed.tsv", IDs = IDs)
+@@ -257,13 +279,21 @@ rule all:
+         """
+ ```
+ 
++The metaBAGpipes.sh parser simplifies the user interaction by automatically editing the `Snakefile` and `cluster_config.json` according to the provided arguments: `-t/--task`, `-j/--nJobs`, `-n/--nCores`.
++
+ ### 1. Assembly
+ 
+ We use the metaSPAdes assembler which contains its own internal quality control module. If you wish to use another assembler such as [megahit](https://github.com/voutcn/megahit), we recommend pre-processing using [fastp](https://github.com/OpenGene/fastp) or [trimmomatic](https://github.com/timflutre/trimmomatic).
+ 
+-To run the assembly step, copy the output of `rule metaspades`, and insert it into the input for `rule all`:
++To run the assembly step on the toy dataset using the `metaBAGpipes.sh` parser, simply run:
+ 
++```bash
++./metaBAGpipes.sh -t metaspades -j 3 -c 16
+ ```
++
++To run the assembly step "manually", copy the output of `rule metaspades`, and insert it into the input for `rule all`:
++
++```python
+ rule all:
+     input:
+         expand(config["path"]["root"]+"/"+config["folder"]["assemblies"]+"/{IDs}/contigs.fasta.gz", IDs = IDs)
+@@ -277,7 +307,7 @@ Next, edit the `n` and `cpusPerTask` fields of the `cluster_config.json` file to
+ 
+ Finally, run the following snippet of code to submit our assembly jobs to the cluster scheduler. Note that the `-j` flag specifies the number of parallel jobs to be submitted. In the toy dataset we have 3 samples, therefore we specify:
+ 
+-```
++```bash
+ nohup snakemake all -j 3 -k --cluster-config cluster_config.json -c "sbatch -A {cluster.account} -t {cluster.time} -n {cluster.n} --ntasks {cluster.tasks} --cpus-per-task {cluster.cpusPerTask} --output {cluster.output}" &
+ ```
+ 
+@@ -285,7 +315,7 @@ The snakemake output should be stored to `nohup.out`, while the output for the i
+ 
+ One can easily check the status of running/pending jobs by running:
+ 
+-```
++```bash
+ squeue -u <USER>
+ ```
+ 
+@@ -299,7 +329,7 @@ CONCOCT requires coverage information across samples. To generate this input, we
+ 
+ Edit the input of `rule all` to expand the output of `rule kallisto`:
+ 
+-```
++```python
+ rule all:
+     input:
+         expand(config["path"]["root"]+"/"+config["folder"]["concoctInput"]+"/{IDs}_concoct_inputtableR.tsv", IDs = IDs)
+@@ -311,13 +341,13 @@ rule all:
+ 
+ Edit `cluster_config.json` if necessary and run snakemake using:
+ 
+-```
++```bash
+ nohup snakemake all -j 3 -k --cluster-config cluster_config.json -c "sbatch -A {cluster.account} -t {cluster.time} -n {cluster.n} --ntasks {cluster.tasks} --cpus-per-task {cluster.cpusPerTask} --output {cluster.output}" &
+ ```
+ 
+ Once these jobs finish, edit the input of `rule all` to expand the output of `rule concoct`:
+ 
+-```
++```python
+ rule all:
+     input:
+         expand(config["path"]["root"]+"/"+config["folder"]["concoctOutput"]+"/{IDs}/{IDs}.concoct-bins", IDs = IDs)
+@@ -329,7 +359,7 @@ rule all:
+ 
+ Note that we omit the `directory()` flag from the `rule concoct` output when we expand wildcards in `rule all`, as it is not necessary for rule inputs.
+ 
+-```
++```python
+ rule concoct:
+     input:
+         table=config["path"]["root"]+"/"+config["folder"]["concoctInput"]+"/{IDs}_concoct_inputtableR.tsv",
+@@ -360,7 +390,7 @@ Make sure to similarly remove the `directory()` flag when expanding wildcards in
+ 
+ Edit `cluster_config.json` if necessary and run snakemake using:
+ 
+-```
++```python
+ nohup snakemake all -j 3 -k --cluster-config cluster_config.json -c "sbatch -A {cluster.account} -t {cluster.time} -n {cluster.n} --ntasks {cluster.tasks} --cpus-per-task {cluster.cpusPerTask} --output {cluster.output}" &
+ ```
+ 
+@@ -397,7 +427,7 @@ Edit the input of `rule all` to expand the output of `rule abundance`, edit `clu
+ ### 10. GEM/MAG growth rate
+ 
+ ## Abstract
+-metaBAGpipes integrates an array of existing bioinformatics and metabolic modeling tools using Snakemake, for the purpose of interrogating social interactions in bacterial communities of the human gut microbiome. From WGS metagenomic datasets, metagenome assembled genomes (MAGs) are reconstructed, which are then converted into genome-scale metabolic models (GEMs) for *in silico* simulations of cross feeding interactions within sample based communities. Abundance estimates for community members are estimated by mapping metagenomic samples to the generated MAGs, which are used in combination with the simulated cross feeding interactions for the generation of explanatory and statistically significant linear models. We conclude that there is indeed a correlation, ranging from weak to moderate, between gut microbiome members’ abundance and set of metabolic cross-feeding interactions across samples. A more comprehensive analysis incorporating multiple datasets needs to be conducted to strengthen and expand the findings of this work.
++
+ 
+ ## Significance
+ 
+diff --git a/Scripts/assemblyVis.R b/Scripts/assemblyVis.R
+new file mode 100644
+index 0000000..6fa18a8
+--- /dev/null
++++ b/Scripts/assemblyVis.R
+@@ -0,0 +1,57 @@
++library(ggplot2)
++library(gridExtra)
++
++assembly = read.delim("assembly.stats",stringsAsFactors = FALSE,header = FALSE,sep = " ")
++colnames(assembly) = c("sample","contigs","length_total","gt1000","gt1000_total")
++
++assembly$ave = assembly$length_total/assembly$contigs
++assembly$gt1000_ave = assembly$gt1000_total/assembly$gt1000
++
++aveplot = ggplot(data=assembly) +
++  geom_density(aes(x=ave,fill="All contigs")) +
++  geom_density(aes(x=gt1000_ave,fill="Contigs >= 1000bp")) +
++  xlab("Average contig length") +
++  ggtitle("Average contig length across samples") +
++  theme(legend.title = element_blank())
++
++contplot = ggplot(data=assembly) +
++  geom_density(aes(x=contigs,fill="Total contigs")) +
++  geom_density(aes(x=gt1000,fill="Contigs >= 1000")) +
++  ggtitle("Contigs across samples") +
++  theme(legend.title = element_blank()) + 
++  scale_x_log10()
++
++contplot2 = ggplot(data=assembly) +
++  geom_point(aes(x=contigs,y=gt1000)) +
++  xlab("Total contigs") + 
++  ylab("Contigs >= 1000bp") +
++  ggtitle("Total contigs vs >=1000bp across samples") +
++  geom_abline(slope = 1,intercept=0) +
++  expand_limits(x = 0, y = 0)
++
++lenplot = ggplot(data=assembly) +
++  geom_density(aes(x=length_total,fill="Total length")) +
++  geom_density(aes(x=gt1000_total,fill="Length >= 1000")) +
++  xlab("Length") +
++  ggtitle("Length across samples") +
++  theme(legend.title = element_blank()) + 
++  scale_x_log10()
++
++lenplot2= ggplot(data=assembly) +
++  geom_point(aes(x=length_total,y=gt1000_total)) +
++  ggtitle("Total length vs >= 1000bp across samples")+
++  xlab("Total length") +
++  ylab("Length of contigs >= 1000 bp") +
++  geom_abline(slope = 1,intercept=0) +
++  expand_limits(x = 0, y = 0)
++
++fracplot = ggplot(data=assembly) +
++  geom_density(aes(100*gt1000/contigs,fill="Contigs")) +
++  geom_density(aes(100*gt1000_total/length_total,fill="Length")) +
++  ggtitle("% Information captured by contigs >= 1000 bp") + 
++  xlab("% Information") +
++  theme(legend.title = element_blank())
++
++assemblyplot=grid.arrange(fracplot,contplot2,contplot,aveplot,lenplot2,lenplot,ncol=3,nrow=2)
++
++ggsave("assemblyVis.pdf",plot= assemblyplot,device = "pdf",dpi = 300, width = 40, height = 20, units = "cm")
+diff --git a/Scripts/binningVis.R b/Scripts/binningVis.R
+new file mode 100644
+index 0000000..6529eba
+--- /dev/null
++++ b/Scripts/binningVis.R
+@@ -0,0 +1,118 @@
++library(gridExtra)
++library(dplyr)
++library(ggplot2)
++
++concoctCheckm = read.delim("concoct.checkm",stringsAsFactors = FALSE,header = FALSE)
++colnames(concoctCheckm) = c("bin","completeness","contamination","GC","lineage","N50","size","set")
++concoctBins= read.delim("concoct_bins.stats",stringsAsFactors = FALSE,header = FALSE, sep = " ")
++colnames(concoctBins) = c("bin","contigs","coverage")
++concoct = left_join(concoctCheckm,concoctBins,by="bin") %>% filter(contamination<=10,completeness>=50)
++
++metabatCheckm = read.delim("metabat.checkm",stringsAsFactors = FALSE,header = FALSE)
++colnames(metabatCheckm) = c("bin","completeness","contamination","GC","lineage","N50","size","set")
++metabatBins= read.delim("metabat_bins.stats",stringsAsFactors = FALSE,header = FALSE, sep = " ")
++colnames(metabatBins) = c("bin","contigs","coverage")
++metabat = left_join(metabatCheckm,metabatBins,by="bin") %>% filter(contamination<=10,completeness>=50)
++
++maxbinCheckm = read.delim("maxbin.checkm",stringsAsFactors = FALSE,header = FALSE)
++colnames(maxbinCheckm) = c("bin","completeness","contamination","GC","lineage","N50","size","set")
++maxbinBins= read.delim("maxbin_bins.stats",stringsAsFactors = FALSE,header = FALSE, sep = " ")
++colnames(maxbinBins) = c("bin","contigs","coverage")
++maxbin = left_join(maxbinCheckm,maxbinBins,by="bin") %>% filter(contamination<=10,completeness>=50)
++maxbin$contigs = as.numeric(maxbin$contigs)
++maxbin$coverage = as.numeric(maxbin$coverage)
++
++refinedCheckm = read.delim("refined.checkm",stringsAsFactors = FALSE,header = FALSE)
++colnames(refinedCheckm) = c("bin","completeness","contamination","GC","lineage","N50","size","set")
++refinedBins= read.delim("refined_bins.stats",stringsAsFactors = FALSE,header = FALSE, sep = " ")
++colnames(refinedBins) = c("bin","contigs","coverage")
++refined = left_join(refinedCheckm,refinedBins,by="bin") %>% filter(contamination<=10,completeness>=50)
++
++reassembledCheckm = read.delim("reassembled.checkm",stringsAsFactors = FALSE,header = FALSE)
++colnames(reassembledCheckm) = c("bin","completeness","contamination","GC","lineage","N50","size")
++reassembledBins= read.delim("reassembled_bins.stats",stringsAsFactors = FALSE,header = FALSE, sep = " ")
++colnames(reassembledBins) = c("bin","contigs","coverage")
++reassembled = left_join(reassembledCheckm,reassembledBins,by="bin") %>% filter(contamination<=10,completeness>=50)
++
++bins <- as.data.frame(matrix(0,nrow = 5,ncol=2))
++colnames(bins) = c("variable","value")
++bins$variable = c("maxbin2","refined","CONCOCT","metabat2","reassembled")
++bins$value = c(as.numeric(dim(maxbin)[1]),as.numeric(dim(refined)[1]),as.numeric(dim(concoct)[1]),as.numeric(dim(metabat)[1]),as.numeric(dim(reassembled)[1]))
++
++binplot = ggplot(data = bins,aes(x=reorder(variable,-value),y=value,fill= variable)) +
++  geom_bar(stat = "identity",color="black") +
++  ylab("Number of bins generated") + 
++  xlab("Binning tool") +
++  theme(legend.title = element_blank()) +
++  ggtitle("Number of MQ bins generated") + 
++  coord_flip() + 
++  theme(legend.position = "none")
++
++compplot = ggplot() + 
++  geom_density(data=concoct,aes(completeness,color="CONCOCT")) +
++  geom_density(data=maxbin,aes(completeness,color="maxbin2")) +
++  geom_density(data=metabat,aes(completeness,color="metabat2")) + 
++  geom_density(data=refined,aes(completeness,color="refined")) + 
++  geom_density(data=reassembled,aes(completeness,color="reassembled")) +
++  ggtitle("Completeness") +
++  theme(axis.text.y=element_blank()) + 
++  theme(legend.position = "none")
++
++contplot = ggplot() + 
++  geom_density(data=concoct,aes(contamination,color="CONCOCT")) +
++  geom_density(data=maxbin,aes(contamination,color="maxbin2")) +
++  geom_density(data=metabat,aes(contamination,color="metabat2")) + 
++  geom_density(data=refined,aes(contamination,color="refined")) + 
++  geom_density(data=reassembled,aes(contamination,color="reassembled")) +
++  ggtitle("Contamination") +
++  theme(axis.text.y=element_blank()) + 
++  theme(legend.position = "none")
++
++lengthplot = ggplot() + 
++  geom_density(data=concoct,aes(size,color="CONCOCT")) +
++  geom_density(data=maxbin,aes(size,color="maxbin2")) +
++  geom_density(data=metabat,aes(size,color="metabat2")) + 
++  geom_density(data=refined,aes(size,color="refined")) + 
++  geom_density(data=reassembled,aes(size,color="reassembled")) +
++  ggtitle("BP Length") + 
++  theme(legend.position = "none") +
++  theme(axis.text.y=element_blank())
++
++contigplot = ggplot() + 
++  geom_density(data=concoct,aes(contigs,color="CONCOCT")) +
++  geom_density(data=maxbin,aes(contigs,color="maxbin2")) +
++  geom_density(data=metabat,aes(contigs,color="metabat2")) + 
++  geom_density(data=refined,aes(contigs,color="refined")) + 
++  geom_density(data=reassembled,aes(contigs,color="reassembled")) +
++  ggtitle("Number of contigs") + 
++  theme(legend.position = "none") +
++  theme(axis.text.y=element_blank())
++
++covplot = ggplot() + 
++  geom_density(data=concoct,aes(coverage,color="CONCOCT")) +
++  geom_density(data=maxbin,aes(coverage,color="maxbin2")) +
++  geom_density(data=metabat,aes(coverage,color="metabat2")) + 
++  geom_density(data=refined,aes(coverage,color="refined")) + 
++  geom_density(data=reassembled,aes(coverage,color="reassembled")) +
++  ggtitle("Coverage") + 
++  theme(legend.position = "none") +
++  theme(axis.text.y=element_blank())
++
++gcplot = ggplot() + 
++  geom_density(data=concoct,aes(GC,color="CONCOCT")) +
++  geom_density(data=maxbin,aes(GC,color="maxbin2")) +
++  geom_density(data=metabat,aes(GC,color="metabat2")) + 
++  geom_density(data=refined,aes(GC,color="refined")) + 
++  geom_density(data=reassembled,aes(GC,color="reassembled")) +
++  ggtitle("GC content") + 
++  theme(legend.position = "none") +
++  theme(axis.text.y=element_blank())
++
++densities1= grid.arrange(compplot,lengthplot,covplot,nrow=3,ncol=1)
++densities2=grid.arrange(contplot,contigplot,gcplot,nrow=3,ncol=1)
++
++grid.arrange(binplot,densities1,densities2,nrow=1,ncol=3)
++
++plot=grid.arrange(binplot,arrangeGrob(compplot,lengthplot,covplot,nrow=3,ncol=1),arrangeGrob(contplot,contigplot,gcplot,nrow=3,ncol=1),nrow=1,ncol=3,heights=c(60),widths=c(30,30,30))
++
++ggsave("binningVis.pdf",plot=plot, height = 8, width = 12)
+\ No newline at end of file
+diff --git a/Scripts/modelVis.R b/Scripts/modelVis.R
+new file mode 100644
+index 0000000..39e110e
+--- /dev/null
++++ b/Scripts/modelVis.R
+@@ -0,0 +1,38 @@
++library(gridExtra)
++library(dplyr)
++library(ggplot2)
++
++gems = read.delim("GEMs.stats",stringsAsFactors = FALSE,header=FALSE, sep = " ")
++gems$V5 = gsub("_.*$","",gems$V1)
++colnames(gems) = c("bin","mets","rxns","genes","sample")
++
++samplesplot = gems %>% 
++  count(sample) %>% 
++  ggplot(aes(x=reorder(sample,-n),y=n)) + 
++  geom_bar(stat = "identity") + 
++  coord_flip() + 
++  ggtitle("Number of GEMs across samples") + 
++  ylab("Number of GEMs carved") +
++  xlab("Sample ID")
++
++metplot = ggplot() + 
++  geom_density(data=gems,aes(mets),fill="#7fc97f") +
++  ggtitle("Unique metabolites across GEMs") + 
++  theme(legend.position = "none") +
++  theme(axis.text.y=element_blank())
++
++rxnplot = ggplot() + 
++  geom_density(data=gems,aes(rxns),fill="#beaed4") +
++  ggtitle("Reactions across GEMs") + 
++  theme(legend.position = "none") +
++  theme(axis.text.y=element_blank())
++
++geneplot = ggplot() + 
++  geom_density(data=gems,aes(genes),fill="#fdc086") +
++  ggtitle("Genes across GEMs") + 
++  theme(legend.position = "none") +
++  theme(axis.text.y=element_blank())
++
++plot=grid.arrange(samplesplot,arrangeGrob(metplot,rxnplot,geneplot,nrow=3,ncol=1),nrow=1,ncol=2,heights=c(60),widths=c(30,30))
++
++ggsave("gemVis.pdf",plot=plot, height = 8, width = 12)
+\ No newline at end of file
+diff --git a/Snakefile b/Snakefile
+index 73f7004..f2e7961 100644
+--- a/Snakefile
++++ b/Snakefile
+@@ -3,36 +3,49 @@ configfile: "config.yaml"
+ import os
+ import glob
+ 
+-IDs = sorted([os.path.splitext(val)[0] for val in (glob.glob('dataset/*'))])
+-IDs = [os.path.basename(val) for val in IDs] #grab just sample ID
++def get_ids_from_path_pattern(path_pattern):
++    ids = sorted([os.path.basename(os.path.splitext(val)[0])
++                  for val in (glob.glob(path_pattern))])
++    return ids
++
++# Make sure that final_bins/ folder contains all bins in single folder for binIDs
++# wildcard to work. Use moveBins rule or perform manually.
++binIDs = get_ids_from_path_pattern('final_bins/*.faa')
++IDs = get_ids_from_path_pattern('dataset/*')
++
++DATA_READS_1 = f'{config["path"]["root"]}/{config["folder"]["data"]}/{{IDs}}/{{IDs}}_1.fastq.gz'
++DATA_READS_2 = f'{config["path"]["root"]}/{config["folder"]["data"]}/{{IDs}}/{{IDs}}_2.fastq.gz'
+ 
+-#Make sure that final_bins/ folder contains all bins in single folder for binIDs wildcard to work. Use moveBins rule or perform manually.
+-binIDs = sorted([os.path.splitext(val)[0] for val in (glob.glob('final_bins/*'))])
+-binIDs = [os.path.basename(val) for val in binIDs] #grab just bin ID
+ 
+ rule all:
+     input:
+-        expand(config["path"]["root"]+"/"+config["folder"]["SMETANA"]+"/{IDs}.tsv", IDs = IDs)
++        expand(f'{config["path"]["root"]}/{config["folder"]["metabat"]}/{{IDs}}/{{IDs}}.metabat-bins', IDs=IDs)
+     shell:
+         """
+         echo {input}
+         """
+ 
++
+ rule createFolders:
+     input:
+-        {config["path"]["root"]}
++        config["path"]["root"]
+     message:
+-        "Not strictly necessary, as we could create individual folders within rules, but doing this at the beginning may give the user a better idea of what output/intermediate files to expect"
++        """
++        Not strictly necessary, as we could create individual folders within rules, 
++        but doing this at the beginning may give the user a better idea of what 
++        output/intermediate files to expect
++        """
+     shell:
+         """
+         cd {input}
+-        paste config.yaml |cut -d':' -f2|tail -n +4|head -n 16 > folders.txt
++        paste config.yaml |cut -d':' -f2|tail -n +4|head -n 17 > folders.txt
+         while read line;do mkdir -p $line;done < folders.txt
+         rm folders.txt
+-        """      
++        """
++
+ 
+ rule downloadToy:
+-    input: 
++    input:
+         config["dbs"]["toy"]
+     shell:
+         """
+@@ -41,73 +54,156 @@ rule downloadToy:
+         for file in *;do mv $file ./$(echo $file|sed 's/?download=1//g');done
+         """
+ 
++
+ rule organizeData:
+     input:
+-        config["path"]["root"]+"/"+config["folder"]["data"]
++        config["path"]["root"]
+     message:
+-        "Assuming all samples are downloaded to the same directory, sorting paired end raw reads into sample specific sub folders within the 'dataset' folder"
++        """
++        Assuming all samples are downloaded to the same directory, 
++        sorting paired end raw reads into sample specific sub folders within the 'dataset' folder.
++        Note: Use with caution, may malfunction in corner cases.
++        """
+     shell:
+         """
+-        cd {input}
+-        for file in *.gz;do echo $file;done|sed 's/_.*$//g'|uniq > ID_samples.txt
+-        while read line;do mkdir -p $line;mv $line*.gz $line;done < ID_samples.txt
++        cd {input}/{config[folder][data]}
++        for file in *.gz; do echo $file; done | sed 's/_.*$//g' | sed 's/.fastq.gz//g' | uniq > ID_samples.txt
++        while read line; do mkdir -p $line; mv $line*.gz $line; done < ID_samples.txt
+         rm ID_samples.txt
+         """
+ 
+-rule metaspades: 
++
++rule qfilter: 
++    input:
++        R1 = DATA_READS_1,
++        R2 = DATA_READS_2
++    output:
++        R1 = config["path"]["root"]+"/"+config["folder"]["qfiltered"]+"/{IDs}/{IDs}_1.fastq.gz", 
++        R2 = config["path"]["root"]+"/"+config["folder"]["qfiltered"]+"/{IDs}/{IDs}_2.fastq.gz" 
++    shell:
++        """
++        set +u;source activate {config[envs][metabagpipes]};set -u;
++        mkdir -p $(dirname $(dirname {output.R1}))
++        mkdir -p $(dirname {output.R1})
++        fastp --thread {config[cores][fastp]} -i {input.R1} -I {input.R2} -o {output.R1} -O {output.R2} -j $(dirname {output.R1})/$(echo $(basename $(dirname {output.R1}))).json -h $(dirname {output.R1})/$(echo $(basename $(dirname {output.R1}))).html
++        """
++
++
++rule qfilterVis:
++    input: 
++        config["path"]["root"]+"/"+config["folder"]["qfiltered"]
++    shell:
++        """
++        cd {input}
++        for folder in */;do
++            for file in $folder*json;do
++                ID=$(echo $file|sed 's|/.*$||g')
++                readsBF=$(head -n 25 $file|grep total_reads|cut -d ':' -f2|sed 's/,//g'|head -n 1)
++                readsAF=$(head -n 25 $file|grep total_reads|cut -d ':' -f2|sed 's/,//g'|tail -n 1)
++                basesBF=$(head -n 25 $file|grep total_bases|cut -d ':' -f2|sed 's/,//g'|head -n 1)
++                basesAF=$(head -n 25 $file|grep total_bases|cut -d ':' -f2|sed 's/,//g'|tail -n 1)
++                q20BF=$(head -n 25 $file|grep q20_rate|cut -d ':' -f2|sed 's/,//g'|head -n 1)
++                q20AF=$(head -n 25 $file|grep q20_rate|cut -d ':' -f2|sed 's/,//g'|tail -n 1)
++                q30BF=$(head -n 25 $file|grep q30_rate|cut -d ':' -f2|sed 's/,//g'|head -n 1)
++                q30AF=$(head -n 25 $file|grep q30_rate|cut -d ':' -f2|sed 's/,//g'|tail -n 1)
++                percent=$(awk -v RBF="$readsBF" -v RAF="$readsAF" 'BEGIN{{print RAF/RBF}}' )
++                echo "$ID $readsBF $readsAF $basesBF $basesAF $percent $q20BF $q20AF $q30BF $q30AF" >> qfilter.stats
++            done
++        done
++        """
++
++
++rule megahit:
+     input:
+-        R1=config["path"]["root"]+"/"+config["folder"]["data"]+"/{IDs}/{IDs}_1.fastq.gz", 
+-        R2=config["path"]["root"]+"/"+config["folder"]["data"]+"/{IDs}/{IDs}_2.fastq.gz" 
++        R1 = rules.qfilter.output.R1, 
++        R2 = rules.qfilter.output.R2
+     output:
+         config["path"]["root"]+"/"+config["folder"]["assemblies"]+"/{IDs}/contigs.fasta.gz"
+     benchmark:
+-        config["path"]["root"]+"/"+"benchmarks/{IDs}.metaspades.benchmark.txt"
++        config["path"]["root"]+"/"+"benchmarks/{IDs}.megahit.benchmark.txt"
+     shell:
+         """
+         set +u;source activate {config[envs][metabagpipes]};set -u;
+-        cp {input.R1} {input.R2} $TMPDIR    
++
+         cd $TMPDIR
+-        metaspades.py -1 $(basename {input.R1}) -2 $(basename {input.R2}) -t {config[cores][metaspades]} -o .
+-        gzip contigs.fasta
++        cp {input.R1} {input.R2} $TMPDIR
++
++        megahit -t {config[cores][megahit]} \
++            --presets {config[params][assemblyPreset]} \
++            --verbose \
++            -1 $(basename {input.R1}) -2 $(basename {input.R2}) \
++            -o tmp;
++
+         mkdir -p $(dirname {output})
+-        mv -v contigs.fasta.gz spades.log $(dirname {output})
++        mv tmp/final.contigs.fa contigs.fasta
++        gzip contigs.fasta
++        mv contigs.fasta.gz $(dirname {output})
+         """
+ 
++
++rule assemblyVis:
++    shell:
++        """
++        set +u;source activate {config[envs][metabagpipes]};set -u;
++        cd {config[path][root]}/{config[folder][assemblies]}
++        for folder in */;do
++            for file in $folder*.gz;do
++                N=$(less $file|grep -c ">");
++                L=$(less $file|grep ">"|cut -d ' ' -f4|sed 's/len=//'|awk '{{sum+=$1}}END{{print sum}}');
++                T=$(less $file|grep ">"|cut -d ' ' -f4|sed 's/len=//'|awk '$1>=1000{{c++}} END{{print c+0}}');
++                S=$(less $file|grep ">"|cut -d ' ' -f4|sed 's/len=//'|awk '$1>=1000'|awk '{{sum+=$1}}END{{print sum}}');
++                echo $(echo $file|sed 's|/contigs.fasta.gz||g') $N $L $T $S>> assembly.stats;
++            done;
++        done
++        Rscript {config[path][root]}/{config[folder][scripts]}/{config[scripts][assemblyVis]}
++        """
++
++
+ rule kallisto:
+     input:
+-        contigs=config["path"]["root"]+"/"+config["folder"]["assemblies"]+"/{IDs}/contigs.fasta.gz",
+-        reads=config["path"]["root"]+"/"+config["folder"]["data"]+"/"
++        contigs = rules.megahit.output,
++        reads = f'{config["path"]["root"]}/{config["folder"]["qfiltered"]}/'
+     output:
+-        config["path"]["root"]+"/"+config["folder"]["concoctInput"]+"/{IDs}_concoct_inputtableR.tsv"
++        f'{config["path"]["root"]}/{config["folder"]["concoctInput"]}/{{IDs}}_concoct_inputtableR.tsv'
+     benchmark:
+-        config["path"]["root"]+"/"+"benchmarks/{IDs}.kallisto.benchmark.txt"
++        f'{config["path"]["root"]}/benchmarks/{{IDs}}.kallisto.benchmark.txt'
+     shell:
+         """
+         set +u;source activate {config[envs][metabagpipes]};set -u;
+         cp {input.contigs} $TMPDIR
+         cd $TMPDIR
+         gunzip $(basename {input.contigs})
+-        cut_up_fasta.py -c {config[params][cutfasta]} -o 0 -m contigs.fasta > metaspades_c10k.fa
+-        kallisto index metaspades_c10k.fa -i $(basename $(dirname {input.contigs})).kaix
++        cut_up_fasta.py -c {config[params][cutfasta]} -o 0 -m contigs.fasta > assembly_c10k.fa
++        
++        kallisto index assembly_c10k.fa -i $(basename $(dirname {input.contigs})).kaix
++        
+         for folder in {input.reads}*;do
+         cp $folder/*.fastq.gz $TMPDIR;
+-        kallisto quant --threads {config[cores][kallisto]} --plaintext -i $(basename $(dirname {input.contigs})).kaix -o . *_1.fastq.gz *_2.fastq.gz;
++        
++        kallisto quant --threads {config[cores][kallisto]} --plaintext \
++            -i $(basename $(dirname {input.contigs})).kaix \
++            -o . *_1.fastq.gz *_2.fastq.gz;
++        
+         gzip abundance.tsv;
+         mv abundance.tsv.gz $(echo $(basename $folder)_abundance.tsv.gz);
+         rm *.fastq.gz;
+         done
+-        python {config[scripts][kallisto2concoct]} --samplenames <(for s in *abundance.tsv.gz; do echo $s|sed 's/_abundance.tsv.gz//'g; done) *abundance.tsv.gz > $(basename {output})
++        
++        python {config[path][root]}/{config[folder][scripts]}/{config[scripts][kallisto2concoct]} \
++            --samplenames <(for s in *abundance.tsv.gz; do echo $s | sed 's/_abundance.tsv.gz//'g; done) *abundance.tsv.gz > $(basename {output})
++        
+         mv $(basename {output}) $(dirname {output})
+         """
+ 
++
+ rule concoct:
+     input:
+-        table=config["path"]["root"]+"/"+config["folder"]["concoctInput"]+"/{IDs}_concoct_inputtableR.tsv",
+-        contigs=config["path"]["root"]+"/"+config["folder"]["assemblies"]+"/{IDs}/contigs.fasta.gz"
++        table = rules.kallisto.output,
++        contigs = rules.megahit.output
+     output:
+-        directory(config["path"]["root"]+"/"+config["folder"]["concoctOutput"]+"/{IDs}/{IDs}.concoct-bins")
++        directory(f'{config["path"]["root"]}/{config["folder"]["concoctOutput"]}/{{IDs}}/{{IDs}}.concoct-bins')
+     benchmark:
+-        config["path"]["root"]+"/"+"benchmarks/{IDs}.concoct.benchmark.txt"
++        f'{config["path"]["root"]}/benchmarks/{{IDs}}.concoct.benchmark.txt'
+     shell:
+         """
+         set +u;source activate {config[envs][metabagpipes]};set -u;
+@@ -116,23 +212,30 @@ rule concoct:
+         cp {input.contigs} {input.table} $TMPDIR
+         cd $TMPDIR
+         gunzip $(basename {input.contigs})
+-        cut_up_fasta.py -c {config[params][cutfasta]} -o 0 -m contigs.fasta > metaspades_c10k.fa
+-        concoct --coverage_file {input.table} --composition_file metaspades_c10k.fa -b $(basename $(dirname {output})) -t {config[cores][concoct]} -c {config[params][concoct]}
++        cut_up_fasta.py -c {config[params][cutfasta]} -o 0 -m contigs.fasta > assembly_c10k.fa
++        
++        concoct --coverage_file {input.table} --composition_file assembly_c10k.fa \
++            -b $(basename $(dirname {output})) \
++            -t {config[cores][concoct]} \
++            -c {config[params][concoct]}
++            
+         merge_cutup_clustering.py $(basename $(dirname {output}))_clustering_gt1000.csv > $(basename $(dirname {output}))_clustering_merged.csv
++        
+         mkdir -p $(basename {output})
+         extract_fasta_bins.py contigs.fasta $(basename $(dirname {output}))_clustering_merged.csv --output_path $(basename {output})
+-        mv $(basename {output}) *.log *.txt *.csv *.tab $(dirname {output})
++        mv $(basename {output}) *.log *.txt *.csv $(dirname {output})
+         """
+ 
++
+ rule metabat:
+     input:
+-        assembly=config["path"]["root"]+"/"+config["folder"]["assemblies"]+"/{IDs}/contigs.fasta.gz",
+-        R1=config["path"]["root"]+"/"+config["folder"]["data"]+"/{IDs}/{IDs}_1.fastq.gz", 
+-        R2=config["path"]["root"]+"/"+config["folder"]["data"]+"/{IDs}/{IDs}_2.fastq.gz" 
++        assembly = rules.megahit.output,
++        R1 = rules.qfilter.output.R1, 
++        R2 = rules.qfilter.output.R2
+     output:
+-        directory(config["path"]["root"]+"/"+config["folder"]["metabat"]+"/{IDs}/{IDs}.metabat-bins")
++        directory(f'{config["path"]["root"]}/{config["folder"]["metabat"]}/{{IDs}}/{{IDs}}.metabat-bins')
+     benchmark:
+-        config["path"]["root"]+"/"+"benchmarks/{IDs}.metabat.benchmark.txt"
++        f'{config["path"]["root"]}/benchmarks/{{IDs}}.metabat.benchmark.txt'
+     shell:
+         """
+         set +u;source activate {config[envs][metabagpipes]};set -u;
+@@ -143,22 +246,27 @@ rule metabat:
+         mv $(basename {input.assembly}) $(basename $(dirname {input.assembly})).gz
+         gunzip $(basename $(dirname {input.assembly})).gz
+         bwa index $(basename $(dirname {input.assembly}))
+-        bwa mem -t {config[cores][metabat]} $(basename $(dirname {input.assembly})) $(basename {input.R1}) $(basename {input.R2}) > $(basename $(dirname {input.assembly})).sam
++        
++        bwa mem -t {config[cores][metabat]} $(basename $(dirname {input.assembly})) \
++            $(basename {input.R1}) \
++            $(basename {input.R2}) > $(basename $(dirname {input.assembly})).sam
++         
+         samtools view -@ {config[cores][metabat]} -Sb $(basename $(dirname {input.assembly})).sam > $(basename $(dirname {input.assembly})).bam
+         samtools sort -@ {config[cores][metabat]} $(basename $(dirname {input.assembly})).bam > $(basename $(dirname {input.assembly})).sort
+         runMetaBat.sh $(basename $(dirname {input.assembly})) $(basename $(dirname {input.assembly})).sort
+-        mv *.txt *.tab $(basename {output}) $(dirname {output})
++        mv *.txt $(basename {output}) $(dirname {output})
+         """
+ 
++
+ rule maxbin:
+     input:
+-        assembly=config["path"]["root"]+"/"+config["folder"]["assemblies"]+"/{IDs}/contigs.fasta.gz",
+-        R1=config["path"]["root"]+"/"+config["folder"]["data"]+"/{IDs}/{IDs}_1.fastq.gz", 
+-        R2=config["path"]["root"]+"/"+config["folder"]["data"]+"/{IDs}/{IDs}_2.fastq.gz" 
++        assembly = rules.megahit.output,
++        R1 = rules.qfilter.output.R1, 
++        R2 = rules.qfilter.output.R2
+     output:
+-        directory(config["path"]["root"]+"/"+config["folder"]["maxbin"]+"/{IDs}/{IDs}.maxbin-bins")
++        directory(f'{config["path"]["root"]}/{config["folder"]["maxbin"]}/{{IDs}}/{{IDs}}.maxbin-bins')
+     benchmark:
+-        config["path"]["root"]+"/"+"benchmarks/{IDs}.maxbin.benchmark.txt"
++        f'{config["path"]["root"]}/benchmarks/{{IDs}}.maxbin.benchmark.txt'
+     shell:
+         """
+         set +u;source activate {config[envs][metabagpipes]};set -u;
+@@ -167,64 +275,167 @@ rule maxbin:
+         cp {input.assembly} {input.R1} {input.R2} $TMPDIR
+         cd $TMPDIR
+         gunzip contigs.fasta.gz
+-        run_MaxBin.pl -contig contigs.fasta -out $(basename $(dirname {output})) -reads *_1.fastq.gz -reads2 *_2.fastq.gz -thread {config[cores][maxbin]}
++        
++        run_MaxBin.pl -contig contigs.fasta -out $(basename $(dirname {output})) \
++            -reads *_1.fastq.gz -reads2 *_2.fastq.gz \
++            -thread {config[cores][maxbin]}
++        
+         rm contigs.fasta *.gz
+         mkdir $(basename {output})
+         mv *.fasta $(basename {output})
+-        mv *.abund1 *.abund2 *.tab $(basename {output}) $(dirname {output})
++        mv *.abund1 *.abund2 $(basename {output}) $(dirname {output})
+         """
+ 
++
+ rule binRefine:
+     input:
+-        concoct=config["path"]["root"]+"/"+config["folder"]["concoctOutput"]+"/{IDs}/{IDs}.concoct-bins",
+-        metabat=config["path"]["root"]+"/"+config["folder"]["metabat"]+"/{IDs}/{IDs}.metabat-bins",
+-        maxbin=config["path"]["root"]+"/"+config["folder"]["maxbin"]+"/{IDs}/{IDs}.maxbin-bins"
++        concoct = f'{config["path"]["root"]}/{config["folder"]["concoctOutput"]}/{{IDs}}/{{IDs}}.concoct-bins',
++        metabat = f'{config["path"]["root"]}/{config["folder"]["metabat"]}/{{IDs}}/{{IDs}}.metabat-bins',
++        maxbin = f'{config["path"]["root"]}/{config["folder"]["maxbin"]}/{{IDs}}/{{IDs}}.maxbin-bins'
+     output:
+-        directory(config["path"]["root"]+"/"+config["folder"]["refined"]+"/{IDs}")
++        directory(f'{config["path"]["root"]}/{config["folder"]["refined"]}/{{IDs}}')
+     benchmark:
+-        config["path"]["root"]+"/"+"benchmarks/{IDs}.binRefine.benchmark.txt"
++        f'{config["path"]["root"]}/benchmarks/{{IDs}}.binRefine.benchmark.txt'
+     shell:
+         """
+         set +u;source activate {config[envs][metawrap]};set -u;
+         cp -r {input.concoct} {input.metabat} {input.maxbin} $TMPDIR
+         mkdir -p $(dirname {output})
+         cd $TMPDIR
+-        metaWRAP bin_refinement -o . -A $(basename {input.concoct}) -B $(basename {input.metabat}) -C $(basename {input.maxbin}) -t {config[cores][refine]} -m {config[params][refineMem]} -c {config[params][refineComp]} -x {config[params][refineCont]}
++        
++        metaWRAP bin_refinement -o . \
++            -A $(basename {input.concoct}) \
++            -B $(basename {input.metabat}) \
++            -C $(basename {input.maxbin}) \
++            -t {config[cores][refine]} \
++            -m {config[params][refineMem]} \
++            -c {config[params][refineComp]} \
++            -x {config[params][refineCont]}
++ 
+         rm -r $(basename {input.concoct}) $(basename {input.metabat}) $(basename {input.maxbin})
+         mkdir -p {output}
+         mv * {output}
+         """
+ 
++
+ rule binReassemble:
+     input:
+-        R1=config["path"]["root"]+"/"+config["folder"]["data"]+"/{IDs}/{IDs}_1.fastq.gz", 
+-        R2=config["path"]["root"]+"/"+config["folder"]["data"]+"/{IDs}/{IDs}_2.fastq.gz",
+-        refinedBins=config["path"]["root"]+"/"+config["folder"]["refined"]+"/{IDs}/metawrap_50_10_bins"
++        R1 = rules.qfilter.output.R1, 
++        R2 = rules.qfilter.output.R2,
++        refinedBins = f'{config["path"]["root"]}/{config["folder"]["refined"]}/{{IDs}}/metawrap_50_10_bins'
+     output:
+-        directory(config["path"]["root"]+"/"+config["folder"]["reassembled"]+"/{IDs}")
++        directory(f'{config["path"]["root"]}/{config["folder"]["reassembled"]}/{{IDs}}')
+     benchmark:
+-        config["path"]["root"]+"/"+"benchmarks/{IDs}.binReassemble.benchmark.txt"
++        f'{config["path"]["root"]}/benchmarks/{{IDs}}.binReassemble.benchmark.txt'
+     shell:
+         """
+         set +u;source activate {config[envs][metawrap]};set -u;
+         mkdir -p $(dirname {output})
+         cp -r {input.refinedBins} {input.R1} {input.R2} $TMPDIR
+         cd $TMPDIR
+-        metaWRAP reassemble_bins -o $(basename {output}) -b $(basename {input.refinedBins}) -1 $(basename {input.R1}) -2 $(basename {input.R1}) -t {config[cores][reassemble]} -m {config[params][reassembleMem]} -c {config[params][reassembleComp]} -x {config[params][reassembleCont]}
++        
++        metaWRAP reassemble_bins -o $(basename {output}) \
++            -b $(basename {input.refinedBins}) \
++            -1 $(basename {input.R1}) \
++            -2 $(basename {input.R1}) \
++            -t {config[cores][reassemble]} \
++            -m {config[params][reassembleMem]} \
++            -c {config[params][reassembleComp]} \
++            -x {config[params][reassembleCont]}
++        
+         rm -r $(basename {input.refinedBins})
+         rm -r $(basename {output})/work_files
+         rm *.fastq.gz 
+         mv * $(dirname {output})
+         """
+ 
+-rule classifyGenomes: 
++
++rule binningVis:
+     input:
+-        bins=config["path"]["root"]+"/"+config["folder"]["reassembled"]+"/{IDs}/reassembled_bins",
+-        script=config["path"]["root"]+"/"+config["folder"]["scripts"]+"/classify-genomes"
++        config["path"]["root"]
++    message:
++        """
++        Generate bar plot with number of bins and density plot of bin contigs, 
++        total length, completeness, and contamination across different tools.
++        """
++    shell:
++        """
++        set +u;source activate memotenv;set -u;
++        cd {input}/{config[folder][concoctOutput]}
++        for folder in */;do 
++            var=$(echo $folder|sed 's|/||g'); 
++            for bin in $folder*concoct-bins/*.fa;do 
++                name=$(echo $bin | sed "s|^.*/|$var.bin.|g" | sed 's/.fa//g'); 
++                N=$(less $bin | grep -c ">");
++                C=$(less $bin | grep ">" | cut -d '_' -f6 | awk '{{sum+=$1}} END {{ if (NR > 0) print sum / NR }}');
++                echo $name $N $C >> concoct_bins.stats;
++            done;
++        done
++        mv *.stats {input}/{config[folder][reassembled]}
++        cd {input}/{config[folder][metabat]}
++        for folder in */;do 
++            var=$(echo $folder | sed 's|/||'); 
++            for bin in $folder*metabat-bins/*.fa;do 
++                name=$(echo $bin|sed 's/.fa//g'|sed 's|^.*/||g'|sed "s/^/$var./g"); 
++                N=$(less $bin | grep -c ">");
++                C=$(less $bin | grep ">" | cut -d '_' -f6 | awk '{{sum+=$1}} END {{ if (NR > 0) print sum / NR }}');
++                echo $name $N $C >> metabat_bins.stats;
++            done;
++        done
++        mv *.stats {input}/{config[folder][reassembled]}
++        cd {input}/{config[folder][maxbin]}
++        for folder in */;do
++            for bin in $folder*maxbin-bins/*.fasta;do 
++                name=$(echo $bin | sed 's/.fasta//g' | sed 's|^.*/||g');
++                N=$(less $bin | grep -c ">");
++                C=$(less $bin | grep ">"|cut -d '_' -f6 | awk '{{sum+=$1}} END {{ if (NR > 0) print sum / NR }}');
++                echo $name $N $C >> maxbin_bins.stats;
++            done;
++        done
++        mv *.stats {input}/{config[folder][reassembled]}
++        cd {input}/{config[folder][refined]}
++        for folder in */;do
++            var=$(echo $folder | sed 's|/||g');paste $folder*concoct-bins.stats|tail -n +2 | sed "s/^/$var.bin./g";
++        done >> concoct.checkm
++        for folder in */;do 
++            var=$(echo $folder | sed 's|/||g');paste $folder*metabat-bins.stats|tail -n +2 | sed "s/^/$var./g";
++        done >> metabat.checkm
++        for folder in */;do paste $folder*maxbin-bins.stats|tail -n +2;done >> maxbin.checkm
++        for folder in */;do var=$(echo $folder|sed 's|/||g');paste $folder*etawrap_50_10_bins.stats|tail -n +2|sed "s/^/$var./g";done >> refined.checkm
++        for folder in */;do 
++            samp=$(echo $folder | sed 's|/||');
++            for bin in $folder*metawrap_50_10_bins/*.fa;do 
++                name=$(echo $bin | sed 's/.fa//g'|sed 's|^.*/||g'|sed "s/^/$samp./g");
++                N=$(less $bin | grep -c ">");
++                C=$(less $bin | grep ">"|cut -d '_' -f6|awk '{{sum+=$1}} END {{ if (NR > 0) print sum / NR }}');
++                echo $name $N $C >> refined_bins.stats;
++            done;
++        done
++        mv *.stats *.checkm {input}/{config[folder][reassembled]}
++        cd {input}/{config[folder][reassembled]}
++        for folder in */;do 
++            samp=$(echo $folder | sed 's|/||');
++            for bin in $folder*reassembled_bins/*.fa;do 
++                name=$(echo $bin | sed 's/.fa//g' | sed 's|^.*/||g' | sed "s/^/$samp./g");
++                N=$(less $bin | grep -c ">");
++                C=$(less $bin | grep ">"|cut -d '_' -f6|awk '{{sum+=$1}} END {{ if (NR > 0) print sum / NR }}');
++                echo $name $N $C >> reassembled_bins.stats;
++            done;
++        done
++        for folder in */;do var=$(echo $folder|sed 's|/||g');paste $folder*reassembled_bins.stats|tail -n +2|sed "s/^/$var./g";done >> reassembled.checkm
++        Rscript {config[path][root]}/{config[folder][scripts]}/{config[scripts][binningVis]}
++        rm Rplots.pdf
++        """
++
++
++rule classifyGenomes:
++    input:
++        bins = f'{config["path"]["root"]}/{config["folder"]["reassembled"]}/{{IDs}}/reassembled_bins',
++        script = f'{config["path"]["root"]}/{config["folder"]["scripts"]}/classify-genomes'
+     output:
+-        directory(config["path"]["root"]+"/"+config["folder"]["classification"]+"/{IDs}")
++        directory(f'{config["path"]["root"]}/{config["folder"]["classification"]}/{{IDs}}')
+     benchmark:
+-        config["path"]["root"]+"/"+"benchmarks/{IDs}.classify-genomes.benchmark.txt"
++        f'{config["path"]["root"]}/benchmarks/{{IDs}}.classify-genomes.benchmark.txt'
+     shell:
+         """
+         set +u;source activate {config[envs][metabagpipes]};set -u;
+@@ -242,24 +453,25 @@ rule classifyGenomes:
+         done
+         """
+ 
++
+ rule abundance:
+     input:
+-        bins=config["path"]["root"]+"/"+config["folder"]["reassembled"]+"/{IDs}/reassembled_bins",
+-        R1=config["path"]["root"]+"/"+config["folder"]["data"]+"/{IDs}/{IDs}_1.fastq.gz", 
+-        R2=config["path"]["root"]+"/"+config["folder"]["data"]+"/{IDs}/{IDs}_2.fastq.gz" 
++        bins = f'{config["path"]["root"]}/{config["folder"]["reassembled"]}/{{IDs}}/reassembled_bins',
++        R1 = rules.qfilter.output.R1, 
++        R2 = rules.qfilter.output.R2
+     output:
+-        directory(config["path"]["root"]+"/"+config["folder"]["abundance"]+"/{IDs}")
++        directory(f'{config["path"]["root"]}/{config["folder"]["abundance"]}/{{IDs}}')
+     benchmark:
+-        config["path"]["root"]+"/"+"benchmarks/{IDs}.abundance.benchmark.txt"
++        f'{config["path"]["root"]}/benchmarks/{{IDs}}.abundance.benchmark.txt'
+     message:
+         """
+         Calculate bin abundance fraction using the following:
+ 
+         binAbundanceFraction = (L * X / Y / Z) * 100
+ 
+-        X = # of reads mapped to bin_i by mapping reads to bin_i using samtools.
+-        Y = length of bin_i.
+-        Z = total # of reads mapped to all bins in sample_k
++        X = # of reads mapped to bin_i from sample_k
++        Y = length of bin_i
++        Z = # of reads mapped to all bins in sample_k
+         L = length of reads (100 bp)
+         """
+     shell:
+@@ -272,12 +484,13 @@ rule abundance:
+         cp {input.R1} {input.R2} .
+         echo "CREATING INDEX FOR BIN CONCATENATION AND MAPPING READS "
+         bwa index $(basename {output}).fa
+-        bwa mem -t {config[cores][abundance]} $(basename {output}).fa $(basename {input.R1}) $(basename {input.R2}) > $(basename {output}).sam
++        bwa mem -t {config[cores][abundance]} $(basename {output}).fa \
++            $(basename {input.R1}) $(basename {input.R2}) > $(basename {output}).sam
+         samtools view -@ {config[cores][abundance]} -Sb $(basename {output}).sam > $(basename {output}).bam
+-        samtools sort -@ {config[cores][abundance]} $(basename {output}).bam > $(basename {output}).sort
+-        samtools flagstat $(basename {output}).sort > map.stats
++        samtools sort -@ {config[cores][abundance]} $(basename {output}).bam $(basename {output}).sort
++        samtools flagstat $(basename {output}).sort.bam > map.stats
+         cp map.stats {output}/$(basename {output})_map.stats
+-        rm $(basename {output}).fa *.sam *.bam *.sort
++        rm $(basename {output}).fa
+         echo "DONE MAPPING READS TO BIN CONCATENATION, BEGIN MAPPING READS TO EACH BIN "
+         for bin in *.fa;do
+             mkdir -p $(echo "$bin"| sed "s/.fa//")
+@@ -285,10 +498,11 @@ rule abundance:
+             cd $(echo "$bin"| sed "s/.fa//")
+             echo "INDEXING AND MAPPING BIN $bin "
+             bwa index $bin
+-            bwa mem -t {config[cores][abundance]} $bin ../$(basename {input.R1}) ../$(basename {input.R2}) > $(echo "$bin"|sed "s/.fa/.sam/")
++            bwa mem -t {config[cores][abundance]} $bin \
++                ../$(basename {input.R1}) ../$(basename {input.R2}) > $(echo "$bin"|sed "s/.fa/.sam/")
+             samtools view -@ {config[cores][abundance]} -Sb $(echo "$bin"|sed "s/.fa/.sam/") > $(echo "$bin"|sed "s/.fa/.bam/")
+-            samtools sort -@ {config[cores][abundance]} $(echo "$bin"|sed "s/.fa/.bam/") > $(echo "$bin"|sed "s/.fa/.sort/")
+-            samtools flagstat $(echo "$bin"|sed "s/.fa/.sort/") > $(echo "$bin"|sed "s/.fa/.map/")
++            samtools sort -@ {config[cores][abundance]} $(echo "$bin"|sed "s/.fa/.bam/") $(echo "$bin"|sed "s/.fa/.sort/")
++            samtools flagstat $(echo "$bin"|sed "s/.fa/.sort.bam/") > $(echo "$bin"|sed "s/.fa/.map/")
+             echo -n "Bin Length = " >> $(echo "$bin"|sed "s/.fa/.map/")
+             less $bin|cut -d '_' -f4| awk -F' ' '{{print $NF}}'|sed 's/len=//'|awk '{{sum+=$NF;}}END{{print sum;}}' >> $(echo "$bin"|sed "s/.fa/.map/")
+             echo "FINISHED MAPPING READS TO BIN $bin "
+@@ -304,94 +518,175 @@ rule abundance:
+             cp $(echo "$bin"|sed "s/.fa/.map/") {output}
+             mv $(echo "$bin"|sed "s/.fa/.abund/") ../
+             cd ..
++            rm -r $(echo "$bin"| sed "s/.fa//")
+         done
+         cat *.abund > $(basename {output}).abund
+         mv $(basename {output}).abund {output}
+         """
+ 
+-rule moveBins:
++
++rule taxonomyVis:
++    shell:
++        """
++        cd {config[path][root]}/{config[folder][classification]}
++        for folder in */;do 
++            for file in $folder*.taxonomy;do 
++                fasta=$(echo $file | sed 's|^.*/||' | sed 's/.taxonomy//g' | sed 's/.orig//g' | sed 's/.permissive//g' | sed 's/.strict//g'); 
++                NCBI=$(less $file | grep NCBI | cut -d ' ' -f4);
++                tax=$(less $file | grep tax | sed 's/Consensus taxonomy: //g');
++                motu=$(less $file | grep mOTUs | sed 's/Consensus mOTUs: //g');
++                detect=$(less $file | grep detected | sed 's/Number of detected genes: //g');
++                percent=$(less $file | grep agreeing | sed 's/Percentage of agreeing genes: //g' | sed 's/%//g');
++                map=$(less $file | grep mapped | sed 's/Number of mapped genes: //g');
++                cog=$(less $file | grep COG | cut -d$'\t' -f1 | tr '\n' ',' | sed 's/,$//g');
++                echo -e "$fasta \t $NCBI \t $tax \t $motu \t $detect \t $map \t $percent \t $cog" >> classification.stats;
++            done;
++        done
++        cd {config[path][root]}/{config[folder][abundance]}
++        for folder in */;do 
++            for file in $folder*.map;do 
++                SAMP=$(paste $file | sed -n '1p' | cut -d ' ' -f1);
++                BIN=$(paste $file | sed -n '3p' | cut -d ' ' -f1);
++                LEN=$(paste $file | sed -n '12p' | cut -d ' ' -f4);
++                MAG=$(paste $folder*_map.stats | sed -n '3p' | cut -d ' ' -f1);
++                name=$(echo $file | sed 's/.map//g' | sed 's|^.*/||g');
++                echo -n "$name ";
++                awk -v samp="$SAMP" -v bin="$BIN" -v len="$LEN" 'BEGIN{{printf bin/samp/len}}';
++                echo -n " "; 
++                awk -v mag="$MAG" -v bin="$BIN" -v len="$LEN" 'BEGIN{{print bin/mag/ len}}';
++            done;
++        done > abundance.stats
++
++        """
++
++
++rule extractProteinBins:
+     message:
+-        "Moves and renames all bins from reassembled_bins/{sampleID}/ subfolders to single folder final_bins/. Need all bins in one folder to run rules with {binIDs} wildcard."
++        "Extract ORF annotated protein fasta files for each bin from reassembly checkm files."
+     shell:
+         """
+         cd {config[path][root]}
+-        mkdir -p final_bins
+-        for folder in reassembled_bins/*/;do for bin in $folder/reassembled_bins/*.fa;do mv $bin final_bins/$(echo $bin|sed 's|reassembled_bins/||g'|sed 's|/|_|g'|sed 's/strict/s/g'|sed 's/orig/o/g'|sed 's/permissive/p/g');done;done
++        for folder in reassembled_bins/*/;do 
++        for bin in $folder*reassembled_bins.checkm/bins/*;do 
++        var=$(echo $bin/genes.faa | sed 's|reassembled_bins/||g'|sed 's|/reassembled_bins.checkm/bins||'|sed 's|/genes||g'|sed 's|/|_|g'|sed 's/permissive/p/g'|sed 's/orig/o/g'|sed 's/strict/s/g');
++        cp $bin/*.faa /home/zorrilla/workspace/european/final_bins/$var;
++        done;
++        done
+         """
+ 
++
+ rule carveme:
+     input:
+-        bin=config["path"]["root"]+"/"+"final_bins/{binIDs}.fa",
+-        media=config["dbs"]["carveme"]
++        bin = f'{config["path"]["root"]}/final_bins/{{binIDs}}.faa',
++        media = config["dbs"]["carveme"]
+     output:
+-        config["path"]["root"]+"/"+config["folder"]["GEMs"]+"/{binIDs}.xml"
++        f'{config["path"]["root"]}/{config["folder"]["GEMs"]}/{{binIDs}}.xml'
+     benchmark:
+-        config["path"]["root"]+"/"+"benchmarks/{binIDs}.carveme.benchmark.txt"
++        f'{config["path"]["root"]}/benchmarks/{{binIDs}}.carveme.benchmark.txt'
++    message:
++        """
++        Make sure that the input files are ORF annotated and preferably protein fasta.
++        If given raw fasta files, Carveme will run without errors but each contig will be treated as one gene.
++        """
+     shell:
+         """
+         set +u;source activate {config[envs][metabagpipes]};set -u
+         mkdir -p $(dirname {output})
+         cp {input.bin} {input.media} $TMPDIR
+         cd $TMPDIR
+-        carve -g {config[params][carveMedia]} -v --mediadb $(basename {input.media}) --fbc2 --dna $(basename {input.bin}) -o $(echo $(basename {input.bin})|sed 's/.fa/.xml/g')
++        
++        carve -g {config[params][carveMedia]} -v \
++            --mediadb $(basename {input.media}) --fbc2 \
++            -o $(echo $(basename {input.bin}) | sed 's/.faa/.xml/g') $(basename {input.bin})
++        
+         [ -f *.xml ] && mv *.xml $(dirname {output})
+         """
+ 
+-#rule carvemeSample:
+-#    input:
+-#        bins=config["path"]["root"]+"/"+config["folder"]["reassembled"]+"/{IDs}/reassembled_bins",
+-#        media=config["dbs"]["carveme"]
+-#    output:
+-#        directory(config["path"]["root"]+"/"+config["folder"]["GEMs"]+"/{IDs}")
+-#    benchmark:
+-#        config["path"]["root"]+"/"+"benchmarks/{IDs}.carveme.benchmark.txt"
+-#    shell:
+-#        """
+-#        set +u;source activate carvenv;set -u
+-#        mkdir -p {output}
+-#        cp {input.bins}/*.fa {input.media} $TMPDIR
+-#        cd $TMPDIR
+-#        for bin in *.fa;do
+-#        carve -g {config[params][carveMedia]} -v --mediadb $(basename {input.media}) --fbc2 --dna $bin -o $(echo $bin| sed 's/.fa/.xml/g')
+-#        [ -f *.xml ] && mv *.xml {output}
+-#        rm $bin
+-#        done
+-#        """
++
++rule modelVis:
++    input:
++        f'{config["path"]["root"]}/{config["folder"]["GEMs"]}'
++    shell:
++        """
++        set +u;source activate memotenv;set -u;
++        cd {input}
++        for folder in ERR*;do 
++        for model in $folder/*.xml;do 
++        id=$(echo $model|sed 's|^.*/||g'|sed 's/.xml//g'); 
++        mets=$(less $model| grep "species id="|cut -d ' ' -f 8|sed 's/..$//g'|sort|uniq|wc -l);
++        rxns=$(less $model|grep -c 'reaction id=');
++        genes=$(less $model|grep -c 'fbc:geneProduct fbc:id=');
++        echo "$id $mets $rxns $genes" >> GEMs.stats;
++        done;
++        done
++        
++        Rscript {config[scripts][modelVis]}
++        """
++
+ 
+ rule organizeGEMs:
+     message:
+-        "Organizes GEMs into sample specific subfolders. Necessary to run smetana per sample using the {IDs} wildcard."
++        """
++        Organizes GEMs into sample specific subfolders. 
++        Necessary to run smetana per sample using the {IDs} wildcard.
++        One liner (run from refined bins folder): 
++        for folder in */;do mkdir -p ../GEMs/$folder;mv ../GEMs/$(echo $folder|sed 's|/||')_*.xml ../GEMs/$folder;done
++        """
+     shell:
+         """
+         cd {config[path][refined]}
+-        for folder in */;do mkdir -p ../{config[path][GEMs]}; mv ../{config[path][GEMs]}/$(echo $folder|sed 's|/||')_*.xml ../{config[path][GEMs]}/$folder;done
++        for folder in */;do 
++        mkdir -p ../{config[path][GEMs]}; 
++        mv ../{config[path][GEMs]}/$(echo $folder|sed 's|/||')_*.xml ../{config[path][GEMs]}/$folder;
++        done
+         """
+ 
++
+ rule smetana:
+     input:
+-        config["path"]["root"]+"/"+config["folder"]["GEMs"]+"/{IDs}"
++        f'{config["path"]["root"]}/{config["folder"]["GEMs"]}/{{IDs}}'
+     output:
+-        config["path"]["root"]+"/"+config["folder"]["SMETANA"]+"/{IDs}_detailed.tsv"
++        f'{config["path"]["root"]}/{config["folder"]["SMETANA"]}/{{IDs}}_detailed.tsv'
+     benchmark:
+-        config["path"]["root"]+"/"+"benchmarks/{IDs}.smetana.benchmark.txt"
++        f'{config["path"]["root"]}/benchmarks/{{IDs}}.smetana.benchmark.txt'
+     shell:
+         """
+         set +u;source activate {config[envs][metabagpipes]};set -u
+         mkdir -p {config[path][root]}/{config[folder][SMETANA]}
+         cp {config[dbs][carveme]} {input}/*.xml $TMPDIR
+         cd $TMPDIR
+-        smetana -o $(basename {input}) --flavor fbc2 --mediadb media_db.tsv -m {config[params][smetanaMedia]} --detailed --solver {config[params][smetanaSolver]} -v *.xml
++        
++        smetana -o $(basename {input}) --flavor fbc2 \
++            --mediadb media_db.tsv -m {config[params][smetanaMedia]} \
++            --detailed \
++            --solver {config[params][smetanaSolver]} -v *.xml
++        
+         cp *.tsv {config[path][root]} #safety measure for backup of results in case rule fails for some reason
+         mv *.tsv $(dirname {output})
+         """
+ 
++
++rule interactionVis:
++    input:
++        f'{config["path"]["root"]}/{config["folder"]["SMETANA"]}'
++    shell:
++        """
++        cd {input}
++        mv media_db.tsv ../scripts/
++        cat *.tsv|sed '/community/d' > smetana.all
++        less smetana.all |cut -f2|sort|uniq > media.txt
++        ll|grep tsv|awk '{print $NF}'|sed 's/_.*$//g'>samples.txt
++        while read sample;do echo -n "$sample ";while read media;do var=$(less smetana.all|grep $sample|grep -c $media); echo -n "$var " ;done < media.txt; echo "";done < samples.txt > sampleMedia.stats
++        """
++
++
+ rule memote:
+     input:
+-        config["path"]["root"]+"/"+config["folder"]["GEMs"]+"/{IDs}"
++        f'{config["path"]["root"]}/{config["folder"]["GEMs"]}/{{IDs}}'
+     output:
+-        directory(config["path"]["root"]+"/"+config["folder"]["memote"]+"/{IDs}")
++        directory(f'{config["path"]["root"]}/{config["folder"]["memote"]}/{{IDs}}')
+     benchmark:
+-        config["path"]["root"]+"/"+"benchmarks/{IDs}.memote.benchmark.txt"
++        f'{config["path"]["root"]}/benchmarks/{{IDs}}.memote.benchmark.txt'
+     shell:
+         """
+         set +u;source activate {config[envs][metabagpipes]};set -u
+@@ -407,21 +702,29 @@ rule memote:
+         done
+         """
+ 
++
+ rule grid:
+     input:
+-        bins=config["path"]["root"]+"/"+config["folder"]["reassembled"]+"/{IDs}/reassembled_bins",
+-        R1=config["path"]["root"]+"/"+config["folder"]["data"]+"/{IDs}/{IDs}_1.fastq.gz", 
+-        R2=config["path"]["root"]+"/"+config["folder"]["data"]+"/{IDs}/{IDs}_2.fastq.gz" 
++        bins = f'{config["path"]["root"]}/{config["folder"]["reassembled"]}/{{IDs}}/reassembled_bins',
++        R1 = rules.qfilter.output.R1, 
++        R2 = rules.qfilter.output.R2
+     output:
+-        directory(config["path"]["root"]+"/"+config["folder"]["GRiD"]+"/{IDs}")
++        directory(f'{config["path"]["root"]}/{config["folder"]["GRiD"]}/{{IDs}}')
+     benchmark:
+-        config["path"]["root"]+"/"+"benchmarks/{IDs}.grid.benchmark.txt"
++        f'{config["path"]["root"]}/benchmarks/{{IDs}}.grid.benchmark.txt'
+     shell:
+         """
+         set +u;source activate {config[envs][metabagpipes]};set -u
+         cp -r {input.bins} {input.R1} {input.R2} $TMPDIR
+         cd $TMPDIR
+-        mkdir MAGdb
++        cat *.gz > $(basename $(dirname {input.bins})).fastq.gz
++        rm $(basename {input.R1}) $(basename {input.R2})
++        mkdir MAGdb out
+         update_database -d MAGdb -g $(basename {input.bins}) -p MAGdb
+-     	rm -r $(basename {input.bins})
++        rm -r $(basename {input.bins})
++        grid multiplex -r . -e fastq.gz -d MAGdb -p -c 0.2 -o out -n {config[cores][grid]}
++        rm $(basename $(dirname {input.bins})).fastq.gz
++        mkdir {output}
++        mv out/* {output}
+         """
++
+diff --git a/Snakefile_experimental.py b/Snakefile_experimental.py
+new file mode 100644
+index 0000000..db96784
+--- /dev/null
++++ b/Snakefile_experimental.py
+@@ -0,0 +1,105 @@
++rule metaspades: 
++    input:
++        R1 = rules.qfilter.output.R1, 
++        R2 = rules.qfilter.output.R2
++    output:
++        config["path"]["root"]+"/"+config["folder"]["assemblies"]+"/{IDs}/contigs.fasta.gz"
++    benchmark:
++        config["path"]["root"]+"/"+"benchmarks/{IDs}.metaspades.benchmark.txt"
++    shell:
++        """
++        set +u;source activate {config[envs][metabagpipes]};set -u;
++        cp {input.R1} {input.R2} $TMPDIR    
++        cd $TMPDIR
++        metaspades.py --only-assembler -1 $(basename {input.R1}) -2 $(basename {input.R2}) -t {config[cores][metaspades]} -o .
++        gzip contigs.fasta
++        mkdir -p $(dirname {output})
++        rm $(basename {input.R1}) $(basename {input.R2})
++        mv -v contigs.fasta.gz spades.log $(dirname {output})
++        """
++
++rule metabatMultiSample:
++    input:
++        assembly=config["path"]["root"]+"/"+config["folder"]["assemblies"]+"/{IDs}/contigs.fasta.gz",
++        reads=config["path"]["root"]+"/"+config["folder"]["qfiltered"]
++    output:
++        directory(config["path"]["root"]+"/"+config["folder"]["metabat"]+"/{IDs}/{IDs}.metabat-bins")
++    benchmark:
++        config["path"]["root"]+"/"+"benchmarks/{IDs}.metabat.benchmark.txt"
++    shell:
++        """
++        set +u;source activate {config[envs][metabagpipes]};set -u;
++        mkdir -p $(dirname $(dirname {output}))
++        mkdir -p $(dirname {output})
++        cp {input.assembly} $TMPDIR
++        cd $TMPDIR
++        mv $(basename {input.assembly}) $(basename $(dirname {input.assembly})).gz
++        gunzip $(basename $(dirname {input.assembly})).gz
++        bwa index $(basename $(dirname {input.assembly}))
++
++        for sample in {input.reads}/*;do
++            echo "Mapping sample $sample ... "
++            ID=$(basename $sample);
++            bwa mem -t {config[cores][metabat]} $(basename $(dirname {input.assembly})) $sample/*_1.fastq.gz $sample/*_2.fastq.gz > $ID.sam
++            samtools view -@ {config[cores][metabat]} -Sb $ID.sam > $ID.bam
++            samtools sort -@ {config[cores][metabat]} $ID.bam $ID.sort
++            rm $ID.bam $ID.sam
++            echo "Done mapping sample $sample !"
++            echo "Creating depth file for sample $sample ... "
++            jgi_summarize_bam_contig_depths --outputDepth depth.txt $ID.sort.bam
++            echo "Done creating depth file for sample $sample !"
++            rm $ID.sort.bam
++            paste $sample.depth.txt
++        done
++
++        runMetaBat.sh $(basename $(dirname {input.assembly})) *.sort.bam
++        mv *.txt *.tab $(basename {output}) $(dirname {output})
++        """
++
++rule maxbinMultiSample:
++    input:
++        assembly=config["path"]["root"]+"/"+config["folder"]["assemblies"]+"/{IDs}/contigs.fasta.gz",
++        reads=config["path"]["root"]+"/"+config["folder"]["qfiltered"]
++    output:
++        directory(config["path"]["root"]+"/"+config["folder"]["maxbin"]+"/{IDs}/{IDs}.maxbin-bins")
++    benchmark:
++        config["path"]["root"]+"/"+"benchmarks/{IDs}.maxbin.benchmark.txt"
++    shell:
++        """
++        set +u;source activate {config[envs][metabagpipes]};set -u;
++
++        mkdir -p $(dirname $(dirname {output}))
++        mkdir -p $(dirname {output})
++        cp {input.assembly} $TMPDIR
++        cd $TMPDIR
++
++        focal=$(basename $(dirname {input.assembly}))
++        gunzip contigs.fasta.gz
++
++        echo "Creating kallisto index for focal sample $focal ... "
++        #kallisto index contigs.fasta -i $focal.kaix
++        cp /home/zorrilla/workspace/straya/test/*.kaix .
++        echo "Done creating kallisto index!"
++
++        echo "Begin cross mapping samples ... "
++        for folder in {input.reads}/*;do
++            var=$(basename $folder)
++            echo "Mapping sample $var to focal sample $focal using kallisto quant ... "
++            kallisto quant --threads {config[cores][kallisto]} --plaintext -i $focal.kaix -o . $folder/*_1.fastq.gz $folder/*_2.fastq.gz;
++            #tail -n +2 abundance.tsv > $(basename $folder)_abundance.tsv
++            #rm abundance.tsv
++            echo "Done mapping sample $var to focal sample!"
++        done
++        echo "Done cross mapping all samples! "
++
++        find . -name "*_abundance.tsv" > abund_list.txt
++
++        echo "Begin running maxbin2 algorithm ... "
++        run_MaxBin.pl -contig contigs.fasta -out $focal -abund_list abund_list.txt -thread {config[cores][maxbin]}
++        echo "Done running maxbin2!"
++
++        rm contigs.fasta
++        mkdir $(basename {output})
++        mv *.fasta $(basename {output})
++        mv $(basename {output}) $(dirname {output})
++        """ 
+diff --git a/Tutorial/.DS_Store b/Tutorial/.DS_Store
+deleted file mode 100644
+index 5008ddf..0000000
+Binary files a/Tutorial/.DS_Store and /dev/null differ
+diff --git a/Tutorial/visualization/assembly.pdf b/Tutorial/visualization/assembly.pdf
+new file mode 100644
+index 0000000..6308f08
+Binary files /dev/null and b/Tutorial/visualization/assembly.pdf differ
+diff --git a/Tutorial/visualization/binning.pdf b/Tutorial/visualization/binning.pdf
+new file mode 100644
+index 0000000..e5a9328
+Binary files /dev/null and b/Tutorial/visualization/binning.pdf differ
+diff --git a/config.yaml b/config.yaml
+index f0b85c0..2dc5169 100644
+--- a/config.yaml
++++ b/config.yaml
+@@ -1,5 +1,5 @@
+ path:
+-    root: /home/zorrilla/workspace/githubReadmeTutorial
++    root: /path/to/workspace
+ folder:
+     data: dataset
+     logs: logs
+@@ -17,14 +17,19 @@ folder:
+     GEMs: GEMs
+     SMETANA: SMETANA
+     memote: memote
++    qfiltered: qfiltered
+ scripts:
+-    kallisto2concoct: /home/zorrilla/workspace/tutorial/scripts/kallisto2concoct.py
+-    binFilter: /home/zorrilla/workspace/tutorial/scripts/binFilter.py
++    kallisto2concoct: kallisto2concoct.py
++    binFilter: binFilter.py
++    assemblyVis: assemblyVis.R
++    binningVis: binningVis.R
++    modelVis: modelVis.R
+ dbs:
+-    carveme: /home/zorrilla/workspace/tutorial/scripts/media_db.tsv
+-    toy: /home/zorrilla/workspace/tutorial/scripts/download_toydata.txt
++    carveme: /path/to/scripts/media_db.tsv
++    toy: /path/to/scripts/download_toydata.txt
+ cores:
+-    metaspades: 24
++    fastp: 4
++    megahit: 24
+     kallisto: 24
+     concoct: 24
+     metabat: 24
+@@ -39,6 +44,7 @@ cores:
+     grid: 24
+ params:
+     cutfasta: 10000
++    assemblyPreset: meta-sensitive
+     concoct: 800
+     refineMem: 1600
+     refineComp: 50
+diff --git a/metaBAGpipes.sh b/metaBAGpipes.sh
+index a38cb6e..1fd9663 100644
+--- a/metaBAGpipes.sh
++++ b/metaBAGpipes.sh
+@@ -1,60 +1,125 @@
+ #!/bin/bash
+ 
++# Logo
++
++printLogo() {
++
++  echo '
++                           /$$               /$$$$$$$   /$$$$$$   /$$$$$$            /$$                              
++                          | $$              | $$__  $$ /$$__  $$ /$$__  $$          |__/                              
++ /$$$$$$/$$$$   /$$$$$$  /$$$$$$    /$$$$$$ | $$  \ $$| $$  \ $$| $$  \__/  /$$$$$$  /$$  /$$$$$$   /$$$$$$   /$$$$$$$
++| $$_  $$_  $$ /$$__  $$|_  $$_/   |____  $$| $$$$$$$ | $$$$$$$$| $$ /$$$$ /$$__  $$| $$ /$$__  $$ /$$__  $$ /$$_____/
++| $$ \ $$ \ $$| $$$$$$$$  | $$      /$$$$$$$| $$__  $$| $$__  $$| $$|_  $$| $$  \ $$| $$| $$  \ $$| $$$$$$$$|  $$$$$$ 
++| $$ | $$ | $$| $$_____/  | $$ /$$ /$$__  $$| $$  \ $$| $$  | $$| $$  \ $$| $$  | $$| $$| $$  | $$| $$_____/ \____  $$
++| $$ | $$ | $$|  $$$$$$$  |  $$$$/|  $$$$$$$| $$$$$$$/| $$  | $$|  $$$$$$/| $$$$$$$/| $$| $$$$$$$/|  $$$$$$$ /$$$$$$$/
++|__/ |__/ |__/ \_______/   \___/   \_______/|_______/ |__/  |__/ \______/ | $$____/ |__/| $$____/  \_______/|_______/ 
++                                                                          | $$          | $$                          
++                                                                          | $$          | $$                          
++                                                                          |__/          |__/                          
++
++A Snakemake-based metagenomics pipeline desinged to study microbial communities using high performance computer clusters.
++'
++
++}
++
+ # Helpfile function
+ 
+ usage() {
+-  echo -n "Usage: bash metaBAGpipes.sh [-t TASK] [-j NUMBER OF JOBS] [-c NUMBER OF CORES]
++
++  printLogo
++
++  echo -n "Usage: bash metaBAGpipes.sh [-t TASK] [-j NUMBER OF JOBS] [-c NUMBER OF CORES] [-m MEMORY]
+ 
+ Snakefile wrapper/parser for metaBAGpipes. 
+ 
+  Options:
+   -t, --task        Specify task to complete:
+-                       createFolders
+-                       downloadToy
+-                       organizeData
+-                       metaspades
+-                       kallisto
+-                       concoct
+-                       metabat
+-                       maxbin
+-                       binRefine
+-                       binReassemble
+-                       classifyGenomes
+-                       abundance
+-                       moveBins
+-                       carveme
+-                       organizeGems
+-                       smetana
+-                       memote
+-                       grid
++
++                        SETUP
++                            createFolders
++                            downloadToy
++                            organizeData
++
++                        WORKFLOW
++                            fastp (Read QC)
++                            megahit (Assembly)
++                            kallisto (Mapping for CONCOCT)
++                            concoct (Binning)
++                            metabat (Binning)
++                            maxbin (Binning)
++                            binRefine (Bin refinement)
++                            binReassemble (Bin reassembly)
++                            classifyGenomes (Bin classification)
++                            abundance (Bin quantification)
++                            extractProteinBins
++                            carveme
++                            organizeGems
++                            smetana
++                            memote   
++                            grid
++
++                        VISUALIZATION (in development)
++                            qfilterVis
++                            assemblyVis
++                            binningVis
++                            taxonomyVis
++                            modelVis
++                            interactionVis
++                            growthVis
++
+   -j, --nJobs       Specify number of jobs to run in parallel
+   -c, --nCores      Specify number of cores per job
+-  -h, --help        Display this help and exit
++  -m, --mem         Specify memory in GB required for job
+ 
+ Example: bash metaBAGpipes.sh -t createFolders -j 1 -c 1
+ 
+ "
+ }
+ 
+-# Parse and submit function
++# Prepare to submit jobs function: unlock, dryrun, and display config files
++snakePrep() {
++
++        # Show config.yaml params
++        echo -e "\nPlease verify parameters set in the config.yaml file: \n"
++        paste config.yaml
++
++        while true; do
++            read -p "Do you wish to proceed with this config.yaml file? (y/n)" yn
++            case $yn in
++                [Yy]* ) echo " "; break;;
++                [Nn]* ) exit;;
++                * ) echo "Please answer yes or no.";;
++            esac
++        done
++
++        # Show cluster_config.json params
++        echo -e "Please verify parameters set in the cluster_config.json file: \n"
++        paste cluster_config.json
++        echo -e "\n"
++
++        while true; do
++            read -p "Do you wish to proceed with this cluster_config.json file? (y/n)" yn
++            case $yn in
++                [Yy]* ) echo " "; break;;
++                [Nn]* ) exit;;
++                * ) echo "Please answer yes or no.";;
++            esac
++        done
++
++        echo -e "\nUnlocking snakemake ... "
++        snakemake --unlock
++
++        echo -e "\nDry-running snakemake jobs ... "
++        snakemake all -j $njobs -n -k --cluster-config cluster_config.json -c "sbatch -A {cluster.account} -t {cluster.time} -n {cluster.n} --ntasks {cluster.tasks} --cpus-per-task {cluster.n} --output {cluster.output}"
++}
+ 
+-function parse() {
++# Submit login node function
++submitLogin() {
+ 
+-  # Set root folder
+-
+-  root=$(pwd)
+-  sed  -i "2s~/.*$~$root~" config.yaml
+-  echo "Current directory set to root."
++    snakePrep
+ 
+-  echo "Parsing Snakefile and cluster_config.json to target rule: $task."
+-
+-  if [ $task == "createFolders" ]; then
+-    echo "No need to parse Snakefile for rule $task."
+-    echo "Running snakemake on login node."
+-    snakemake --unlock
+-    snakemake $task -n
+     while true; do
+-        read -p "Do you wish to submit this batch of jobs?" yn
++        read -p "Do you wish to submit this job? (y/n)" yn
+         case $yn in
+             [Yy]* ) snakemake $task ; break;;
+             [Nn]* ) exit;;
+@@ -62,189 +127,180 @@ function parse() {
+         esac
+     done
+ 
+-  elif [ $task == "downloadToy" ]; then
+-    echo "No need to parse Snakefile for rule $task."
+-    echo "Running snakemake on login node."
+-    snakemake --unlock
+-    snakemake $task -n
+-    while true; do
+-        read -p "Do you wish to submit this batch of jobs?" yn
+-        case $yn in
+-            [Yy]* ) snakemake $task ; break;;
+-            [Nn]* ) exit;;
+-            * ) echo "Please answer yes or no.";;
+-        esac
+-    done
++}
+ 
+-  elif [ $task == "organizeData" ]; then
+-    echo "No need to parse Snakefile for rule $task."
+-    echo "Running snakemake on login node."
+-    snakemake --unlock
+-    snakemake $task -n
+-    while true; do
+-        read -p "Do you wish to submit this batch of jobs?" yn
+-        case $yn in
+-            [Yy]* ) snakemake $task ; break;;
+-            [Nn]* ) exit;;
+-            * ) echo "Please answer yes or no.";;
+-        esac
+-    done
++# Submit cluster function
++
++submitCluster() {
++
++    # Parse Snakefile rule all (line 22 of Snakefile) input to match output of desired target rule stored in "$string". Note: Hardcoded line number.
++
++    echo "Parsing Snakefile to target rule: $task ... "
++    sed  -i "22s~^.*$~        $string~" Snakefile
++
++    # Check if the number of cores flag is specified by user for cluster job
++
++    if [[ -z "$ncores" ]]; then
++        
++        # No number of cores provided.
++        echo -e "\nWARNING: User is requesting to submit cluster job without specifying the number of cores parameter (-n) ... "
++
++    else
++
++        # Parse cluster_config.json cores (line 5) to match number requested cores stored in "$ncores". Note: Hardcoded line number.
++
++        echo "Parsing cluster_config.json to match requested number of cores: $ncores."
++        sed -i "5s/:.*$/: $ncores,/" cluster_config.json
++
++    fi 
++
++    # Check if the number of jobs flag is specified by user for cluster job
++
++    if [[ -z "$njobs" ]]; then
++        
++        # No number of jobs provided.
++        echo "WARNING: User is requesting to submit cluster job without specifying the number of jobs parameter (-j) ... "
++
++    fi   
++
++    # Check if memory input argument was provided by user. If so, parse cluster_config.json memory (line 7) to match requested memory stored in "$mem". Note: Hardcoded line number.
++
++    if [[ -z "$mem" ]]; then
++
++        # No memory flag provided.
++        echo "WARNING: User is requesting to submit cluster job without specifying the memory flag (-m) ... "
+ 
+-  elif [ $task == "metaspades" ]; then
++        snakePrep
++
++        while true; do
++            read -p "Do you wish to submit this batch of jobs? (y/n)" yn
++            case $yn in
++                [Yy]* ) echo "nohup snakemake all -j $njobs -k --cluster-config cluster_config.json -c 'sbatch -A {cluster.account} -t {cluster.time} -n {cluster.n} --ntasks {cluster.tasks} --cpus-per-task {cluster.n} --output {cluster.output}' &"|bash; break;;
++                [Nn]* ) exit;;
++                * ) echo "Please answer yes or no.";;
++            esac
++        done
++
++    else
++
++        # Memory flag was provided, parse cluster_config.json memory (line 7) to match number requested memory stored in "$mem". Note: Hardcoded line number.
++        echo "Parsing cluster_config.json to match requested memory: $mem."
++        sed -i "7s/:.*$/: $(echo $mem)G,/" cluster_config.json
++
++        snakePrep
++
++        while true; do
++            read -p "Do you wish to submit this batch of jobs? (y/n)" yn
++            case $yn in
++                [Yy]* ) echo "nohup snakemake all -j $njobs -k --cluster-config cluster_config.json -c 'sbatch -A {cluster.account} -t {cluster.time} --mem {cluster.mem} -n {cluster.n} --ntasks {cluster.tasks} --cpus-per-task {cluster.n} --output {cluster.output}' &"|bash; break;;
++                [Nn]* ) exit;;
++                * ) echo "Please answer yes or no.";;
++            esac
++        done
++    fi
++
++}
++
++# Parse function
++
++parse() {
++
++  printLogo
++
++  # Set root folder
++
++  echo "Setting current directory to root ... "
++  root=$(pwd)
++  sed  -i "2s~/.*$~$root~" config.yaml # hardcoded line for root, change the number 2 if any new lines are added to the start of config.yaml
++
++  # No need to parse snakefile for login node jobs, submit the following locally
++
++  if [ $task == "createFolders" ] || [ $task == "downloadToy" ] || [ $task == "organizeData" ] || [ $task == "qfilterVis" ] || [ $task == "assemblyVis" ] || [ $task == "binningVis" ] || [ $task == "taxonomyVis" ] ||  [ $task == "extractProteinBins" ] || [ $task == "organizeGems" ] || [ $task == "modelVis" ] || [ $task == "interactionVis" ] || [ $task == "growthVis" ]; then
++    submitLogin
++
++ # Parse snakefile for cluster jobs
++
++  elif [ $task == "fastp" ]; then
++    string='expand(config["path"]["root"]+"/"+config["folder"]["qfiltered"]+"/{IDs}/{IDs}_1.fastq.gz", IDs = IDs)'
++    submitCluster
++
++  elif [ $task == "megahit" ]; then
+     string='expand(config["path"]["root"]+"/"+config["folder"]["assemblies"]+"/{IDs}/contigs.fasta.gz", IDs = IDs)'
+-    sed  -i "15s~^.*$~        $string~" Snakefile
+-    sed -i "5s/:.*$/: $ncores,/" cluster_config.json
+-    echo "Submitting $njobs jobs with $ncores cores each."
+-    snakemake --unlock
+-    snakemake all -j $njobs -n -k --cluster-config cluster_config.json -c "sbatch -A {cluster.account} -t {cluster.time} -n {cluster.n} --ntasks {cluster.tasks} --cpus-per-task {cluster.n} --output {cluster.output}"
+-    while true; do
+-        read -p "Do you wish to submit this batch of jobs?" yn
+-        case $yn in
+-            [Yy]* ) echo "nohup snakemake all -j $njobs -k --cluster-config cluster_config.json -c "sbatch -A {cluster.account} -t {cluster.time} -n {cluster.n} --ntasks {cluster.tasks} --cpus-per-task {cluster.n} --output {cluster.output}" &"|bash; break;;
+-            [Nn]* ) exit;;
+-            * ) echo "Please answer yes or no.";;
+-        esac
+-    done
++    submitCluster
+ 
+   elif [ $task == "kallisto" ]; then
+     string='expand(config["path"]["root"]+"/"+config["folder"]["concoctInput"]+"/{IDs}_concoct_inputtableR.tsv", IDs = IDs)'
+-    sed  -i "15s~^.*$~        $string~" Snakefile
+-    sed -i "5s/:.*$/: $ncores,/" cluster_config.json
+-    echo "Submitting $njobs jobs with $ncores cores each."
+-    snakemake --unlock
+-    snakemake all -j $njobs -n -k --cluster-config cluster_config.json -c "sbatch -A {cluster.account} -t {cluster.time} -n {cluster.n} --ntasks {cluster.tasks} --cpus-per-task {cluster.n} --output {cluster.output}"
++    submitCluster
+ 
+   elif [ $task == "concoct" ]; then
+     string='expand(config["path"]["root"]+"/"+config["folder"]["concoctOutput"]+"/{IDs}/{IDs}.concoct-bins", IDs = IDs)'
+-    sed  -i "15s~^.*$~        $string~" Snakefile
+-    sed -i "5s/:.*$/: $ncores,/" cluster_config.json
+-    echo "Submitting $njobs jobs with $ncores cores each."
+-    snakemake --unlock
+-    snakemake all -j $njobs -n -k --cluster-config cluster_config.json -c "sbatch -A {cluster.account} -t {cluster.time} -n {cluster.n} --ntasks {cluster.tasks} --cpus-per-task {cluster.n} --output {cluster.output}"
++    submitCluster
+ 
+   elif [ $task == "metabat" ]; then
+     string='expand(config["path"]["root"]+"/"+config["folder"]["metabat"]+"/{IDs}/{IDs}.metabat-bins", IDs = IDs)'
+-    sed  -i "15s~^.*$~        $string~" Snakefile
+-    sed -i "5s/:.*$/: $ncores,/" cluster_config.json
+-    echo "Submitting $njobs jobs with $ncores cores each."
+-    snakemake --unlock
+-    snakemake all -j $njobs -n -k --cluster-config cluster_config.json -c "sbatch -A {cluster.account} -t {cluster.time} -n {cluster.n} --ntasks {cluster.tasks} --cpus-per-task {cluster.n} --output {cluster.output}"
++    submitCluster
+ 
+   elif [ $task == "maxbin" ]; then
+     string='expand(config["path"]["root"]+"/"+config["folder"]["maxbin"]+"/{IDs}/{IDs}.maxbin-bins", IDs = IDs)'
+-    sed  -i "15s~^.*$~        $string~" Snakefile
+-    sed -i "5s/:.*$/: $ncores,/" cluster_config.json
+-    echo "Submitting $njobs jobs with $ncores cores each."
+-    snakemake --unlock
+-    snakemake all -j $njobs -n -k --cluster-config cluster_config.json -c "sbatch -A {cluster.account} -t {cluster.time} -n {cluster.n} --ntasks {cluster.tasks} --cpus-per-task {cluster.n} --output {cluster.output}"
++    submitCluster
+ 
+   elif [ $task == "binRefine" ]; then
+     string='expand(config["path"]["root"]+"/"+config["folder"]["refined"]+"/{IDs}", IDs = IDs)'
+-    sed  -i "15s~^.*$~        $string~" Snakefile
+-    sed -i "5s/:.*$/: $ncores,/" cluster_config.json
+-    echo "Submitting $njobs jobs with $ncores cores each."
+-    snakemake --unlock
+-    snakemake all -j $njobs -n -k --cluster-config cluster_config.json -c "sbatch -A {cluster.account} -t {cluster.time} -n {cluster.n} --ntasks {cluster.tasks} --cpus-per-task {cluster.n} --output {cluster.output}"
++    submitCluster
+ 
+   elif [ $task == "binReassemble" ]; then
+     string='expand(config["path"]["root"]+"/"+config["folder"]["reassembled"]+"/{IDs}", IDs = IDs)'
+-    sed  -i "15s~^.*$~        $string~" Snakefile
+-    sed -i "5s/:.*$/: $ncores,/" cluster_config.json
+-    echo "Submitting $njobs jobs with $ncores cores each."
+-    snakemake --unlock
+-    snakemake all -j $njobs -n -k --cluster-config cluster_config.json -c "sbatch -A {cluster.account} -t {cluster.time} -n {cluster.n} --ntasks {cluster.tasks} --cpus-per-task {cluster.n} --output {cluster.output}"
++    submitCluster
+ 
+   elif [ $task == "classifyGenomes" ]; then
+     string='expand(config["path"]["root"]+"/"+config["folder"]["classification"]+"/{IDs}", IDs = IDs)'
+-    sed  -i "15s~^.*$~        $string~" Snakefile
+-    sed -i "5s/:.*$/: $ncores,/" cluster_config.json
+-    echo "Submitting $njobs jobs with $ncores cores each."
+-    snakemake --unlock
+-    snakemake all -j $njobs -n -k --cluster-config cluster_config.json -c "sbatch -A {cluster.account} -t {cluster.time} -n {cluster.n} --ntasks {cluster.tasks} --cpus-per-task {cluster.n} --output {cluster.output}"
++    submitCluster
+ 
+   elif [ $task == "abundance" ]; then
+     string='expand(config["path"]["root"]+"/"+config["folder"]["abundance"]+"/{IDs}", IDs = IDs)'
+-    sed  -i "15s~^.*$~        $string~" Snakefile
+-    sed -i "5s/:.*$/: $ncores,/" cluster_config.json
+-    echo "Submitting $njobs jobs with $ncores cores each."
+-    snakemake --unlock
+-    snakemake all -j $njobs -n -k --cluster-config cluster_config.json -c "sbatch -A {cluster.account} -t {cluster.time} -n {cluster.n} --ntasks {cluster.tasks} --cpus-per-task {cluster.n} --output {cluster.output}"
+-
+-  elif [ $task == "moveBins" ]; then
+-    echo "No need to parse Snakefile for rule $task."
+-    echo "Running snakemake on login node."
+-    snakemake --unlock
+-    snakemake $task -n
+-    while true; do
+-        read -p "Do you wish to submit this batch of jobs?" yn
+-        case $yn in
+-            [Yy]* ) snakemake $task ; break;;
+-            [Nn]* ) exit;;
+-            * ) echo "Please answer yes or no.";;
+-        esac
+-    done
++    submitCluster
+ 
+   elif [ $task == "carveme" ]; then
+     string='expand(config["path"]["root"]+"/"+config["folder"]["GEMs"]+"/{binIDs}.xml", binIDs = binIDs)'
+-    sed  -i "15s~^.*$~        $string~" Snakefile
+-    sed -i "5s/:.*$/: $ncores,/" cluster_config.json
+-    echo "Submitting $njobs jobs with $ncores cores each."
+-    snakemake --unlock
+-    snakemake all -j $njobs -n -k --cluster-config cluster_config.json -c "sbatch -A {cluster.account} -t {cluster.time} -n {cluster.n} --ntasks {cluster.tasks} --cpus-per-task {cluster.n} --output {cluster.output}"
+-
+-  elif [ $task == "organizeGems" ]; then
+-    echo "No need to parse Snakefile for rule $task."
+-    echo "Running snakemake on login node."
+-    snakemake --unlock
+-    snakemake $task -n
+-    while true; do
+-        read -p "Do you wish to submit this batch of jobs?" yn
+-        case $yn in
+-            [Yy]* ) snakemake $task ; break;;
+-            [Nn]* ) exit;;
+-            * ) echo "Please answer yes or no.";;
+-        esac
+-    done
++    submitCluster
+ 
+   elif [ $task == "smetana" ]; then
+     string='expand(config["path"]["root"]+"/"+config["folder"]["SMETANA"]+"/{IDs}_detailed.tsv", IDs = IDs)'
+-    sed  -i "15s~^.*$~        $string~" Snakefile
+-    sed -i "5s/:.*$/: $ncores,/" cluster_config.json
+-    echo "Submitting $njobs jobs with $ncores cores each."
+-    snakemake --unlock
+-    snakemake all -j $njobs -n -k --cluster-config cluster_config.json -c "sbatch -A {cluster.account} -t {cluster.time} -n {cluster.n} --ntasks {cluster.tasks} --cpus-per-task {cluster.n} --output {cluster.output}"
++    submitCluster
+ 
+   elif [ $task == "memote" ]; then
+     string='expand(config["path"]["root"]+"/"+config["folder"]["memote"]+"/{IDs}", IDs = IDs)'
+-    sed  -i "15s~^.*$~        $string~" Snakefile
+-    sed -i "5s/:.*$/: $ncores,/" cluster_config.json
+-    echo "Submitting $njobs jobs with $ncores cores each."
+-    snakemake --unlock
+-    snakemake all -j $njobs -n -k --cluster-config cluster_config.json -c "sbatch -A {cluster.account} -t {cluster.time} -n {cluster.n} --ntasks {cluster.tasks} --cpus-per-task {cluster.n} --output {cluster.output}"
++    submitCluster
+ 
+   elif [ $task == "grid" ]; then
+     string='expand(config["path"]["root"]+"/"+config["folder"]["GRiD"]+"/{IDs}", IDs = IDs)'
+-    sed  -i "15s~^.*$~        $string~" Snakefile
+-    sed -i "5s/:.*$/: $ncores,/" cluster_config.json
+-    echo "Submitting $njobs jobs with $ncores cores each."
+-    snakemake --unlock
+-    snakemake all -j $njobs -n -k --cluster-config cluster_config.json -c "sbatch -A {cluster.account} -t {cluster.time} -n {cluster.n} --ntasks {cluster.tasks} --cpus-per-task {cluster.n} --output {cluster.output}"
++    submitCluster
+ 
+   else
+     echo "Task not recognized."
+     usage
+-
+   fi
+ 
+ }
+ 
+-# Check if arguments are provided, if so run parse function
++# Read input arguments
+ 
+ if [ $# -eq 0 ]; then
+     echo "No arguments provided ... "
+     usage
+-
+ else
++    # Read in options
++    while [[ $1 = -?* ]]; do
++      case $1 in
++        -t|--task) shift; task=${1} ;;
++        -j|--nJobs) shift; njobs=${1} ;;
++        -c|--nCores) shift; ncores=${1} ;;
++        -m|--mem) shift; mem=${1} ;;
++        --endopts) shift; break ;;
++        *) die "invalid option: '$1'." ;;
++      esac
++      shift
++    done
+     parse
+ 
+ fi
+diff --git a/metaBAGpipes_env.yml b/metaBAGpipes_env.yml
+index 6fa35bb..4d83de1 100644
+--- a/metaBAGpipes_env.yml
++++ b/metaBAGpipes_env.yml
+@@ -5,112 +5,145 @@ channels:
+   - conda-forge
+   - defaults
+ dependencies:
+-  - _libgcc_mutex=0.1=main
++  - _libgcc_mutex=0.1=conda_forge
++  - _openmp_mutex=4.5=0_gnu
+   - _r-mutex=1.0.1=anacondar_1
+-  - backports=1.0=py_2
+-  - backports.functools_lru_cache=1.5=py_1
+-  - backports_abc=0.5=py_1
+-  - bamtools=2.5.1=he860b03_5
+-  - bcftools=1.9=h68d8f2e_7
+-  - bedtools=2.29.0=hc088bd4_3
+-  - binsanity=0.2.9.2=py_0
+-  - binutils_impl_linux-64=2.31.1=h7fc9f1b_2
+-  - binutils_linux-64=2.31.1=h6176602_12
+-  - biopython=1.68=py27_0
+-  - blas=2.13=mkl
+-  - blast=2.5.0=hc0b0e79_3
+-  - boost=1.70.0=py27h9de70de_1
++  - aioeasywebdav=2.4.0=py36_1000
++  - aiohttp=3.6.2=py36h516909a_0
++  - appdirs=1.4.3=py_1
++  - async-timeout=3.0.1=py_1000
++  - attrs=19.3.0=py_0
++  - bcrypt=3.1.7=py36h516909a_0
++  - binutils_impl_linux-64=2.33.1=he1b5a44_7
++  - binutils_linux-64=2.33.1=h9595d00_16
++  - biopython=1.76=py36h516909a_0
++  - blas=2.14=mkl
+   - boost-cpp=1.70.0=h8e57a91_2
+-  - bowtie2=2.3.5=py27he860b03_0
+-  - bwa=0.7.17=hed695b0_6
+-  - bwidget=1.9.13=0
+-  - bzip2=1.0.8=h516909a_1
+-  - ca-certificates=2019.9.11=hecc5488_0
++  - boto3=1.11.0=py_0
++  - botocore=1.14.0=py_0
++  - bowtie2=2.3.5=py36he860b03_0
++  - bwa=0.7.17=hed695b0_7
++  - bwidget=1.9.14=0
++  - bzip2=1.0.8=h516909a_2
++  - ca-certificates=2019.11.28=hecc5488_0
++  - cachetools=3.1.1=py_0
+   - cairo=1.16.0=hfb77d84_1002
+-  - cdbtools=0.99=he941832_4
+-  - checkm-genome=1.0.18=py_0
+-  - concoct=1.1.0=py27h88e4a8a_0
++  - cffi=1.13.2=py36h8022711_0
++  - chardet=3.0.4=py36_1003
++  - concoct=1.1.0=py36h88e4a8a_0
++  - configargparse=0.13.0=py_1
++  - cryptography=2.8=py36h72c5cf5_1
+   - curl=7.65.3=hf8cf82a_0
+-  - cycler=0.10.0=py_1
+-  - cython=0.29.13=py27he1b5a44_0
+-  - dbus=1.13.6=he372182_0
+-  - dendropy=4.4.0=py_1
+-  - diamond=0.9.26=hfb76ee0_0
+-  - expat=2.2.5=he1b5a44_1003
++  - cython=0.29.14=py36he1b5a44_0
++  - datrie=0.8=py36h516909a_0
++  - decorator=4.4.1=py_0
++  - diamond=0.9.29=h56fc30b_0
++  - docutils=0.15.2=py36_0
++  - dropbox=9.4.0=py_0
++  - expat=2.2.5=he1b5a44_1004
+   - fastp=0.20.0=hdbcaa40_0
++  - fftw=3.3.8=nompi_h7f3a6c3_1110
++  - filechunkio=1.6=py36_0
++  - font-ttf-dejavu-sans-mono=2.37=hab24e00_0
++  - font-ttf-inconsolata=2.001=hab24e00_0
++  - font-ttf-source-code-pro=2.030=hab24e00_0
++  - font-ttf-ubuntu=0.83=hab24e00_0
+   - fontconfig=2.13.1=h86ecdb6_1001
++  - fonts-conda-forge=1=0
+   - fraggenescan=1.31=h14c3975_1
+   - freetype=2.10.0=he983fc9_1
+   - fribidi=1.0.5=h516909a_1002
+-  - functools32=3.2.3.2=py_3
+-  - gcc_impl_linux-64=7.3.0=habb00fd_2
+-  - gcc_linux-64=7.3.0=h553295d_12
++  - ftputil=3.2=py36_0
++  - gcc_impl_linux-64=7.3.0=hd420e75_4
++  - gcc_linux-64=7.3.0=h553295d_16
++  - gdk-pixbuf=2.32.2=1
+   - gettext=0.19.8.1=hc5be6a0_1002
+-  - gfortran_impl_linux-64=7.3.0=hdf63c60_2
+-  - gfortran_linux-64=7.3.0=h553295d_12
+-  - glib=2.58.3=h6f030ca_1002
++  - gfortran_impl_linux-64=7.3.0=hdf63c60_4
++  - gfortran_linux-64=7.3.0=h553295d_16
++  - ghostscript=9.18=1
++  - giflib=5.2.1=h516909a_1
++  - gitdb2=2.0.6=py_0
++  - gitpython=3.0.5=py_0
++  - glib=2.58.3=py36h6f030ca_1002
++  - gobject-introspection=1.58.2=py36h5503ade_1002
++  - google-api-core=1.15.0=py36_0
++  - google-auth=1.10.0=py_0
++  - google-cloud-core=1.1.0=py_0
++  - google-cloud-storage=1.20.0=py_0
++  - google-resumable-media=0.4.1=py_0
++  - googleapis-common-protos=1.6.0=py36_0
+   - graphite2=1.3.13=hf484d3e_1000
+-  - grid=1.3=2
++  - graphviz=2.42.3=h0511662_0
+   - gsl=2.5=h294904e_1
+-  - gst-plugins-base=1.14.5=h0935bb2_0
+-  - gstreamer=1.14.5=h36ae1b5_0
+-  - gxx_impl_linux-64=7.3.0=hdf63c60_2
+-  - gxx_linux-64=7.3.0=h553295d_12
++  - gxx_impl_linux-64=7.3.0=hdf63c60_4
++  - gxx_linux-64=7.3.0=h553295d_16
+   - harfbuzz=2.4.0=h9f30f68_3
+-  - hdf5=1.10.5=nompi_h3c11f04_1103
+-  - hmmer=3.2.1=hf484d3e_1
+-  - htop=2.2.0=hf8c457e_1000
++  - hdf5=1.10.5=nompi_h3c11f04_1104
++  - hmmer=3.1b2=3
+   - htslib=1.9=h4da6232_3
+   - icu=64.2=he1b5a44_1
+   - idba=1.1.3=1
++  - idna=2.8=py36_1000
++  - idna_ssl=1.1.0=py36_1000
++  - imagemagick=7.0.9_16=pl526ha9fe49d_0
++  - importlib_metadata=1.4.0=py36_0
+   - intel-openmp=2019.4=243
++  - jbig=2.1=h14c3975_2001
++  - jinja2=2.10.3=py_0
++  - jmespath=0.9.4=py_0
++  - joblib=0.14.1=py_0
+   - jpeg=9c=h14c3975_1001
+-  - kallisto=0.46.0=h4f7b962_1
+-  - kiwisolver=1.1.0=py27hc9558a2_0
+-  - krb5=1.16.3=h05b26f9_1001
+-  - libblas=3.8.0=13_mkl
+-  - libcblas=3.8.0=13_mkl
++  - jsonschema=3.2.0=py36_0
++  - kallisto=0.46.1=h4f7b962_0
++  - krb5=1.16.4=h2fd8d38_0
++  - ld_impl_linux-64=2.33.1=h53a641e_7
++  - libblas=3.8.0=14_mkl
++  - libcblas=3.8.0=14_mkl
++  - libcroco=0.6.13=h8d621e5_0
+   - libcurl=7.65.3=hda55be3_0
+   - libdeflate=1.2=h516909a_1
+   - libedit=3.1.20170329=hf8c457e_1001
+   - libffi=3.2.1=he1b5a44_1006
+   - libgcc=7.2.0=h69d50b8_2
+-  - libgcc-ng=9.1.0=hdf63c60_0
+-  - libgfortran-ng=7.3.0=hdf63c60_0
++  - libgcc-ng=9.2.0=h24d8f2e_2
++  - libgfortran-ng=7.3.0=hdf63c60_4
++  - libgomp=9.2.0=h24d8f2e_2
+   - libiconv=1.15=h516909a_1005
+-  - liblapack=3.8.0=13_mkl
+-  - liblapacke=3.8.0=13_mkl
+-  - libopenblas=0.3.7=h6e990d7_1
++  - liblapack=3.8.0=14_mkl
++  - liblapacke=3.8.0=14_mkl
+   - libpng=1.6.37=hed695b0_0
++  - libprotobuf=3.11.2=h8b12597_0
++  - librsvg=2.46.4=h33a7fed_0
+   - libssh2=1.8.2=h22169c7_2
+-  - libstdcxx-ng=9.1.0=hdf63c60_0
+-  - libtiff=4.0.10=h57b8799_1003
++  - libstdcxx-ng=9.2.0=hdf63c60_2
++  - libtiff=4.1.0=hc3755c2_3
++  - libtool=2.4.6=h14c3975_1002
+   - libuuid=2.32.1=h14c3975_1000
++  - libwebp=1.0.2=h56121f0_5
+   - libxcb=1.13=h14c3975_1002
+-  - libxml2=2.9.9=hee79883_5
++  - libxml2=2.9.10=hee79883_0
+   - llvm-openmp=8.0.1=hc9558a2_0
+   - lz4-c=1.8.3=he1b5a44_1001
+   - make=4.2.1=h14c3975_2004
+-  - matplotlib=2.2.4=py27_1
+-  - matplotlib-base=2.2.4=py27h250f245_1
+-  - maxbin2=2.2.6=h14c3975_0
++  - markupsafe=1.1.1=py36h516909a_0
++  - maxbin2=2.2.5=0
++  - megahit=1.2.9=h8b12597_0
+   - metabat2=2.12.1=0
+   - metasnv=1.0.3=h230ddbb_2
+   - mkl=2019.4=243
+-  - mmtf-python=1.0.2=py27_0
+-  - mosdepth=0.2.6=hfb13731_0
+-  - motus=2.0.1=py27_1
+-  - msgpack-python=0.6.2=py27hc9558a2_0
++  - more-itertools=8.1.0=py_0
++  - motus=2.5.1=py_0
++  - multidict=4.7.3=py36h516909a_0
+   - ncurses=6.1=hf484d3e_1002
+-  - nose=1.3.7=py27_1002
+-  - numpy=1.16.4=py27h95a1406_0
+-  - olefile=0.46=py_0
++  - networkx=2.4=py_0
++  - nose=1.3.7=py36_1003
++  - numpy=1.17.3=py36h95a1406_0
++  - openjpeg=2.3.1=h981e76c_3
+   - openmp=8.0.1=0
+-  - openssl=1.1.1c=h516909a_0
+-  - pandas=0.24.2=py27hb3f55d8_0
++  - openssl=1.1.1d=h516909a_0
++  - pandas=0.25.3=py36hb3f55d8_0
+   - pango=1.42.4=ha030887_1
+-  - parallel=20190922=1
+-  - pathoscope=2.0.7=py_1
++  - paramiko=2.7.1=py36_0
+   - pcre=8.43=he1b5a44_0
+   - perl=5.26.2=h516909a_1006
+   - perl-encode=2.88=pl526_1
+@@ -118,90 +151,105 @@ dependencies:
+   - perl-exporter=5.72=pl526_1
+   - perl-lwp-simple=6.15=pl526h470a237_4
+   - perl-parent=0.236=pl526_1
+-  - pillow=6.2.0=py27h6b7be26_0
+-  - pip=19.2.3=py27_0
++  - pip=19.3.1=py36_0
+   - pixman=0.38.0=h516909a_1003
+-  - pplacer=1.1.alpha19=1
+-  - prodigal=2.6.3=1
++  - pkg-config=0.29.2=h516909a_1006
++  - prettytable=0.7.2=py_3
++  - protobuf=3.11.2=py36he1b5a44_0
++  - psutil=5.6.7=py36h516909a_0
+   - pthread-stubs=0.4=h14c3975_1001
+-  - pyparsing=2.4.2=py_0
+-  - pyqt=5.9.2=py27hcca6a23_4
+-  - pysam=0.9.0=py27_1
+-  - python=2.7.15=h5a48372_1009
+-  - python-dateutil=2.8.0=py_0
+-  - pytz=2019.2=py_0
+-  - qt=5.9.7=h0c104cb_3
++  - pyasn1=0.4.8=py_0
++  - pyasn1-modules=0.2.7=py_0
++  - pycparser=2.19=py36_1
++  - pygments=2.5.2=py_0
++  - pygraphviz=1.3.1=py36_0
++  - pynacl=1.3.0=py36h516909a_1001
++  - pyopenssl=19.1.0=py36_0
++  - pyrsistent=0.15.7=py36h516909a_0
++  - pysftp=0.2.9=py36_0
++  - pysocks=1.7.1=py36_0
++  - python=3.6.7=h357f687_1006
++  - python-dateutil=2.8.1=py_0
++  - python-irodsclient=0.7.0=py_0
++  - pytz=2019.3=py_0
++  - pyyaml=5.3=py36h516909a_0
++  - r=3.6=r36_1003
+   - r-assertthat=0.2.1=r36h6115d3f_1
+   - r-backports=1.1.5=r36hcdcec82_0
+-  - r-base=3.6.1=hba50c9b_4
+-  - r-bitops=1.0_6=r36hcdcec82_1003
+-  - r-catools=1.17.1.2=r36h0357c0b_1
+-  - r-cli=1.1.0=r36h6115d3f_2
++  - r-base=3.6.2=h3a67422_0
++  - r-boot=1.3_24=r36h6115d3f_0
++  - r-class=7.3_15=r36hcdcec82_1001
++  - r-cli=2.0.1=r36h6115d3f_0
++  - r-cluster=2.1.0=r36h9bbef5b_2
++  - r-codetools=0.2_16=r36h6115d3f_1001
+   - r-colorspace=1.4_1=r36hcdcec82_1
+   - r-crayon=1.3.4=r36h6115d3f_1002
+-  - r-digest=0.6.22=r36h0357c0b_0
++  - r-digest=0.6.23=r36h0357c0b_0
+   - r-dplyr=0.8.3=r36h0357c0b_3
+   - r-ellipsis=0.3.0=r36hcdcec82_0
+-  - r-fansi=0.4.0=r36hcdcec82_1001
+-  - r-gdata=2.18.0=r36h6115d3f_1002
+-  - r-getopt=1.20.3=r36_1
++  - r-fansi=0.4.1=r36hcdcec82_0
++  - r-farver=2.0.2=r36h0357c0b_0
++  - r-foreign=0.8_74=r36hcdcec82_0
+   - r-ggplot2=3.2.1=r36h6115d3f_0
+   - r-glue=1.3.1=r36hcdcec82_1
+-  - r-gplots=3.0.1.1=r36h6115d3f_1
+-  - r-gsubfn=0.7=r36h6115d3f_1001
++  - r-gridextra=2.3=r36h6115d3f_1002
+   - r-gtable=0.3.0=r36h6115d3f_2
+-  - r-gtools=3.8.1=r36hcdcec82_1003
+-  - r-kernsmooth=2.23_15=r36h9bbef5b_1004
++  - r-kernsmooth=2.23_16=r36h9bbef5b_0
+   - r-labeling=0.3=r36h6115d3f_1002
+   - r-lattice=0.20_38=r36hcdcec82_1002
+   - r-lazyeval=0.2.2=r36hcdcec82_1
++  - r-lifecycle=0.1.0=r36h6115d3f_0
+   - r-magrittr=1.5=r36h6115d3f_1002
+-  - r-mass=7.3_51.4=r36hcdcec82_1
+-  - r-matrix=1.2_17=r36hcdcec82_1
+-  - r-mgcv=1.8_29=r36hcdcec82_0
++  - r-mass=7.3_51.5=r36hcdcec82_0
++  - r-matrix=1.2_18=r36hcdcec82_0
++  - r-mgcv=1.8_31=r36hcdcec82_0
+   - r-munsell=0.5.0=r36h6115d3f_1002
+-  - r-nlme=3.1_141=r36h9bbef5b_1
+-  - r-pillar=1.4.2=r36h6115d3f_2
++  - r-nlme=3.1_143=r36h9bbef5b_0
++  - r-nnet=7.3_12=r36hcdcec82_1003
++  - r-pillar=1.4.3=r36h6115d3f_0
+   - r-pkgconfig=2.0.3=r36h6115d3f_0
+   - r-plogr=0.2.0=r36h6115d3f_1002
+-  - r-plyr=1.8.4=r36h0357c0b_1003
+-  - r-proto=1.0.0=r36_2002
++  - r-plyr=1.8.5=r36h0357c0b_0
+   - r-purrr=0.3.3=r36hcdcec82_0
+-  - r-r6=2.4.0=r36h6115d3f_2
++  - r-r6=2.4.1=r36h6115d3f_0
+   - r-rcolorbrewer=1.1_2=r36h6115d3f_1002
+-  - r-rcpp=1.0.2=r36h0357c0b_0
++  - r-rcpp=1.0.3=r36h0357c0b_0
++  - r-recommended=3.6=r36_1003
+   - r-reshape2=1.4.3=r36h0357c0b_1004
+-  - r-rlang=0.4.1=r36hcdcec82_0
+-  - r-scales=1.0.0=r36h0357c0b_1002
+-  - r-stringi=1.4.3=r36h0e574ca_3
++  - r-rlang=0.4.2=r36hcdcec82_0
++  - r-rpart=4.1_15=r36hcdcec82_1
++  - r-scales=1.1.0=r36h6115d3f_0
++  - r-spatial=7.3_11=r36hcdcec82_1003
++  - r-stringi=1.4.5=r36h0e574ca_0
+   - r-stringr=1.4.0=r36h6115d3f_1
++  - r-survival=3.1_8=r36hcdcec82_0
+   - r-tibble=2.1.3=r36hcdcec82_1
+   - r-tidyselect=0.2.5=r36h0357c0b_1001
+   - r-utf8=1.1.4=r36hcdcec82_1001
+-  - r-vctrs=0.2.0=r36hcdcec82_1
++  - r-vctrs=0.2.1=r36hcdcec82_0
+   - r-viridislite=0.3.0=r36h6115d3f_1002
+   - r-withr=2.1.2=r36h6115d3f_1001
+   - r-zeallot=0.1.0=r36h6115d3f_1001
++  - ratelimiter=1.2.0=py36_1000
+   - readline=8.0=hf8c457e_0
+-  - reportlab=3.5.28=py27h7d98c4e_0
+-  - samtools=0.1.19=h94a8ba4_6
+-  - scikit-learn=0.20.3=py27ha8026db_1
+-  - scipy=1.2.1=py27h921218d_2
++  - rsa=3.1.4=py36_0
++  - s3transfer=0.3.0=py36_0
++  - samtools=1.9=h10a08f8_12
++  - scikit-learn=0.22.1=py36hcdab131_1
++  - scipy=1.4.1=py36h921218d_0
+   - sed=4.7=h1bed415_1000
+-  - seqtk=1.3=hed695b0_2
+-  - setuptools=41.2.0=py27_0
+-  - singledispatch=3.4.0.3=py27_1000
+-  - sip=4.19.8=py27hf484d3e_1000
+-  - spades=3.13.1=h2d02072_2
+-  - sqlite=3.30.0=hcee41ef_0
+-  - subprocess32=3.5.4=py27h516909a_0
+-  - subread=1.6.4=h84994c4_1
+-  - tbb=2019.9=hc9558a2_0
+-  - tk=8.6.9=hed695b0_1003
++  - setuptools=45.0.0=py36_0
++  - smmap2=2.0.5=py_0
++  - snakemake=5.9.1=0
++  - snakemake-minimal=5.9.1=py_0
++  - sqlite=3.30.1=hcee41ef_0
++  - tbb=2019.9=hc9558a2_1
++  - tk=8.6.10=hed695b0_0
+   - tktable=2.10=h555a92e_3
+-  - tornado=5.1.1=py27h14c3975_1000
+-  - vsearch=2.14.1=h2d02072_0
+-  - wheel=0.33.6=py27_0
++  - typing_extensions=3.7.4.1=py36_0
++  - wheel=0.33.6=py36_0
++  - wrapt=1.11.2=py36h516909a_0
++  - xmlrunner=1.7.7=py_0
+   - xorg-kbproto=1.0.7=h14c3975_1002
+   - xorg-libice=1.0.10=h516909a_0
+   - xorg-libsm=1.2.3=h84519dc_1000
+@@ -209,31 +257,27 @@ dependencies:
+   - xorg-libxau=1.0.9=h14c3975_0
+   - xorg-libxdmcp=1.1.3=h516909a_0
+   - xorg-libxext=1.3.4=h516909a_0
++  - xorg-libxpm=3.5.13=h516909a_0
+   - xorg-libxrender=0.9.10=h516909a_1002
++  - xorg-libxt=1.1.5=h516909a_1003
+   - xorg-renderproto=0.11.1=h14c3975_1002
+   - xorg-xextproto=7.3.0=h14c3975_1002
+   - xorg-xproto=7.0.31=h14c3975_1007
+   - xz=5.2.4=h14c3975_1001
++  - yaml=0.2.2=h516909a_1
++  - yarl=1.3.0=py36h516909a_1000
++  - zipp=0.6.0=py_0
+   - zlib=1.2.11=h516909a_1006
+-  - zstd=1.4.0=h3b9ef0a_0
++  - zstd=1.4.4=h3b9ef0a_1
+   - pip:
+-    - cache==1.0.3
+     - carveme==1.2.2
+-    - certifi==2017.7.27.1
+-    - configparser==4.0.2
+-    - cplex==12.9.0.0
+-    - docloud==1.0.257
+-    - docplex==2.9.133
+-    - framed==0.5.2
+-    - future==0.18.2
+-    - futures==3.1.1
+-    - idna==2.8
+-    - memote==0.9.12
+-    - mpmath==1.1.0
+-    - python-libsbml==5.18.0
+-    - requests==2.18.4
+-    - six==1.10.0
+-    - smetana==1.0.0
+-    - sympy==1.4
+-    - urllib3==1.22
+-
++    - certifi==2019.9.11
++    - cplex==12.10.0.0
++    - docloud==1.0.375
++    - docplex==2.11.176
++    - framed==0.5.1
++    - reframed==1.0.0
++    - requests==2.22.0
++    - six==1.12.0
++    - smetana==1.2.0
++    - urllib3==1.25.6

@@ -1,0 +1,63 @@
+version = "1.0"
+
+[task]
+name = "default/aplbrain__grandiso-networkx-19"
+description = "Memoize nodematch function calls"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "grandiso-networkx",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "aplbrain/grandiso-networkx"
+ref = "8c6fc0dc4f10a0c407ffa18e8729586eeae7f154"
+reference = "https://github.com/aplbrain/grandiso-networkx/pull/19"
+source_access = "auto"
+built_at = "2026-11-17T19:48:41.429971+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:ab4a7af78c96114bab44ecc2e3f6f7617fee89ccc8d9a1e45cc2e1344b7de96c"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2021-05-28T18:56:50Z"
+diff_format = "unified"
+context_files = [
+    "CHANGELOG.md",
+    "grandiso/__init__.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 98
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

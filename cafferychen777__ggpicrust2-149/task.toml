@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/cafferychen777__ggpicrust2-149"
+description = "Update pathway_errorbar.R - applying left join to properly map groups to samples"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "ggpicrust2",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "cafferychen777/ggpicrust2"
+ref = "353181da9bb57d938a3820a055d754d905c572cd"
+reference = "https://github.com/cafferychen777/ggpicrust2/pull/149"
+source_access = "auto"
+built_at = "2026-11-17T21:58:15.518420+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:bdb63c4a8698834547db2875377b265a4d4e41cef509157f184bc02887a2e6c0"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2025-05-04T02:23:51Z"
+diff_format = "unified"
+context_files = [
+    "R/pathway_errorbar.R",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 40
+difficulty = "medium"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

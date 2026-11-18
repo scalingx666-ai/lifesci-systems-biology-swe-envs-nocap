@@ -1,0 +1,64 @@
+version = "1.0"
+
+[task]
+name = "default/micom-dev__micom-146"
+description = "Make highs work in the CI"
+
+[metadata]
+difficulty = "small"
+category = "bugfix"
+keywords = [
+    "micom",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "micom-dev/micom"
+ref = "5ec0dc2030af6ce3bfd925410a6abc4ba13e6650"
+reference = "https://github.com/micom-dev/micom/pull/146"
+source_access = "auto"
+built_at = "2026-11-17T23:03:43.959157+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:859fcfdf9a7c920b0989187f97282dd7cb934b91fcef018f97394b1afbf63e72"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2023-11-01T01:34:38Z"
+diff_format = "unified"
+context_files = [
+    ".github/wheels/highspy-1.5.3-cp311-cp311-macosx_10_9_x86_64.whl",
+    ".github/wheels/highspy-1.5.3-cp38-cp38-macosx_10_9_x86_64.whl",
+    ".github/workflows/pythonpackage.yml",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 16
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

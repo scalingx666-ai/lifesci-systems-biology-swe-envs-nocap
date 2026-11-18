@@ -1,0 +1,104 @@
+diff --git a/micom/duality.py b/micom/duality.py
+index 66154c7d..ede2ddad 100755
+--- a/micom/duality.py
++++ b/micom/duality.py
+@@ -62,7 +62,7 @@ def fast_dual(model, prefix="dual_"):
+                 "Non-linear problems are not supported: " + str(constraint)
+             )
+         if constraint.lb is None and constraint.ub is None:
+-            logger.warning("skipped free constraint %s" % constraint.name)
++            logger.debug("skipped free constraint %s" % constraint.name)
+             continue  # Skip free constraint
+         if constraint.lb == constraint.ub:
+             const_var = prob.Variable(
+diff --git a/micom/stats.py b/micom/stats.py
+index c3d4f4ae..70a1f9ab 100644
+--- a/micom/stats.py
++++ b/micom/stats.py
+@@ -76,15 +76,14 @@ def _run_test(args):
+ def _run_corr(args):
+     df, col = args
+     met = df.metabolite.iloc[0]
+-    lpr = pearsonr(np.log2(df["flux"] + 1e-6), df[col])[0]
+     try:
+-        p = spearmanr(df["flux"], df["time"])[1]
++        rho, p = spearmanr(df["flux"], df[col])
+     except Exception:
+-        p = np.nan
++        rho, p = np.nan, np.nan
+     return pd.DataFrame(
+         {
+             "metabolite": met,
+-            "log_pearson_rho": lpr,
++            "spearman_rho": rho,
+             "p": p,
+             "n": df.shape[0],
+         },
+@@ -99,6 +98,7 @@ def compare_groups(fluxes, metadata_column, groups=None, threads=1, progress=Tru
+     ----
+     This uses a non-parametric test by default. By default it will use a
+     Mann-Whitney test for two groups and a Kruskal-Wallis test for >2 groups.
++    `q` are the FDR-corrected p-values (Benjamini-Hochberg correction).
+ 
+     Arguments
+     ---------
+@@ -131,17 +131,22 @@ def compare_groups(fluxes, metadata_column, groups=None, threads=1, progress=Tru
+     ]
+     res = workflow(_run_test, met_data, threads=threads, progress=progress)
+     res = pd.concat(res)
++    if len(groups) == 2:
++        res["comparison"] = f"{groups[1]} vs. {groups[0]}"
++    else:
++        res["covariate"] = metadata_column
+     res["q"] = np.nan
+     res.loc[res.p.notnull(), "q"] = fdr_adjust(res.loc[res.p.notnull(), "p"])
+     return res
+ 
+ 
+-def correlate_fluxes(fluxes, metadata_column, groups=None, threads=1, progress=True):
+-    """Compare fluxes form different sample groups.
++def correlate_fluxes(fluxes, metadata_column, threads=1, progress=True):
++    """Correlate fluxes with a continuous covariate.
+ 
+     Note
+     ----
+-    This uses a non-parametric test by default (Spearman rank correlation).
++    This uses a non-parametric test by default (Spearman rank correlation). `q`
++    are the FDR-corrected p-values (Benjamini-Hochberg correction).
+ 
+     Arguments
+     ---------
+@@ -165,6 +170,7 @@ def correlate_fluxes(fluxes, metadata_column, groups=None, threads=1, progress=T
+     ]
+     res = workflow(_run_corr, met_data, threads=threads, progress=progress)
+     res = pd.concat(res)
++    res["covariate"] = metadata_column
+     res["q"] = np.nan
+     res.loc[res.p.notnull(), "q"] = fdr_adjust(res.loc[res.p.notnull(), "p"])
+     return res
+diff --git a/tests/test_stats.py b/tests/test_stats.py
+index 99e025b1..67917ef4 100644
+--- a/tests/test_stats.py
++++ b/tests/test_stats.py
+@@ -66,6 +66,7 @@ def test_comparison_binary():
+     assert "metabolite_3" in tests[tests.p > 0.01].metabolite.values
+     assert "metabolite_4" in tests[tests.p > 0.01].metabolite.values
+     assert "log_fold_change" in tests.columns
++    assert "comparison" in tests.columns
+ 
+ 
+ def test_comparison_many():
+@@ -76,6 +77,7 @@ def test_comparison_many():
+     assert "metabolite_3" in tests[tests.p > 0.01].metabolite.values
+     assert "metabolite_4" in tests[tests.p > 0.01].metabolite.values
+     assert "log_mean_std" in tests.columns
++    assert "covariate" in tests.columns
+ 
+ 
+ def test_correlation():
+@@ -85,3 +87,5 @@ def test_correlation():
+     assert "metabolite_2" in tests[tests.p < 0.01].metabolite.values
+     assert "metabolite_3" in tests[tests.p > 0.01].metabolite.values
+     assert "metabolite_4" in tests[tests.p > 0.01].metabolite.values
++    assert "covariate" in tests.columns
++    assert (tests.covariate == "time").all()

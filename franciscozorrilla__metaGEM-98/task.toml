@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/franciscozorrilla__metaGEM-98"
+description = "Fix an issue with metabat2"
+
+[metadata]
+difficulty = "easy"
+category = "bugfix"
+keywords = [
+    "metaGEM",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "franciscozorrilla/metaGEM"
+ref = "9796e3ab98e38afcd26147fe58df32190002810f"
+reference = "https://github.com/franciscozorrilla/metaGEM/pull/98"
+source_access = "auto"
+built_at = "2026-11-17T21:51:23.933196+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:431c03433d0f80b56975a4a7f11901cc593b6c4a24f2d67aaf780eb01e21b79f"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2022-04-28T17:37:04Z"
+diff_format = "unified"
+context_files = [
+    "Snakefile",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 5
+difficulty = "trivial"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

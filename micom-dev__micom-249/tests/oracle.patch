@@ -1,0 +1,32 @@
+diff --git a/micom/util.py b/micom/util.py
+index 626d577a..c1df1203 100755
+--- a/micom/util.py
++++ b/micom/util.py
+@@ -24,6 +24,7 @@
+     ".mat": io.load_matlab_model,
+     ".json": io.load_json_model,
+     ".pickle": lambda fn: pickle.load(open(fn, "rb")),
++    ".sbml": io.read_sbml_model,
+ }
+ 
+ COMPARTMENT_RE = "(_{}$)|([^a-zA-Z0-9 :]{}[^a-zA-Z0-9 :]$)"
+diff --git a/tests/test_util.py b/tests/test_util.py
+index a94191e0..0680660b 100755
+--- a/tests/test_util.py
++++ b/tests/test_util.py
+@@ -28,6 +28,15 @@ def test_load_model():
+     assert len(model.metabolites) == 72
+ 
+ 
++def test_load_sbml_extension(tmp_path):
++    fpath = str(tmp_path / "test.sbml")
++    model = read_sbml_model(micom.data.test_taxonomy().file[0])
++    cobra.io.write_sbml_model(model, fpath)
++    model = util.load_model(fpath)
++    assert len(model.reactions) == 95
++    assert len(model.metabolites) == 72
++
++
+ def test_serialization(tmpdir):
+     row = tax.loc[0]
+     util.serialize_models([row.file], str(tmpdir))

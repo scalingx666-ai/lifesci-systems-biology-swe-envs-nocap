@@ -1,0 +1,361 @@
+diff --git a/docs/reference/grandiso/grandiso.md b/docs/reference/grandiso/grandiso.md
+index c167e10..27e074c 100644
+--- a/docs/reference/grandiso/grandiso.md
++++ b/docs/reference/grandiso/grandiso.md
+@@ -1,26 +1,18 @@
+-## *Function* `sort_motif_nodes_by_interestingness(motif: nx.Graph) -> dict`
+-
++## _Function_ `uniform_node_interestingness(motif: nx.Graph) -> dict`
+ 
+ Sort the nodes in a motif by their interestingness.
+ 
+ Most interesting nodes are defined to be those that most rapidly filter the list of nodes down to a smaller set.
+ 
+-
+-
+-## *Function* `find_motifs(motif: nx.DiGraph, host: nx.DiGraph) -> List[dict]`
+-
++## _Function_ `find_motifs(motif: nx.Graph, host: nx.Graph) -> List[dict]`
+ 
+ Get a list of mappings from motif node IDs to host graph IDs.
+ 
+-### form
+-
+-```
+-> - **motif_id** (`None`: `None`): host_id, ...}] ```
+-
+ ### Arguments
+-> - **motif** (`nx.DiGraph`: `None`): The motif graph (needle) to search for
+-> - **host** (`nx.DiGraph`: `None`): The host graph (haystack) to search within
++
++> -   **motif** (`nx.Graph`: `None`): The motif graph (needle) to search for
++> -   **host** (`nx.Graph`: `None`): The host graph (haystack) to search within
+ 
+ ### Returns
+-> - **List[dict]** (`None`: `None`): A list of mappings from motif node IDs to host graph IDs
+ 
++> -   **List[dict]** (`None`: `None`): A list of mappings from motif node IDs to host graph IDs
+diff --git a/docs/reference/grandiso/queues.py.md b/docs/reference/grandiso/queues.py.md
+new file mode 100644
+index 0000000..90b6de3
+--- /dev/null
++++ b/docs/reference/grandiso/queues.py.md
+@@ -0,0 +1,116 @@
++## *Class* `QueuePolicy(Enum)`
++
++
++An Enum for queue pop policy.
++
++DEPTHFIRST policy is identified with pushing and popping on the same side of the queue. BREADTHFIRST is identified with pushing and popping from the opposite side of the queue.
++
++
++
++## *Class* `ProfilingQueue(queue.SimpleQueue)`
++
++
++A simple queue to enable profiling. This queue keeps track of its size over time so that you can more easily debug performance.
++
++Note that you do not want to use this queue for production workloads, as it adds substantial overhead.
++
++
++
++## *Function* `__init__(self)`
++
++
++Create a new ProfilingQueue.
++
++### Arguments
++    None
++
++### Returns
++    None
++
++
++
++## *Function* `put(self, *args, **kwargs)`
++
++
++Put a new element into the queue.
++
++### Arguments
++> - **element** (`None`: `None`): The element to add to the queue
++
++### Returns
++    None
++
++
++
++## *Function* `get(self, *args, **kwargs)`
++
++
++Get a new item from the queue.
++
++### Arguments
++    None
++
++### Returns
++> - **Any** (`None`: `None`): The element popped from the queue
++
++
++
++## *Class* `Deque`
++
++
++A double-ended queue implementation.
++
++
++
++## *Function* `__init__(self, policy: QueuePolicy = QueuePolicy.DEPTHFIRST)`
++
++
++Create a new double-ended queue.
++
++### Arguments
++> - **policy** (`QueuePolicy`: `None`): The policy to use when adding and removing
++        elements from this queue. Defaults to depth-first.
++
++### Returns
++    None
++
++
++
++## *Function* `put(self, *args, **kwargs)`
++
++
++Put a new element into the queue.
++
++### Arguments
++> - **element** (`None`: `None`): The element to add to the queue
++
++### Returns
++    None
++
++
++
++## *Function* `get(self, *args, **kwargs)`
++
++
++Get a new item from the queue.
++
++### Arguments
++    None
++
++### Returns
++> - **Any** (`None`: `None`): The element popped from the queue
++
++
++
++## *Function* `empty(self)`
++
++
++Returns True if the queue is empty.
++
++### Arguments
++    None
++
++### Returns
++> - **bool** (`None`: `None`): True if the queue has nothing more to pop
++
++
+diff --git a/docs/reference/setup.py.md b/docs/reference/setup.py.md
+new file mode 100644
+index 0000000..e69de29
+diff --git a/grandiso/queues.py b/grandiso/queues.py
+index 8bc15d7..24a56cc 100644
+--- a/grandiso/queues.py
++++ b/grandiso/queues.py
+@@ -4,23 +4,71 @@
+ 
+ 
+ class QueuePolicy(Enum):
++    """
++    An Enum for queue pop policy.
++
++    DEPTHFIRST policy is identified with pushing and popping on the same side
++    of the queue. BREADTHFIRST is identified with pushing and popping from the
++    opposite side of the queue.
++
++    """
++
+     DEPTHFIRST = 1
+     BREADTHFIRST = 2
+ 
+ 
+ class ProfilingQueue(queue.SimpleQueue):
++    """
++    A simple queue to enable profiling. This queue keeps track of its size over
++    time so that you can more easily debug performance.
++
++    Note that you do not want to use this queue for production workloads, as it
++    adds substantial overhead.
++
++    """
++
+     def __init__(self):
++        """
++        Create a new ProfilingQueue.
++
++        Arguments:
++            None
++
++        Returns:
++            None
++
++        """
+         super(ProfilingQueue, self).__init__()
+         self._size_history = queue.SimpleQueue()
+         self._size = 0
+ 
+     def put(self, *args, **kwargs):
++        """
++        Put a new element into the queue.
++
++        Arguments:
++            element: The element to add to the queue
++
++        Returns:
++            None
++
++        """
+         res = super(ProfilingQueue, self).put(*args, **kwargs)
+         self._size += 1
+         self._size_history.put(self._size)
+         return res
+ 
+     def get(self, *args, **kwargs):
++        """
++        Get a new item from the queue.
++
++        Arguments:
++            None
++
++        Returns:
++            Any: The element popped from the queue
++
++        """
+         res = super(ProfilingQueue, self).get(*args, **kwargs)
+         self._size -= 1
+         self._size_history.put(self._size)
+@@ -28,7 +76,23 @@ def get(self, *args, **kwargs):
+ 
+ 
+ class Deque:
++    """
++    A double-ended queue implementation.
++
++    """
++
+     def __init__(self, policy: QueuePolicy = QueuePolicy.DEPTHFIRST):
++        """
++        Create a new double-ended queue.
++
++        Arguments:
++            policy (QueuePolicy): The policy to use when adding and removing
++                elements from this queue. Defaults to depth-first.
++
++        Returns:
++            None
++
++        """
+         self._dq = deque()
+         if policy == QueuePolicy.DEPTHFIRST:
+             self._put = self._dq.append
+@@ -38,10 +102,40 @@ def __init__(self, policy: QueuePolicy = QueuePolicy.DEPTHFIRST):
+             self._put = self._dq.append
+ 
+     def put(self, *args, **kwargs):
++        """
++        Put a new element into the queue.
++
++        Arguments:
++            element: The element to add to the queue
++
++        Returns:
++            None
++
++        """
+         return self._put(args[0])
+ 
+     def get(self, *args, **kwargs):
++        """
++        Get a new item from the queue.
++
++        Arguments:
++            None
++
++        Returns:
++            Any: The element popped from the queue
++
++        """
+         return self._get()
+ 
+     def empty(self):
++        """
++        Returns True if the queue is empty.
++
++        Arguments:
++            None
++
++        Returns:
++            bool: True if the queue has nothing more to pop
++
++        """
+         return False if self._dq else True
+diff --git a/grandiso/test_queues.py b/grandiso/test_queues.py
+new file mode 100644
+index 0000000..4aec80a
+--- /dev/null
++++ b/grandiso/test_queues.py
+@@ -0,0 +1,52 @@
++import pytest
++
++from .queues import ProfilingQueue, Deque, QueuePolicy
++
++all_queues = [
++    (ProfilingQueue, ()),
++    (Deque, ()),
++    (Deque, (QueuePolicy.DEPTHFIRST,)),
++    (Deque, (QueuePolicy.BREADTHFIRST,)),
++]
++
++
++@pytest.mark.parametrize(
++    "queue,queue_args", all_queues,
++)
++def test_empty(queue, queue_args):
++    q = queue(*queue_args)
++    assert q.empty()
++    q.put(1)
++    assert q.empty() == False
++    q.get()
++    assert q.empty()
++
++
++@pytest.mark.parametrize(
++    "queue,queue_args", all_queues,
++)
++def test_can_put_and_pop(queue, queue_args):
++    q = queue(*queue_args)
++    q.put(1)
++    assert q.get() == 1
++    q.put(2)
++    q.put(3)
++    q.put(lambda x: x)
++
++    q.get()
++    q.get()
++    q.get()
++    assert q.empty()
++
++
++def test_bfs_dfs():
++    bfs = Deque(QueuePolicy.BREADTHFIRST)
++    dfs = Deque(QueuePolicy.DEPTHFIRST)
++
++    bfs.put(1)
++    dfs.put(1)
++    bfs.put(2)
++    dfs.put(2)
++
++    assert bfs.get() == 2
++    assert dfs.get() == 1
